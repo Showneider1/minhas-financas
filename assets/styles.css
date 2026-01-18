@@ -1,0 +1,133 @@
+/* ============================
+   DESIGN TOKENS (Core Theme)
+   ============================ */
+
+:root {
+  --color-primary: #3B82F6;
+  --color-success: #10B981;
+  --color-danger: #EF4444;
+  --color-warning: #F59E0B;
+
+  --color-bg: #F8FAFC;
+  --color-card: #FFFFFF;
+  --color-text: #0F172A;
+  --color-muted: #64748B;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
+  --shadow-md: 0 4px 10px rgba(0,0,0,0.12);
+}
+
+/* ============================
+   GLOBAL
+   ============================ */
+
+body {
+  background-color: var(--color-bg);
+  font-family: "Roboto", sans-serif;
+  color: var(--color-text);
+}
+
+h1, h2, h3, h4, h5 {
+  letter-spacing: -0.02em;
+}
+
+.text-muted {
+  color: var(--color-muted) !important;
+}
+
+/* ============================
+   CARDS
+   ============================ */
+
+.card {
+  border-radius: var(--radius-md);
+}
+
+.card.shadow-sm {
+  box-shadow: var(--shadow-sm);
+}
+
+.card:hover.hover-shadow {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+/* ============================
+   BUTTONS
+   ============================ */
+
+.btn {
+  border-radius: var(--radius-sm);
+}
+
+.btn-primary {
+  background-color: var(--color-primary);
+  border: none;
+}
+
+.btn-primary:hover {
+  filter: brightness(0.95);
+}
+
+/* ============================
+   INPUTS & DROPDOWNS
+   ============================ */
+
+input,
+textarea,
+select,
+.dash-dropdown {
+  border-radius: var(--radius-sm);
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  box-shadow: 0 0 0 2px rgba(59,130,246,0.2);
+}
+
+/* ============================
+   EXTRATO (Timeline)
+   ============================ */
+
+.extrato-item {
+  transition: all 0.2s ease;
+}
+
+.extrato-item:hover {
+  background-color: #F1F5F9;
+}
+
+/* ============================
+   BADGES
+   ============================ */
+
+.badge {
+  border-radius: 999px;
+  padding: 6px 10px;
+}
+
+/* ============================
+   GRÁFICOS
+   ============================ */
+
+.js-plotly-plot .plotly {
+  border-radius: var(--radius-md);
+}
+
+/* ============================
+   SCROLLBAR (Opcional, bonito)
+   ============================ */
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: #CBD5E1;
+  border-radius: 10px;
+}

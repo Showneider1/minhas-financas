@@ -1,0 +1,54 @@
+# Core
+dash==2.16.1
+dash-bootstrap-components==1.6.0
+
+# Database
+SQLAlchemy==2.0.29
+alembic==1.13.1
+
+# Security
+python-dotenv==1.0.1
+passlib[bcrypt]==1.7.4
+python-jose[cryptography]==3.3.0
+
+# Validation
+pydantic>=2.0
+pydantic-settings>=2.0
+
+# Data & Charts
+pandas==2.2.1
+numpy==1.26.4
+plotly==5.19.0
+
+# Export
+openpyxl==3.1.2
+reportlab==4.1.0
+
+# Logging
+loguru==0.7.2
+
+# Production
+gunicorn==21.2.0
+psycopg2-binary==2.9.9
+
+# API (futuro)
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+
+# Testing (dev)
+pytest==8.0.0
+pytest-cov==4.1.0
+pytest-asyncio==0.23.3
+faker==22.6.0
+
+# Code Quality (dev)
+black==24.1.0
+flake8==7.0.0
+mypy==1.8.0
+isort==5.13.2
+
+# Cache (futuro)
+redis==5.0.1
+
+# Monitoring (futuro)
+sentry-sdk==1.40.0
