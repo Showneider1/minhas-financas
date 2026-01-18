@@ -1,9 +1,3 @@
-"""
-Callbacks para gerenciamento de transações.
-SOLUÇÃO FINAL: 
-1. Reseta modal ao mudar de página (URL).
-2. Controla abertura apenas por clique nos botões.
-"""
 from dash import Input, Output, State, callback_context, no_update
 from datetime import date
 import dash_bootstrap_components as dbc
@@ -12,8 +6,8 @@ from database.connection import get_db_session
 from services.finance_service import FinanceService
 from services.category_service import CategoryService
 from database.models.category import TransactionType
+from database.models.transaction import Transaction
 from config.logging_config import app_logger
-from dash import dcc
 
 # ==========================================
 # 1. SEGURANÇA: FECHA MODAL NA NAVEGAÇÃO
@@ -24,14 +18,14 @@ from dash import dcc
     prevent_initial_call=True,
 )
 def resetar_modal_ao_mudar_pagina(pathname):
-    # Força o fechamento sempre que a URL mudar
     return False
 
 # ==========================================
-# 2. CONTROLE DO MODAL (COM BLINDAGEM)
+# 2. CONTROLE DO MODAL (COM BLINDAGEM RESTAURADA)
 # ==========================================
 @app.callback(
     Output("modal-novo-lancamento", "is_open", allow_duplicate=True),
+    Output("store-transacao-id-editar", "data", allow_duplicate=True),
     Input("btn-novo-lancamento", "n_clicks"),
     Input("btn-cancelar-modal", "n_clicks"),
     Input("btn-salvar-lancamento", "n_clicks"),
@@ -40,99 +34,72 @@ def resetar_modal_ao_mudar_pagina(pathname):
 )
 def toggle_modal(n_novo, n_cancelar, n_salvar, is_open):
     ctx = callback_context
-
-    # Se não houve gatilho real, não faz nada
-    if not ctx.triggered:
-        return no_update
+    if not ctx.triggered: return no_update
     
     trigger_id = ctx.triggered[0]["prop_id"].split(".")[0]
     
-    # --- AQUI ESTÁ A CORREÇÃO (BLINDAGEM) ---
-    # Se o gatilho for o botão "Novo", verificamos se ele tem cliques reais.
-    # Quando a página recarrega, o n_clicks pode ser 0 ou None.
+    # --- AQUI ESTAVA O PROBLEMA ---
     if trigger_id == "btn-novo-lancamento":
-        if not n_novo or n_novo == 0:
-            return no_update # Ignora clique zero (inicialização do botão)
-        return True # Abre o modal
-
-    # Fecha ao clicar em Cancelar ou Salvar
-    if trigger_id in ["btn-cancelar-modal", "btn-salvar-lancamento"]:
-        return False
+        # Se n_novo for None ou 0 (inicialização), IGNORA.
+        if not n_novo: 
+            return no_update, no_update
+        
+        # Se foi um clique real, abre o modal e limpa o ID de edição
+        return True, None 
     
-    return is_open
-
+    if trigger_id in ["btn-cancelar-modal", "btn-salvar-lancamento"]:
+        return False, None # Fecha e limpa
+    
+    return is_open, no_update
 
 # ==========================================
-# CARREGA CATEGORIAS
+# 3. CARREGA CATEGORIAS
 # ==========================================
 @app.callback(
     Output("select-categoria", "options"),
     Input("tipo-lancamento", "value"),
     Input("store-user-id", "data"),
+    Input("modal-novo-lancamento", "is_open"),
     prevent_initial_call=True,
 )
-def carregar_categorias_por_tipo(tipo, user_id):
-    """
-    Carrega categorias filtradas por tipo de transação.
-    """
+def carregar_categorias_por_tipo(tipo, user_id, is_open):
+    if not is_open: return no_update
+    if not user_id or not tipo: return []
+    
     try:
-        if not user_id or not tipo:
-            return []
-        
-        transaction_type = TransactionType(tipo)
-        
         with get_db_session() as db:
             category_service = CategoryService(db)
-            categories = category_service.get_available_categories(
-                user_id, transaction_type
-            )
-            
-            return [
-                {
-                    "label": f"{cat.icon or '📁'} {cat.name}",
-                    "value": cat.id
-                }
-                for cat in categories
-            ]
-        
+            categories = category_service.get_available_categories(user_id, TransactionType(tipo))
+            return [{"label": f"{cat.icon or '📁'} {cat.name}", "value": cat.id} for cat in categories]
     except Exception as e:
-        app_logger.error(f"Erro ao carregar categorias: {e}")
+        app_logger.error(f"Erro categorias: {e}")
         return []
 
-
 # ==========================================
-# CARREGA CONTAS
+# 4. CARREGA CONTAS
 # ==========================================
 @app.callback(
     Output("select-conta", "options"),
     Input("store-user-id", "data"),
+    Input("modal-novo-lancamento", "is_open"),
     prevent_initial_call=True,
 )
-def carregar_contas(user_id):
-    """
-    Carrega contas do usuário.
-    """
+def carregar_contas(user_id, is_open):
+    if not is_open: return no_update
+    if not user_id: return []
+    
     try:
-        if not user_id:
-            return []
-        
         with get_db_session() as db:
             from services.account_service import AccountService
             account_service = AccountService(db)
             accounts = account_service.get_user_accounts(user_id)
-            
-            return [
-                {"label": acc.name, "value": acc.id}
-                for acc in accounts
-            ]
-        
+            return [{"label": acc.name, "value": acc.id} for acc in accounts]
     except Exception as e:
-        app_logger.error(f"Erro ao carregar contas: {e}")
+        app_logger.error(f"Erro contas: {e}")
         return []
 
-
 # ==========================================
-# LIMPAR FORMULÁRIO AO FECHAR MODAL
+# 5. PREENCHER FORMULÁRIO (CRIAR OU EDITAR)
 # ==========================================
 @app.callback(
     Output("input-valor", "value"),
@@ -142,26 +109,43 @@ def carregar_contas(user_id):
     Output("data-lancamento", "date"),
     Output("switch-pago", "value"),
     Output("tipo-lancamento", "value"),
+    Output("modal-header-title", "children"),
     Input("modal-novo-lancamento", "is_open"),
+    State("store-transacao-id-editar", "data"),
+    State("store-user-id", "data"),
     prevent_initial_call=True,
 )
-def limpar_formulario(is_open):
-    """
-    Reseta formulário quando modal fecha.
-    """
-    if not is_open:
-        return "", "", None, None, date.today(), False, "EXPENSE"
-    return no_update, no_update, no_update, no_update, no_update, no_update, no_update
-
+def preencher_formulario(is_open, edit_id, user_id):
+    if not is_open: return no_update
+    
+    # MODO CRIAÇÃO
+    if not edit_id:
+        return "", "", None, None, date.today(), False, "EXPENSE", "Novo Lançamento"
+    
+    # MODO EDIÇÃO
+    try:
+        with get_db_session() as db:
+            t = db.query(Transaction).filter(Transaction.id == edit_id, Transaction.user_id == user_id).first()
+            if not t: return "", "", None, None, date.today(), False, "EXPENSE", "Erro"
+            
+            tipo = "INCOME" if t.transaction_type.value == "INCOME" else "EXPENSE"
+            pago = True if t.paid_date else False
+            data_show = t.paid_date if t.paid_date else t.due_date
+            valor_formatado = f"{t.base_amount:.2f}".replace(".", ",")
+            
+            return valor_formatado, t.description, t.category_id, t.account_id, data_show, pago, tipo, "Editar Lançamento"
+    except Exception:
+        return no_update
 
 # ==========================================
-# SALVAR TRANSAÇÃO
+# 6. SALVAR TRANSAÇÃO
 # ==========================================
 @app.callback(
     Output("feedback-transacao", "children"),
-    Output("store-reload-dashboard", "data"),
+    Output("store-reload-dashboard", "data", allow_duplicate=True),
     Input("btn-salvar-lancamento", "n_clicks"),
     State("store-user-id", "data"),
+    State("store-transacao-id-editar", "data"),
     State("tipo-lancamento", "value"),
     State("input-valor", "value"),
     State("input-descricao", "value"),
@@ -171,63 +155,18 @@ def limpar_formulario(is_open):
     State("switch-pago", "value"),
     prevent_initial_call=True,
 )
-def salvar_transacao(
-    n_clicks,
-    user_id,
-    tipo,
-    valor,
-    descricao,
-    categoria_id,
-    conta_id,
-    data_lancamento,
-    pago,
-):
-    """
-    Salva nova transação com validações.
-    """
+def salvar_transacao(n_clicks, user_id, edit_id, tipo, valor, descricao, categoria_id, conta_id, data_lancamento, pago):
+    if not n_clicks: return no_update
+    
     try:
-        if not user_id or not n_clicks:
-            return no_update, no_update
-        
-        # Validações básicas
-        if not valor or not categoria_id or not conta_id:
-            return dbc.Alert(
-                "Preencha todos os campos obrigatórios",
-                color="warning",
-                duration=4000,
-                dismissable=True,
-            ), no_update
-        
-        # Converte valor
-        try:
-            valor_limpo = str(valor).replace(".", "").replace(",", ".").replace("R$", "").strip()
-            valor_float = float(valor_limpo)
-        except Exception as e:
-            app_logger.error(f"Erro ao converter valor: {e}")
-            return dbc.Alert(
-                "Valor inválido",
-                color="danger",
-                duration=4000,
-                dismissable=True,
-            ), no_update
-        
-        if valor_float <= 0:
-            return dbc.Alert(
-                "Valor deve ser maior que zero",
-                color="danger",
-                duration=4000,
-                dismissable=True,
-            ), no_update
-        
-        # Prepara data
-        if data_lancamento:
-            due_date = date.fromisoformat(data_lancamento)
-        else:
-            due_date = date.today()
-        
+        valor_limpo = str(valor).replace(".", "").replace(",", ".").replace("R$", "").strip()
+        valor_float = float(valor_limpo)
+        if valor_float <= 0: return dbc.Alert("Valor inválido", color="danger"), no_update
+
+        if data_lancamento: due_date = date.fromisoformat(data_lancamento)
+        else: due_date = date.today()
         paid_date = due_date if pago else None
         
-        # Cria schema
         from schemas.transaction_schema import TransactionCreate
         data = TransactionCreate(
             description=descricao or "Sem descrição",
@@ -239,27 +178,17 @@ def salvar_transacao(
             paid_date=paid_date,
         )
         
-        # Salva no banco
         with get_db_session() as db:
             finance_service = FinanceService(db)
-            transaction = finance_service.create_transaction(user_id, data)
-            app_logger.info(f"✅ Transação criada! ID: {transaction.id}")
+            if edit_id:
+                finance_service.update_transaction(edit_id, user_id, data)
+                msg = "✅ Atualizado com sucesso!"
+            else:
+                finance_service.create_transaction(user_id, data)
+                msg = "✅ Criado com sucesso!"
         
-        return dbc.Alert(
-            "✅ Transação salva com sucesso!",
-            color="success",
-            duration=3000,
-            dismissable=True,
-        ), n_clicks
+        return dbc.Alert(msg, color="success", duration=3000), True
         
     except Exception as e:
-        app_logger.error(f"❌ Erro ao salvar transação: {e}")
-        import traceback
-        traceback.print_exc()
-        
-        return dbc.Alert(
-            f"❌ Erro: {str(e)}",
-            color="danger",
-            duration=4000,
-            dismissable=True,
-        ), no_update
+        app_logger.error(f"Erro salvar: {e}")
+        return dbc.Alert(f"Erro: {e}", color="danger"), no_update

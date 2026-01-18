@@ -42,13 +42,12 @@ def debug_user_id(user_id):
     Input("dashboard-periodo", "start_date"),
     Input("dashboard-periodo", "end_date"),
     Input("store-reload-dashboard", "data"),
-    State("store-user-id", "data"),
+    Input("store-user-id", "data"),  # <--- MUDADO DE STATE PARA INPUT
 )
 def atualizar_saldo(start_date, end_date, reload_trigger, user_id):
     """Atualiza KPI de saldo total."""
     print(f"\n🔄 ATUALIZANDO SALDO")
     print(f"   user_id: {user_id}")
-    print(f"   reload_trigger: {reload_trigger}")
     
     if not user_id:
         print(f"   ❌ Sem user_id")
@@ -75,14 +74,8 @@ def atualizar_saldo(start_date, end_date, reload_trigger, user_id):
             
             saldo_atual = receitas - despesas
             
-            print(f"   📊 Receitas: {receitas}")
-            print(f"   📊 Despesas: {despesas}")
-            print(f"   💰 Saldo calculado: {saldo_atual}")
-            
             # Formata valores
             saldo_str = f"R$ {saldo_atual:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            
-            print(f"   ✅ Saldo formatado: {saldo_str}")
             
             return saldo_str, ""
     
@@ -105,13 +98,10 @@ def atualizar_saldo(start_date, end_date, reload_trigger, user_id):
     Input("dashboard-periodo", "start_date"),
     Input("dashboard-periodo", "end_date"),
     Input("store-reload-dashboard", "data"),
-    State("store-user-id", "data"),
+    Input("store-user-id", "data"),  # <--- MUDADO DE STATE PARA INPUT
 )
 def atualizar_receitas(start_date, end_date, reload_trigger, user_id):
     """Atualiza KPI de receitas."""
-    print(f"\n🔄 ATUALIZANDO RECEITAS")
-    print(f"   user_id: {user_id}")
-    print(f"   reload_trigger: {reload_trigger}")
     
     if not user_id:
         return "R$ 0,00", ""
@@ -127,8 +117,6 @@ def atualizar_receitas(start_date, end_date, reload_trigger, user_id):
             data_fim = datetime.fromisoformat(end_date)
         else:
             data_fim = datetime.now()
-        
-        print(f"   📅 Período: {data_inicio} até {data_fim}")
         
         with get_db_session() as db:
             # Receitas do período
@@ -144,8 +132,6 @@ def atualizar_receitas(start_date, end_date, reload_trigger, user_id):
             
             receita_atual = result or 0
             
-            print(f"   💵 Receita calculada: {receita_atual}")
-            
             # Formata valores
             receita_str = f"R$ {receita_atual:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
             
@@ -153,8 +139,6 @@ def atualizar_receitas(start_date, end_date, reload_trigger, user_id):
     
     except Exception as e:
         logger.error(f"Erro ao atualizar receitas: {e}")
-        import traceback
-        traceback.print_exc()
         return "R$ 0,00", ""
 
 
@@ -169,13 +153,10 @@ def atualizar_receitas(start_date, end_date, reload_trigger, user_id):
     Input("dashboard-periodo", "start_date"),
     Input("dashboard-periodo", "end_date"),
     Input("store-reload-dashboard", "data"),
-    State("store-user-id", "data"),
+    Input("store-user-id", "data"),  # <--- MUDADO DE STATE PARA INPUT
 )
 def atualizar_despesas(start_date, end_date, reload_trigger, user_id):
     """Atualiza KPI de despesas."""
-    print(f"\n🔄 ATUALIZANDO DESPESAS")
-    print(f"   user_id: {user_id}")
-    print(f"   reload_trigger: {reload_trigger}")
     
     if not user_id:
         return "R$ 0,00", ""
@@ -192,8 +173,6 @@ def atualizar_despesas(start_date, end_date, reload_trigger, user_id):
         else:
             data_fim = datetime.now()
         
-        print(f"   📅 Período: {data_inicio} até {data_fim}")
-        
         with get_db_session() as db:
             # Despesas do período
             result = db.query(
@@ -208,8 +187,6 @@ def atualizar_despesas(start_date, end_date, reload_trigger, user_id):
             
             despesa_atual = result or 0
             
-            print(f"   💸 Despesa calculada: {despesa_atual}")
-            
             # Formata valores
             despesa_str = f"R$ {despesa_atual:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
             
@@ -217,8 +194,6 @@ def atualizar_despesas(start_date, end_date, reload_trigger, user_id):
     
     except Exception as e:
         logger.error(f"Erro ao atualizar despesas: {e}")
-        import traceback
-        traceback.print_exc()
         return "R$ 0,00", ""
 
 
@@ -232,7 +207,7 @@ def atualizar_despesas(start_date, end_date, reload_trigger, user_id):
     Input("dashboard-periodo", "start_date"),
     Input("dashboard-periodo", "end_date"),
     Input("store-reload-dashboard", "data"),
-    State("store-user-id", "data"),
+    Input("store-user-id", "data"),  # <--- MUDADO DE STATE PARA INPUT
 )
 def atualizar_grafico_fluxo(start_date, end_date, reload_trigger, user_id):
     """Atualiza gráfico de fluxo de caixa."""
@@ -318,7 +293,7 @@ def atualizar_grafico_fluxo(start_date, end_date, reload_trigger, user_id):
     Input("dashboard-periodo", "start_date"),
     Input("dashboard-periodo", "end_date"),
     Input("store-reload-dashboard", "data"),
-    State("store-user-id", "data"),
+    Input("store-user-id", "data"),  # <--- MUDADO DE STATE PARA INPUT
 )
 def atualizar_grafico_categorias(start_date, end_date, reload_trigger, user_id):
     """Atualiza gráfico de despesas por categoria."""

@@ -22,20 +22,28 @@ app.layout = html.Div([
     # URL para roteamento
     dcc.Location(id="url", refresh=False),
     
-    # Stores globais
+    # Stores globais (Memória do navegador)
     dcc.Store(id="auth-store", storage_type="session"),
     dcc.Store(id="store-user-id", storage_type="session"),
+    
+    # === SINAIS DE ATUALIZAÇÃO ===
+    # 1. Avisa que o Dashboard/Extrato precisa recarregar
     dcc.Store(id="store-reload-dashboard", storage_type="memory"),
-    dcc.Store(id="store-modal-state", storage_type="memory", data={"is_open": False}),  # ← NOVO
+    
+    # 2. Guarda o ID da transação que está sendo editada (Novo!)
+    dcc.Store(id="store-transacao-id-editar", data=None, storage_type="memory"),
+    # =============================
+
+    dcc.Store(id="store-modal-state", storage_type="memory", data={"is_open": False}),
     
     # Download components
     dcc.Download(id="download-extrato"),
     dcc.Download(id="download-dashboard"),
     
-    # Modal de novo lançamento
+    # Modal de novo lançamento (Global)
     modal_novo_lancamento,
     
-    # Conteúdo renderizado
+    # Conteúdo renderizado (Páginas)
     html.Div(id="page-content"),
 ])
 
@@ -50,13 +58,6 @@ app.layout = html.Div([
 def display_page(pathname, auth_data):
     """
     Gerencia roteamento e controle de acesso.
-    
-    Args:
-        pathname: Caminho da URL
-        auth_data: Dados de autenticação
-        
-    Returns:
-        Layout da página
     """
     # Páginas públicas (sem autenticação)
     public_pages = ["/", "/login", "/register"]
@@ -73,63 +74,54 @@ def display_page(pathname, auth_data):
     elif pathname == "/register":
         return login_page.register_layout
     
-    elif pathname == "/dashboard":
-        if not auth_data:
-            return login_page.layout
-        return html.Div([
-            sidebar,
-            html.Div(
-                dashboard_page.layout,
-                className="content",
-                style={"marginLeft": "280px", "padding": "20px"},
-            )
-        ])
+    # --- ÁREA RESTRITA (COM SIDEBAR) ---
+    content = None
+    
+    if pathname == "/dashboard":
+        content = dashboard_page.layout
     
     elif pathname == "/extrato":
-        if not auth_data:
-            return login_page.layout
-        return html.Div([
-            sidebar,
-            html.Div(
-                extrato_page.layout,
-                className="content",
-                style={"marginLeft": "280px", "padding": "20px"},
-            )
-        ])
+        content = extrato_page.layout
     
     elif pathname == "/relatorios":
-        if not auth_data:
-            return login_page.layout
-        return html.Div([
-            sidebar,
-            html.Div(
-                relatorios_page.layout,
-                className="content",
-                style={"marginLeft": "280px", "padding": "20px"},
-            )
-        ])
+        content = relatorios_page.layout
     
     elif pathname == "/configuracoes":
-        if not auth_data:
-            return login_page.layout
-        return html.Div([
-            sidebar,
-            html.Div(
-                configuracoes_page.layout,
-                className="content",
-                style={"marginLeft": "280px", "padding": "20px"},
-            )
-        ])
+        content = configuracoes_page.layout
     
     else:
         # Página 404
-        from components.shared.error import error_page_404
-        return error_page_404()
+        try:
+            from components.shared.error import error_page_404
+            return error_page_404()
+        except:
+            return html.Div(
+                dbc.Container(
+                    [
+                        html.H1("404", className="display-1 fw-bold"),
+                        html.P("Página não encontrada.", className="lead"),
+                        dbc.Button("Voltar ao Início", href="/dashboard", color="primary"),
+                    ],
+                    className="py-5 text-center"
+                )
+            )
+
+    # Se a página foi encontrada e usuário está logado, retorna com Sidebar
+    if content:
+        return html.Div([
+            sidebar,
+            html.Div(
+                content,
+                className="content",
+                style={"marginLeft": "280px", "padding": "20px"},
+            )
+        ])
+    
+    return login_page.layout
 
 # ===============================
 # REGISTRA CALLBACKS
 # ===============================
-# Deve vir depois da definição do layout
 try:
     import callbacks
     app_logger.info("✅ Callbacks registrados com sucesso!")
@@ -151,6 +143,4 @@ if __name__ == "__main__":
         host=settings.HOST,
         port=settings.PORT,
         dev_tools_hot_reload=settings.DEBUG,
-        dev_tools_ui=settings.DEBUG,
-        dev_tools_serve_dev_bundles=settings.DEBUG,
     )

@@ -1,248 +1,113 @@
-"""
-Callbacks de extrato com paginação e filtros otimizados.
-"""
-from dash import Input, Output, State, html, no_update
-import dash_bootstrap_components as dbc
-from datetime import datetime, date
+from dash import Input, Output, State, no_update, ctx
 from app import app
 from database.connection import get_db_session
-from services.finance_service import FinanceService
-from schemas.transaction_schema import TransactionFilter
-from database.models.category import TransactionType
-from database.models.transaction import TransactionStatus
-from config.logging_config import app_logger
-from sqlalchemy import func
+from database.models.transaction import Transaction
+from datetime import datetime
 
-
-
+# ==========================================
+# 1. POPULAR TABELA (Sem alterações)
+# ==========================================
 @app.callback(
-    Output("tabela-extrato", "children"),
-    Output("total-entradas-extrato", "children"),
-    Output("total-saidas-extrato", "children"),
-    Output("saldo-periodo-extrato", "children"),
-    Input("store-user-id", "data"),
-    Input("store-reload-dashboard", "data"),
-    Input("busca-extrato", "value"),
+    Output("grid-transacoes", "rowData"),
     Input("extrato-periodo", "start_date"),
     Input("extrato-periodo", "end_date"),
-    Input("extrato-tipo", "value"),
-    Input("extrato-status", "value"),
+    Input("store-reload-dashboard", "data"),
+    State("store-user-id", "data"),
 )
-def atualizar_extrato(
-    user_id,
-    reload_trigger,
-    busca,
-    start_date,
-    end_date,
-    tipos,
-    status_list,
-):
-    """
-    Atualiza extrato conforme filtros aplicados.
-    """
-    print(f"\n📋 ATUALIZANDO EXTRATO")
-    print(f"   user_id: {user_id}")
-    print(f"   reload_trigger: {reload_trigger}")
-    
+def atualizar_extrato(start_date, end_date, reload, user_id):
+    if not user_id: return []
     try:
-        if not user_id:
-            return [], "R$ 0,00", "R$ 0,00", "R$ 0,00"
-        
-        # Converte datas
-        if start_date:
-            data_inicio = datetime.fromisoformat(start_date).date()
-        else:
-            data_inicio = date.today().replace(day=1)
-        
-        if end_date:
-            data_fim = datetime.fromisoformat(end_date).date()
-        else:
-            data_fim = date.today()
-        
-        print(f"   📅 Período: {data_inicio} até {data_fim}")
-        
+        if not start_date: start_date = datetime.now().replace(day=1).isoformat()
+        if not end_date: end_date = datetime.now().isoformat()
+        d_inicio = datetime.fromisoformat(start_date)
+        d_fim = datetime.fromisoformat(end_date)
+
         with get_db_session() as db:
-            from database.models.transaction import Transaction
-            from database.models.category import Category
-            
-            # Query base - MODIFICADO: remove filtro paid_date.isnot(None)
-            query = db.query(Transaction).filter(
+            transacoes = db.query(Transaction).filter(
                 Transaction.user_id == user_id,
-                Transaction.due_date >= data_inicio,
-                Transaction.due_date <= data_fim
-            )
+                Transaction.paid_date >= d_inicio,
+                Transaction.paid_date <= d_fim
+            ).order_by(Transaction.paid_date.desc()).all()
             
-            # Aplica filtros
-            if busca:
-                query = query.filter(Transaction.description.ilike(f"%{busca}%"))
-            
-            if tipos:
-                query = query.filter(Transaction.transaction_type.in_(tipos))
-            
-            # Filtro de status - CORRIGIDO
-            if status_list:
-                print(f"   🔍 Filtrando por status: {status_list}")
-                if "PAID" in status_list and "PENDING" not in status_list:
-                    # Apenas pagos
-                    query = query.filter(Transaction.paid_date.isnot(None))
-                elif "PENDING" in status_list and "PAID" not in status_list:
-                    # Apenas pendentes
-                    query = query.filter(Transaction.paid_date.is_(None))
-                # Se ambos ou nenhum, não filtra
-            
-            # Ordena
-            query = query.order_by(Transaction.due_date.desc())
-            
-            # Executa
-            transactions = query.all()
-            
-            print(f"   📊 Total de transações: {len(transactions)}")
-            
-            # Calcula totais - apenas transações pagas
-            entradas = sum(
-                t.base_amount for t in transactions 
-                if t.transaction_type == TransactionType.INCOME and t.paid_date is not None
-            )
-            saidas = sum(
-                t.base_amount for t in transactions 
-                if t.transaction_type == TransactionType.EXPENSE and t.paid_date is not None
-            )
-            saldo = entradas - saidas
-            
-            print(f"   💵 Entradas: {entradas}")
-            print(f"   💸 Saídas: {saidas}")
-            print(f"   💰 Saldo: {saldo}")
-            
-            # Gera cards de transações
-            cards = []
-            for transaction in transactions:
-                card = gerar_card_transacao(transaction)
-                cards.append(card)
-            
-            if not cards:
-                cards = [
-                    dbc.Alert(
-                        "Nenhuma transação encontrada para os filtros aplicados.",
-                        color="info",
-                        className="text-center",
-                    )
-                ]
-            
-            # Formata valores
-            entradas_str = f"R$ {entradas:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            saidas_str = f"R$ {saidas:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            saldo_str = f"R$ {saldo:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            
-            return cards, entradas_str, saidas_str, saldo_str
-    
+            data = []
+            for t in transacoes:
+                data.append({
+                    "data": t.paid_date.strftime("%d/%m/%Y") if t.paid_date else t.due_date.strftime("%d/%m/%Y"),
+                    "descricao": t.description,
+                    "categoria": f"{t.category.icon or ''} {t.category.name}" if t.category else "-",
+                    "conta": t.account.name if t.account else "-",
+                    "valor": t.base_amount,
+                    "tipo": "Receita" if t.transaction_type.value == "INCOME" else "Despesa",
+                    "status": "Pago" if t.paid_date else "Pendente",
+                    "editar": t.id,  
+                    "excluir": t.id
+                })
+            return data
     except Exception as e:
-        app_logger.error(f"Erro ao atualizar extrato: {e}")
-        import traceback
-        traceback.print_exc()
-        return [dbc.Alert(f"Erro: {str(e)}", color="danger")], "R$ 0,00", "R$ 0,00", "R$ 0,00"
+        print(f"Erro extrato: {e}")
+        return []
 
-def gerar_card_transacao(transaction):
-    """
-    Gera card visual para uma transação.
-    """
-    # Define cor e ícone baseado no tipo
-    if transaction.transaction_type == TransactionType.INCOME:
-        cor = "success"
-        icone = "bi-arrow-up-circle"
-        sinal = "+"
-    else:
-        cor = "danger"
-        icone = "bi-arrow-down-circle"
-        sinal = "-"
-    
-    # Badge de status
-    status_badges = {
-        TransactionStatus.PAID: ("success", "Pago"),
-        TransactionStatus.PENDING: ("warning", "Pendente"),
-        TransactionStatus.CANCELLED: ("secondary", "Cancelado"),  # ← Corrigido
-    }
-    badge_color, badge_text = status_badges.get(transaction.status, ("secondary", "N/A"))
-    
-    # Formata valor
-    valor_str = f"R$ {transaction.base_amount:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-    
-    # Formata data
-    data_str = transaction.paid_date.strftime("%d/%m/%Y") if transaction.paid_date else "Sem data"
-    
-    card = dbc.Card(
-        dbc.CardBody(
-            dbc.Row(
-                [
-                    # Ícone
-                    dbc.Col(
-                        html.I(className=f"{icone} fs-3 text-{cor}"),
-                        width="auto",
-                        className="d-flex align-items-center",
-                    ),
-                    # Informações
-                    dbc.Col(
-                        [
-                            html.H6(
-                                transaction.description or "Sem descrição",
-                                className="mb-1 fw-bold",
-                            ),
-                            html.Small(
-                                [
-                                    html.Span(
-                                        f"{transaction.category.icon or '📁'} {transaction.category.name}",
-                                        className="me-3",
-                                    ),
-                                    html.Span(
-                                        f"📅 {data_str}",
-                                    ),
-                                ],
-                                className="text-muted",
-                            ),
-                        ],
-                        className="d-flex flex-column justify-content-center",
-                    ),
-                    # Status
-                    dbc.Col(
-                        dbc.Badge(
-                            badge_text,
-                            color=badge_color,
-                            className="px-3 py-2",
-                        ),
-                        width="auto",
-                        className="d-flex align-items-center",
-                    ),
-                    # Valor
-                    dbc.Col(
-                        html.H5(
-                            f"{sinal} {valor_str}",
-                            className=f"mb-0 text-{cor} fw-bold text-end",
-                        ),
-                        width=2,
-                        className="d-flex align-items-center justify-content-end",
-                    ),
-                ],
-                className="align-items-center",
-            )
-        ),
-        className="mb-2 shadow-sm border-0 hover-shadow",
-        style={"cursor": "pointer"},
-    )
-    
-    return card
-
-
-
-
+# ==========================================
+# 2. INTERAÇÃO COM A TABELA (CORREÇÃO AQUI)
+# ==========================================
 @app.callback(
-    Output("collapse-filtros-extrato", "is_open"),
-    Input("btn-toggle-filtros", "n_clicks"),
-    State("collapse-filtros-extrato", "is_open"),
-    prevent_initial_call=True,
+    # --- ADICIONEI allow_duplicate=True NESTES DOIS ---
+    Output("store-transacao-id-editar", "data", allow_duplicate=True), 
+    Output("modal-novo-lancamento", "is_open", allow_duplicate=True),
+    # --------------------------------------------------
+    Output("store-id-exclusao", "data"),
+    Output("modal-confirmacao-exclusao", "is_open"),
+    Input("grid-transacoes", "cellClicked"),
+    prevent_initial_call=True
 )
-def toggle_filtros(n, is_open):
-    """
-    Abre/fecha filtros avançados.
-    """
-    if n:
-        return not is_open
-    return is_open
+def interagir_tabela(cell_clicked):
+    if not cell_clicked: return no_update, no_update, no_update, no_update
+    
+    col_id = cell_clicked.get("colId")
+    valor_clicado = cell_clicked.get("value")
+    
+    if not valor_clicado: return no_update, no_update, no_update, no_update
+    transacao_id = valor_clicado
+
+    # --- CLIQUE NA LIXEIRA -> ABRE MODAL DE CONFIRMAÇÃO ---
+    if col_id == "excluir":
+        # Não deleta! Só abre o modal e guarda o ID
+        return no_update, no_update, transacao_id, True
+
+    # --- CLIQUE NO LÁPIS -> ABRE MODAL DE EDIÇÃO ---
+    if col_id == "editar":
+        return transacao_id, True, no_update, no_update
+
+    return no_update, no_update, no_update, no_update
+
+# ==========================================
+# 3. CONFIRMAR EXCLUSÃO (Sem alterações)
+# ==========================================
+@app.callback(
+    Output("store-reload-dashboard", "data", allow_duplicate=True),
+    Output("modal-confirmacao-exclusao", "is_open", allow_duplicate=True),
+    Input("btn-confirmar-exclusao", "n_clicks"),
+    Input("btn-cancelar-exclusao", "n_clicks"),
+    State("store-id-exclusao", "data"),
+    State("store-user-id", "data"),
+    prevent_initial_call=True
+)
+def executar_exclusao(n_confirmar, n_cancelar, transacao_id, user_id):
+    trigger = ctx.triggered_id
+    
+    if trigger == "btn-cancelar-exclusao":
+        return no_update, False
+    
+    if trigger == "btn-confirmar-exclusao" and transacao_id:
+        try:
+            with get_db_session() as db:
+                t = db.query(Transaction).filter(Transaction.id == transacao_id, Transaction.user_id == user_id).first()
+                if t:
+                    db.delete(t)
+            print(f"✅ ID {transacao_id} excluído definitivamente.")
+            return True, False 
+        except Exception as e:
+            print(f"❌ Erro ao excluir: {e}")
+            return no_update, False
+            
+    return no_update, no_update

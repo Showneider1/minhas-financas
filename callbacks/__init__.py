@@ -58,3 +58,9 @@ except Exception as e:
     print(f"⚠ Aviso export_callbacks: {e}")
 
 print("\n📊 Callbacks registrados com sucesso!\n")
+
+try:
+    import callbacks.budget_callbacks
+    print("✓ Budget callbacks carregados")
+except Exception as e:
+    print(f"⚠ Aviso budget_callbacks: {e}")

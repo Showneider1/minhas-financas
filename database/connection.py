@@ -26,18 +26,14 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 def get_db_session() -> Generator[Session, None, None]:
     """
     Context manager para sessões do banco.
-    
-    Uso:
-        with get_db_session() as db:
-            # use db aqui
     """
     db = SessionLocal()
-    print("🔵 Sessão do banco ABERTA")
+    # print("🔵 Sessão do banco ABERTA") # Comentei para limpar o log
     try:
         yield db
-        print("🟢 Executando COMMIT...")
+        # print("🟢 Executando COMMIT...")
         db.commit()
-        print("✅ COMMIT realizado com sucesso!")
+        # print("✅ COMMIT realizado com sucesso!")
     except Exception as e:
         print(f"🔴 Erro na sessão - executando ROLLBACK: {e}")
         import traceback
@@ -45,7 +41,7 @@ def get_db_session() -> Generator[Session, None, None]:
         db.rollback()
         raise e
     finally:
-        print("🔵 Fechando sessão do banco")
+        # print("🔵 Fechando sessão do banco")
         db.close()
 
 
@@ -58,5 +54,6 @@ def init_db():
     import database.models.account
     import database.models.category
     import database.models.transaction
+    import database.models.budget  # <--- ADICIONE ESTA LINHA AQUI
     
     Base.metadata.create_all(bind=engine)
