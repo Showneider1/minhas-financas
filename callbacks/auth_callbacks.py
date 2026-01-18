@@ -18,7 +18,7 @@ print("🔐 Registrando callbacks de autenticação...")
     [
         Output("auth-store", "data"),
         Output("auth-feedback", "children"),
-        Output("url", "pathname"),  # ← ÚNICO Output para url.pathname
+        Output("url", "pathname"),
     ],
     Input("btn-login", "n_clicks"),
     State("login-email", "value"),
@@ -49,13 +49,16 @@ def fazer_login(n_clicks, email, password):
             auth_service = AuthService(db)
             token_response = auth_service.authenticate_user(login_data)
         
+        # ✅ CORRIGIDO: Adiciona campo "authenticated"
         auth_data = {
+            "authenticated": True,  # ← ADICIONAR ESTA LINHA!
             "token": token_response.access_token,
             "user_id": token_response.user_id,
             "email": token_response.email,
         }
         
         print(f"   ✅ Login bem-sucedido! User ID: {token_response.user_id}")
+        print(f"   ✅ Auth data: {auth_data}")
         
         return auth_data, dbc.Alert(
             "Login realizado com sucesso!",
@@ -75,6 +78,8 @@ def fazer_login(n_clicks, email, password):
     
     except Exception as e:
         print(f"   ❌ Erro inesperado: {e}")
+        import traceback
+        traceback.print_exc()
         return no_update, dbc.Alert(
             f"Erro ao fazer login: {str(e)}",
             color="danger",

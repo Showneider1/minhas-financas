@@ -21,7 +21,7 @@ from config.logging_config import app_logger
     Output("modal-novo-lancamento", "is_open"),
     Input("btn-novo-lancamento", "n_clicks"),
     Input("btn-cancelar-modal", "n_clicks"),
-    Input("feedback-transacao", "children"),  # ← Fecha quando salvou
+    Input("feedback-transacao", "children"),
     State("modal-novo-lancamento", "is_open"),
     prevent_initial_call=True,
 )
@@ -32,7 +32,7 @@ def toggle_modal(open_click, close_click, feedback, is_open):
     ctx = callback_context
     
     if not ctx.triggered:
-        return no_update
+        return no_update  # ← MUDANÇA: retorna no_update em vez de is_open
     
     trigger_id = ctx.triggered[0]["prop_id"].split(".")[0]
     
@@ -47,10 +47,13 @@ def toggle_modal(open_click, close_click, feedback, is_open):
     # Fecha modal ao salvar com sucesso
     elif trigger_id == "feedback-transacao" and feedback:
         # Só fecha se for sucesso (cor success)
-        if isinstance(feedback, dict) and feedback.get("props", {}).get("color") == "success":
-            return False
+        if isinstance(feedback, dict):
+            props = feedback.get("props", {})
+            if props.get("color") == "success":
+                return False
+        return no_update  
     
-    return is_open
+    return no_update  
 
 
 # ==========================================
