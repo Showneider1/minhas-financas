@@ -1,131 +1,156 @@
 """
-Aplicação principal com layout base e roteamento.
+Arquivo principal - Entry point da aplicação.
+Gerencia roteamento e layout principal.
 """
-import dash
+from dash import dcc, html, Input, Output
 import dash_bootstrap_components as dbc
-from dash import dcc, html, Input, Output, State
-from app import app
+from app import app, server
+from components.sidebar import sidebar, modal_novo_lancamento
+from pages import (
+    dashboard_page,
+    extrato_page,
+    relatorios_page,
+    configuracoes_page,
+    login_page,
+)
 from config.logging_config import app_logger
 
-# Importa callbacks
-from callbacks import (
-    auth_callbacks,
-    transactions_callbacks,
-    dashboard_callbacks,
-    extrato_callbacks,
-    export_callbacks,
-)
-
-# Importa páginas
-from pages import dashboard_page, extrato_page, login_page
-
-# Importa componentes
-from components.sidebar import create_sidebar
-from components.transaction_modal import create_transaction_modal
-
-
-# ====================
+# ===============================
 # LAYOUT PRINCIPAL
-# ====================
-
-app.layout = dbc.Container([
+# ===============================
+app.layout = html.Div([
+    # URL para roteamento
     dcc.Location(id="url", refresh=False),
+    
+    # Stores globais
     dcc.Store(id="auth-store", storage_type="session"),
     dcc.Store(id="store-user-id", storage_type="session"),
-    dcc.Store(id="store-reload-dashboard", data=0, storage_type="memory"),
+    dcc.Store(id="store-reload-dashboard", storage_type="memory"),
+    dcc.Store(id="store-modal-state", storage_type="memory", data={"is_open": False}),  # ← NOVO
     
-    # Downloads
+    # Download components
     dcc.Download(id="download-extrato"),
     dcc.Download(id="download-dashboard"),
     
-    # Modal de transação - APENAS AQUI!
-    create_transaction_modal(),
+    # Modal de novo lançamento
+    modal_novo_lancamento,
     
-    # Conteúdo da página
+    # Conteúdo renderizado
     html.Div(id="page-content"),
-    
-], fluid=True, className="p-0")
+])
 
-
-# ====================
+# ===============================
 # CALLBACK DE ROTEAMENTO
-# ====================
-
+# ===============================
 @app.callback(
     Output("page-content", "children"),
     Input("url", "pathname"),
-    State("auth-store", "data"),
+    Input("auth-store", "data"),
 )
 def display_page(pathname, auth_data):
     """
-    Controla roteamento e autenticação.
+    Gerencia roteamento e controle de acesso.
+    
+    Args:
+        pathname: Caminho da URL
+        auth_data: Dados de autenticação
+        
+    Returns:
+        Layout da página
     """
-    try:
-        print(f"\n🔀 ROTEAMENTO:")
-        print(f"   pathname: {pathname}")
-        print(f"   auth_data: {auth_data}")
-        
-        # Verifica autenticação
-        is_authenticated = auth_data and auth_data.get("authenticated")
-        print(f"   is_authenticated: {is_authenticated}")
-        
-        # Páginas públicas
-        if pathname in ["/", "/login"]:
-            print(f"   → Retornando login")
+    # Páginas públicas (sem autenticação)
+    public_pages = ["/", "/login", "/register"]
+    
+    # Se não autenticado e tentando acessar página privada
+    if pathname not in public_pages and not auth_data:
+        app_logger.warning(f"Acesso não autorizado: {pathname}")
+        return login_page.layout
+    
+    # Roteamento
+    if pathname == "/" or pathname == "/login":
+        return login_page.layout
+    
+    elif pathname == "/register":
+        return login_page.register_layout
+    
+    elif pathname == "/dashboard":
+        if not auth_data:
             return login_page.layout
-        
-        # Redireciona não autenticados
-        if not is_authenticated:
-            print(f"   → Redirecionando para login")
-            return login_page.layout
-        
-        # Páginas autenticadas
-        if pathname == "/dashboard":
-            print(f"   → Retornando dashboard")
-            return dbc.Row([
-                dbc.Col(create_sidebar(), width=2, className="p-0"),
-                dbc.Col(dashboard_page.layout, width=10, className="p-0"),
-            ], className="g-0")
-        
-        elif pathname == "/extrato":
-            print(f"   → Retornando extrato")
-            return dbc.Row([
-                dbc.Col(create_sidebar(), width=2, className="p-0"),
-                dbc.Col(extrato_page.layout, width=10, className="p-0"),
-            ], className="g-0")
-        
-        # 404
-        print(f"   → 404")
-        return dbc.Container([
-            html.H1("404", className="text-center mt-5"),
-            html.P("Página não encontrada", className="text-center"),
-            dbc.Button("Voltar ao Login", href="/login", color="primary"),
+        return html.Div([
+            sidebar,
+            html.Div(
+                dashboard_page.layout,
+                className="content",
+                style={"marginLeft": "280px", "padding": "20px"},
+            )
         ])
     
-    except Exception as e:
-        print(f"\n❌ ERRO NO ROTEAMENTO:")
-        print(f"   {e}")
-        import traceback
-        traceback.print_exc()
-        
-        return dbc.Container([
-            dbc.Alert(
-                f"Erro ao carregar página: {str(e)}",
-                color="danger",
-                className="mt-5"
-            ),
-            dbc.Button("Voltar ao Login", href="/login", color="primary"),
+    elif pathname == "/extrato":
+        if not auth_data:
+            return login_page.layout
+        return html.Div([
+            sidebar,
+            html.Div(
+                extrato_page.layout,
+                className="content",
+                style={"marginLeft": "280px", "padding": "20px"},
+            )
         ])
+    
+    elif pathname == "/relatorios":
+        if not auth_data:
+            return login_page.layout
+        return html.Div([
+            sidebar,
+            html.Div(
+                relatorios_page.layout,
+                className="content",
+                style={"marginLeft": "280px", "padding": "20px"},
+            )
+        ])
+    
+    elif pathname == "/configuracoes":
+        if not auth_data:
+            return login_page.layout
+        return html.Div([
+            sidebar,
+            html.Div(
+                configuracoes_page.layout,
+                className="content",
+                style={"marginLeft": "280px", "padding": "20px"},
+            )
+        ])
+    
+    else:
+        # Página 404
+        from components.shared.error import error_page_404
+        return error_page_404()
 
+# ===============================
+# REGISTRA CALLBACKS
+# ===============================
+# Deve vir depois da definição do layout
+try:
+    import callbacks
+    app_logger.info("✅ Callbacks registrados com sucesso!")
+except Exception as e:
+    app_logger.error(f"❌ Erro ao registrar callbacks: {e}")
+    import traceback
+    traceback.print_exc()
 
-# ====================
-# EXECUÇÃO
-# ====================
-
+# ===============================
+# INICIALIZAÇÃO DO SERVIDOR
+# ===============================
 if __name__ == "__main__":
-    app_logger.info("🚀 Iniciando aplicação...")
-    app.run(
-        debug=True,
-        host="0.0.0.0",
-        port=8050,
+    from config.settings import settings
+    
+    app_logger.info(f"🚀 Iniciando servidor em http://localhost:{settings.PORT}")
+    
+    app.run_server(
+        debug=settings.DEBUG,
+        host=settings.HOST,
+        port=settings.PORT,
+        dev_tools_hot_reload=settings.DEBUG,
+        dev_tools_ui=settings.DEBUG,
+        dev_tools_serve_dev_bundles=settings.DEBUG,
     )

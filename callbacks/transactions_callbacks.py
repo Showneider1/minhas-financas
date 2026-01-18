@@ -1,5 +1,6 @@
 """
 Callbacks para gerenciamento de transações.
+SOLUÇÃO FINAL: Reseta modal e n_clicks ao mudar de página.
 """
 from dash import Input, Output, State, callback_context, no_update
 from datetime import date
@@ -10,61 +11,66 @@ from services.finance_service import FinanceService
 from services.category_service import CategoryService
 from database.models.category import TransactionType
 from config.logging_config import app_logger
-
+from dash import dcc
 
 # ==========================================
-# MODAL CONTROLE
+# RESETA MODAL AO MUDAR DE PÁGINA (CRÍTICO)
 # ==========================================
-
-
 @app.callback(
     Output("modal-novo-lancamento", "is_open"),
+    Input("url", "pathname"),
+    prevent_initial_call=True,
+)
+def resetar_modal_ao_mudar_pagina(pathname):
+    """
+    FECHA o modal quando muda de página.
+    Esta é a solução para o problema de modal abrir em todas as páginas.
+    """
+    # Sempre retorna False para garantir que o modal fica fechado
+    return False
+
+
+# ==========================================
+# CONTROLE DO MODAL - APENAS CLIQUES
+# ==========================================
+@app.callback(
+    Output("modal-novo-lancamento", "is_open", allow_duplicate=True),
     Input("btn-novo-lancamento", "n_clicks"),
     Input("btn-cancelar-modal", "n_clicks"),
-    Input("feedback-transacao", "children"),
+    Input("btn-salvar-lancamento", "n_clicks"),
     State("modal-novo-lancamento", "is_open"),
     prevent_initial_call=True,
 )
-def toggle_modal(open_click, close_click, feedback, is_open):
+def toggle_modal(novo_click, cancelar_click, salvar_click, is_open):
     """
-    Abre/fecha modal de novo lançamento.
+    Controla abertura/fechamento do modal APENAS por cliques reais.
     """
     ctx = callback_context
     
     if not ctx.triggered:
-        return no_update  # ← MUDANÇA: retorna no_update em vez de is_open
+        return is_open
     
     trigger_id = ctx.triggered[0]["prop_id"].split(".")[0]
     
-    # Abre modal
+    # Abre ao clicar em "Novo Lançamento"
     if trigger_id == "btn-novo-lancamento":
         return True
     
-    # Fecha modal ao cancelar
-    elif trigger_id == "btn-cancelar-modal":
+    # Fecha ao clicar em "Cancelar" ou "Salvar"
+    if trigger_id in ["btn-cancelar-modal", "btn-salvar-lancamento"]:
         return False
     
-    # Fecha modal ao salvar com sucesso
-    elif trigger_id == "feedback-transacao" and feedback:
-        # Só fecha se for sucesso (cor success)
-        if isinstance(feedback, dict):
-            props = feedback.get("props", {})
-            if props.get("color") == "success":
-                return False
-        return no_update  
-    
-    return no_update  
+    return is_open
 
 
 # ==========================================
 # CARREGA CATEGORIAS
 # ==========================================
-
-
 @app.callback(
     Output("select-categoria", "options"),
     Input("tipo-lancamento", "value"),
     Input("store-user-id", "data"),
+    prevent_initial_call=True,
 )
 def carregar_categorias_por_tipo(tipo, user_id):
     """
@@ -89,7 +95,7 @@ def carregar_categorias_por_tipo(tipo, user_id):
                 }
                 for cat in categories
             ]
-    
+        
     except Exception as e:
         app_logger.error(f"Erro ao carregar categorias: {e}")
         return []
@@ -98,11 +104,10 @@ def carregar_categorias_por_tipo(tipo, user_id):
 # ==========================================
 # CARREGA CONTAS
 # ==========================================
-
-
 @app.callback(
     Output("select-conta", "options"),
     Input("store-user-id", "data"),
+    prevent_initial_call=True,
 )
 def carregar_contas(user_id):
     """
@@ -121,17 +126,38 @@ def carregar_contas(user_id):
                 {"label": acc.name, "value": acc.id}
                 for acc in accounts
             ]
-    
+        
     except Exception as e:
         app_logger.error(f"Erro ao carregar contas: {e}")
         return []
 
 
 # ==========================================
+# LIMPAR FORMULÁRIO AO FECHAR MODAL
+# ==========================================
+@app.callback(
+    Output("input-valor", "value"),
+    Output("input-descricao", "value"),
+    Output("select-categoria", "value"),
+    Output("select-conta", "value"),
+    Output("data-lancamento", "date"),
+    Output("switch-pago", "value"),
+    Output("tipo-lancamento", "value"),
+    Input("modal-novo-lancamento", "is_open"),
+    prevent_initial_call=True,
+)
+def limpar_formulario(is_open):
+    """
+    Reseta formulário quando modal fecha.
+    """
+    if not is_open:
+        return "", "", None, None, date.today(), False, "EXPENSE"
+    return no_update, no_update, no_update, no_update, no_update, no_update, no_update
+
+
+# ==========================================
 # SALVAR TRANSAÇÃO
 # ==========================================
-
-
 @app.callback(
     Output("feedback-transacao", "children"),
     Output("store-reload-dashboard", "data"),
@@ -161,7 +187,7 @@ def salvar_transacao(
     Salva nova transação com validações.
     """
     try:
-        if not user_id:
+        if not user_id or not n_clicks:
             return no_update, no_update
         
         # Validações básicas
@@ -218,22 +244,22 @@ def salvar_transacao(
         with get_db_session() as db:
             finance_service = FinanceService(db)
             transaction = finance_service.create_transaction(user_id, data)
-            app_logger.info(f"Transação criada! ID: {transaction.id}")
+            app_logger.info(f"✅ Transação criada! ID: {transaction.id}")
         
         return dbc.Alert(
-            "Transação salva com sucesso!",
+            "✅ Transação salva com sucesso!",
             color="success",
             duration=3000,
             dismissable=True,
-        ), n_clicks  # ← Trigger reload
-    
+        ), n_clicks
+        
     except Exception as e:
-        app_logger.error(f"Erro ao salvar transação: {e}")
+        app_logger.error(f"❌ Erro ao salvar transação: {e}")
         import traceback
         traceback.print_exc()
         
         return dbc.Alert(
-            f"Erro: {str(e)}",
+            f"❌ Erro: {str(e)}",
             color="danger",
             duration=4000,
             dismissable=True,
