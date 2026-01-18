@@ -1,6 +1,8 @@
 """
 Callbacks para gerenciamento de transações.
-SOLUÇÃO FINAL: Reseta modal e n_clicks ao mudar de página.
+SOLUÇÃO FINAL: 
+1. Reseta modal ao mudar de página (URL).
+2. Controla abertura apenas por clique nos botões.
 """
 from dash import Input, Output, State, callback_context, no_update
 from datetime import date
@@ -14,7 +16,7 @@ from config.logging_config import app_logger
 from dash import dcc
 
 # ==========================================
-# RESETA MODAL AO MUDAR DE PÁGINA (CRÍTICO)
+# 1. SEGURANÇA: FECHA MODAL NA NAVEGAÇÃO
 # ==========================================
 @app.callback(
     Output("modal-novo-lancamento", "is_open"),
@@ -22,16 +24,11 @@ from dash import dcc
     prevent_initial_call=True,
 )
 def resetar_modal_ao_mudar_pagina(pathname):
-    """
-    FECHA o modal quando muda de página.
-    Esta é a solução para o problema de modal abrir em todas as páginas.
-    """
-    # Sempre retorna False para garantir que o modal fica fechado
+    # Força o fechamento sempre que a URL mudar
     return False
 
-
 # ==========================================
-# CONTROLE DO MODAL - APENAS CLIQUES
+# 2. CONTROLE DO MODAL (COM BLINDAGEM)
 # ==========================================
 @app.callback(
     Output("modal-novo-lancamento", "is_open", allow_duplicate=True),
@@ -41,22 +38,24 @@ def resetar_modal_ao_mudar_pagina(pathname):
     State("modal-novo-lancamento", "is_open"),
     prevent_initial_call=True,
 )
-def toggle_modal(novo_click, cancelar_click, salvar_click, is_open):
-    """
-    Controla abertura/fechamento do modal APENAS por cliques reais.
-    """
+def toggle_modal(n_novo, n_cancelar, n_salvar, is_open):
     ctx = callback_context
-    
+
+    # Se não houve gatilho real, não faz nada
     if not ctx.triggered:
-        return is_open
+        return no_update
     
     trigger_id = ctx.triggered[0]["prop_id"].split(".")[0]
     
-    # Abre ao clicar em "Novo Lançamento"
+    # --- AQUI ESTÁ A CORREÇÃO (BLINDAGEM) ---
+    # Se o gatilho for o botão "Novo", verificamos se ele tem cliques reais.
+    # Quando a página recarrega, o n_clicks pode ser 0 ou None.
     if trigger_id == "btn-novo-lancamento":
-        return True
-    
-    # Fecha ao clicar em "Cancelar" ou "Salvar"
+        if not n_novo or n_novo == 0:
+            return no_update # Ignora clique zero (inicialização do botão)
+        return True # Abre o modal
+
+    # Fecha ao clicar em Cancelar ou Salvar
     if trigger_id in ["btn-cancelar-modal", "btn-salvar-lancamento"]:
         return False
     
