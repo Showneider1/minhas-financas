@@ -7,16 +7,14 @@ from database.base import Base
 from database.mixins import TimestampMixin, SoftDeleteMixin
 import enum
 
-
 class AccountType(str, enum.Enum):
     """Tipos de conta."""
-    CHECKING = "checking"  # Conta corrente
-    SAVINGS = "savings"    # Poupança
-    INVESTMENT = "investment"  # Investimentos
-    CREDIT_CARD = "credit_card"  # Cartão de crédito
-    CASH = "cash"  # Dinheiro
-    OTHER = "other"  # Outras
-
+    CHECKING = "checking"      # Conta corrente
+    SAVINGS = "savings"        # Poupança
+    INVESTMENT = "investment"  # Corretora
+    CREDIT_CARD = "credit_card"# Cartão de crédito
+    CASH = "cash"              # Dinheiro
+    OTHER = "other"            # Outros
 
 class Account(Base, TimestampMixin, SoftDeleteMixin):
     """
@@ -34,14 +32,16 @@ class Account(Base, TimestampMixin, SoftDeleteMixin):
         default=AccountType.CHECKING, 
         nullable=False
     )
-    currency = Column(String(3), default="BRL", nullable=False)  # ISO 4217
+    currency = Column(String(3), default="BRL", nullable=False)
     
     # Saldo
     balance = Column(Float, default=0.0, nullable=False)
     initial_balance = Column(Float, default=0.0, nullable=False)
     
-    # Cor para UI
-    color = Column(String(20), default="#2ecc71", nullable=False)  # ← ADICIONAR
+    # UI e Configurações de Cartão
+    color = Column(String(20), default="#2ecc71", nullable=False)
+    closing_day = Column(Integer, nullable=True) # Dia fechamento fatura (ex: 25)
+    due_day = Column(Integer, nullable=True)     # Dia vencimento fatura (ex: 05)
     
     # Status
     is_active = Column(Boolean, default=True, nullable=False)
@@ -50,20 +50,6 @@ class Account(Base, TimestampMixin, SoftDeleteMixin):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     user = relationship("User", back_populates="accounts")
     transactions = relationship("Transaction", back_populates="account", lazy="dynamic")
-    
-    # Propriedade para compatibilidade com código antigo
-    @property
-    def current_balance(self):
-        """Alias para balance."""
-        return self.balance
-    
-    @current_balance.setter
-    def current_balance(self, value):
-        """Setter para balance."""
-        self.balance = value
-    
-    def __repr__(self):
-        return f"<Account(id={self.id}, name='{self.name}', balance={self.balance})>"
     
     def update_balance(self, amount: float):
         """Atualiza saldo da conta."""

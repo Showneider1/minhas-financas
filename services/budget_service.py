@@ -1,66 +1,111 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import func
-from datetime import datetime
+from sqlalchemy import and_, func
 from database.models.budget import Budget
-from database.models.transaction import Transaction
-from database.models.category import Category
-from schemas.budget_schema import BudgetCreate, BudgetResponse
+from typing import List, Optional
 
 class BudgetService:
-    def __init__(self, db: Session):
-        self.db = db
+    def __init__(self, db_session: Session):
+        self.db = db_session
 
-    def create_or_update_budget(self, user_id: int, budget_data: BudgetCreate):
-        """Cria ou atualiza uma meta para uma categoria."""
+    def save_budget(self, user_id: int, category_id: int, amount: float, month: int, year: int) -> Budget:
+        """
+        Cria ou Atualiza (Upsert) uma meta.
+        Se já existe meta para aquela categoria naquele mês, apenas atualiza o valor.
+        """
+        # 1. Busca meta existente
         existing_budget = self.db.query(Budget).filter(
             Budget.user_id == user_id,
-            Budget.category_id == budget_data.category_id
+            Budget.category_id == category_id,
+            Budget.month == month,
+            Budget.year == year
         ).first()
 
         if existing_budget:
-            existing_budget.amount = budget_data.amount
-            self.db.commit()
-            self.db.refresh(existing_budget)
-            return existing_budget
-        
-        new_budget = Budget(
-            user_id=user_id,
-            category_id=budget_data.category_id,
-            amount=budget_data.amount
-        )
-        self.db.add(new_budget)
-        self.db.commit()
-        self.db.refresh(new_budget)
-        return new_budget
+            # ATUALIZA
+            existing_budget.amount = amount
+            result = existing_budget
+        else:
+            # CRIA NOVA
+            new_budget = Budget(
+                user_id=user_id,
+                category_id=category_id,
+                amount=amount,
+                month=month,
+                year=year
+            )
+            self.db.add(new_budget)
+            result = new_budget
 
-    def get_user_budgets_status(self, user_id: int, month: int, year: int):
+        self.db.commit()
+        self.db.refresh(result)
+        return result
+
+    def get_budgets_by_period(self, user_id: int, month: int, year: int) -> List[Budget]:
         """
-        Retorna todas as metas do usuário com o status atual (gasto vs limite).
+        Retorna todas as metas definidas para um mês/ano específico.
         """
-        # 1. Buscar todas as metas do usuário
-        budgets = self.db.query(Budget).filter(Budget.user_id == user_id).all()
+        return self.db.query(Budget).filter(
+            Budget.user_id == user_id,
+            Budget.month == month,
+            Budget.year == year
+        ).all()
+
+    def get_budget_by_category(self, user_id: int, category_id: int, month: int, year: int) -> Optional[Budget]:
+        """
+        Retorna uma meta específica de uma categoria.
+        """
+        return self.db.query(Budget).filter(
+            Budget.user_id == user_id,
+            Budget.category_id == category_id,
+            Budget.month == month,
+            Budget.year == year
+        ).first()
+
+    def delete_budget(self, user_id: int, budget_id: int) -> bool:
+        """
+        Remove uma meta.
+        """
+        budget = self.db.query(Budget).filter(
+            Budget.id == budget_id,
+            Budget.user_id == user_id
+        ).first()
+
+        if budget:
+            self.db.delete(budget)
+            self.db.commit()
+            return True
+        return False
+
+    def copy_budgets_from_previous_month(self, user_id: int, target_month: int, target_year: int) -> int:
+        """
+        Recurso Inteligente: Copia todas as metas do mês anterior para o mês atual.
+        Retorna o número de metas copiadas.
+        Útil para não ter que cadastrar tudo de novo todo mês.
+        """
+        # 1. Calcular mês anterior
+        if target_month == 1:
+            source_month = 12
+            source_year = target_year - 1
+        else:
+            source_month = target_month - 1
+            source_year = target_year
+
+        # 2. Buscar metas do mês anterior
+        previous_budgets = self.get_budgets_by_period(user_id, source_month, source_year)
         
-        results = []
+        count = 0
+        for old_budget in previous_budgets:
+            # Verifica se já existe meta no mês novo para não sobrescrever
+            exists = self.get_budget_by_category(user_id, old_budget.category_id, target_month, target_year)
+            
+            if not exists:
+                self.save_budget(
+                    user_id=user_id,
+                    category_id=old_budget.category_id,
+                    amount=old_budget.amount,
+                    month=target_month,
+                    year=target_year
+                )
+                count += 1
         
-        for budget in budgets:
-            # 2. Calcular gasto total da categoria no mês atual
-            total_spent = self.db.query(func.sum(Transaction.base_amount)).filter(
-                Transaction.user_id == user_id,
-                Transaction.category_id == budget.category_id,
-                Transaction.transaction_type == "EXPENSE",
-                func.extract('month', Transaction.paid_date) == month,
-                func.extract('year', Transaction.paid_date) == year
-            ).scalar() or 0.0
-            
-            percentage = (total_spent / budget.amount) * 100 if budget.amount > 0 else 0
-            
-            results.append(BudgetResponse(
-                id=budget.id,
-                category_name=budget.category.name,
-                category_icon=budget.category.icon,
-                amount=budget.amount,
-                spent=total_spent,
-                percentage=min(percentage, 100) # Trava em 100% visualmente
-            ))
-            
-        return results
+        return count

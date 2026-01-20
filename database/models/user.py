@@ -6,7 +6,6 @@ from sqlalchemy.orm import relationship
 from datetime import datetime
 from database.base import Base
 
-
 class User(Base):
     """
     Modelo de Usuário.
@@ -17,9 +16,13 @@ class User(Base):
     name = Column(String(100), nullable=False)
     email = Column(String(100), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
+    
+    # Flags de sistema
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)
     is_deleted = Column(Boolean, default=False)
+    
+    # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     last_login = Column(DateTime, nullable=True)
@@ -28,3 +31,4 @@ class User(Base):
     accounts = relationship("Account", back_populates="user", cascade="all, delete-orphan")
     categories = relationship("Category", back_populates="user", cascade="all, delete-orphan")
     transactions = relationship("Transaction", back_populates="user", cascade="all, delete-orphan")
+    assets = relationship("Asset", back_populates="user", cascade="all, delete-orphan") # Novo

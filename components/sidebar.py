@@ -47,7 +47,7 @@ sidebar = html.Div(
             className="flex-column flex-grow-1",
         ),
         
-        # User Profile no rodapé da Sidebar
+        # User Profile no rodapé
         html.Div([
             html.Hr(),
             dbc.Row([
@@ -61,7 +61,7 @@ sidebar = html.Div(
                 ])
             ], className="align-items-center mb-2"),
             
-            # Botão de Novo Lançamento
+            # Botão Novo Lançamento
             dbc.Button(
                 [html.I(className="bi bi-plus-circle me-2"), "Novo Lançamento"],
                 color="primary",
@@ -69,7 +69,7 @@ sidebar = html.Div(
                 className="w-100 mb-2"
             ),
             
-            # Botão de Logout
+            # Botão Logout
             dbc.Button(
                 "Sair",
                 color="light",
@@ -83,17 +83,16 @@ sidebar = html.Div(
 )
 
 # ===============================
-# MODAL DE NOVO LANÇAMENTO (Global)
+# MODAL DE NOVO LANÇAMENTO (Atualizado)
 # ===============================
 modal_novo_lancamento = dbc.Modal(
     [
         dbc.ModalHeader(
-            # --- AQUI ESTAVA O ERRO: ADICIONEI O ID ABAIXO ---
             dbc.ModalTitle("Novo Lançamento", id="modal-header-title")
-            # -------------------------------------------------
         ),
         dbc.ModalBody(
             [
+                # Linha 1: Tipo e Valor
                 dbc.Row(
                     [
                         dbc.Col(
@@ -113,12 +112,12 @@ modal_novo_lancamento = dbc.Modal(
                         ),
                         dbc.Col(
                             [
-                                dbc.Label("Valor"),
+                                dbc.Label("Valor (R$)"),
                                 dbc.Input(
                                     id="input-valor", 
-                                    placeholder="R$ 0,00", 
+                                    placeholder="0,00", 
                                     type="text",
-                                    className="form-control-lg"
+                                    className="form-control-lg text-end"
                                 ),
                             ],
                             width=6,
@@ -126,18 +125,22 @@ modal_novo_lancamento = dbc.Modal(
                     ],
                     className="mb-3",
                 ),
+                
+                # Linha 2: Descrição
                 dbc.Row(
                     [
                         dbc.Col(
                             [
                                 dbc.Label("Descrição"),
-                                dbc.Input(id="input-descricao", placeholder="Ex: Mercado, Salário..."),
+                                dbc.Input(id="input-descricao", placeholder="Ex: Mercado, Assinatura..."),
                             ],
                             width=12,
                         ),
                     ],
                     className="mb-3",
                 ),
+                
+                # Linha 3: Categoria e Conta
                 dbc.Row(
                     [
                         dbc.Col(
@@ -149,7 +152,7 @@ modal_novo_lancamento = dbc.Modal(
                         ),
                         dbc.Col(
                             [
-                                dbc.Label("Conta"),
+                                dbc.Label("Conta / Cartão"),
                                 dbc.Select(id="select-conta", placeholder="Selecione..."),
                             ],
                             width=6,
@@ -157,13 +160,18 @@ modal_novo_lancamento = dbc.Modal(
                     ],
                     className="mb-3",
                 ),
+                
+                html.Hr(),
+                html.H6("Datas e Prazos", className="text-muted mb-3"),
+                
+                # Linha 4: Datas (Compra e Vencimento)
                 dbc.Row(
                     [
                         dbc.Col(
                             [
-                                dbc.Label("Data"),
+                                dbc.Label("Data Compra"),
                                 dcc.DatePickerSingle(
-                                    id="data-lancamento",
+                                    id="data-compra",
                                     display_format="DD/MM/YYYY",
                                     className="d-block",
                                     style={"width": "100%"}
@@ -173,20 +181,80 @@ modal_novo_lancamento = dbc.Modal(
                         ),
                         dbc.Col(
                             [
-                                dbc.Label("Status"),
-                                dbc.Switch(
-                                    id="switch-pago",
-                                    label="Pago / Recebido",
-                                    value=False,
-                                    className="fs-5"
+                                dbc.Label("Vencimento"),
+                                dcc.DatePickerSingle(
+                                    id="data-vencimento",
+                                    display_format="DD/MM/YYYY",
+                                    className="d-block",
+                                    style={"width": "100%"}
                                 ),
                             ],
                             width=6,
-                            className="d-flex align-items-end"
                         ),
                     ],
                     className="mb-3",
                 ),
+                
+                # Linha 5: Status de Pagamento
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                dbc.Label("Está Pago?"),
+                                dbc.Switch(
+                                    id="switch-pago",
+                                    label="Não / Sim",
+                                    value=True, # Default: Pago (dinheiro saiu na hora)
+                                    className="fs-5"
+                                ),
+                            ],
+                            width=6,
+                            className="d-flex align-items-center"
+                        ),
+                        dbc.Col(
+                            [
+                                dbc.Label("Data do Pagamento", id="label-data-pagamento"),
+                                dcc.DatePickerSingle(
+                                    id="data-pagamento",
+                                    display_format="DD/MM/YYYY",
+                                    className="d-block",
+                                    style={"width": "100%"},
+                                    disabled=False
+                                ),
+                            ],
+                            width=6,
+                        ),
+                    ],
+                    className="mb-3",
+                ),
+
+                html.Hr(),
+                
+                # Linha 6: Recorrência e Parcelas
+                dbc.Row([
+                    dbc.Col([
+                        dbc.Label("Recorrência / Parcelas"),
+                        dbc.Checklist(
+                            options=[
+                                {"label": "É Assinatura Fixa?", "value": "recorrente"},
+                            ],
+                            value=[],
+                            id="check-recorrencia",
+                            switch=True,
+                        ),
+                    ], width=4),
+                    
+                    dbc.Col([
+                        dbc.Label("Parcela Atual"),
+                        dbc.Input(id="input-parcela-atual", type="number", value=1, min=1),
+                    ], width=4),
+                    
+                    dbc.Col([
+                        dbc.Label("Total Parcelas"),
+                        dbc.Input(id="input-total-parcelas", type="number", value=1, min=1),
+                    ], width=4),
+                ], className="mb-3"),
+
                 html.Div(id="feedback-transacao"),
             ]
         ),
@@ -196,7 +264,7 @@ modal_novo_lancamento = dbc.Modal(
                     "Cancelar", id="btn-cancelar-modal", className="ms-auto", n_clicks=0
                 ),
                 dbc.Button(
-                    "Salvar", id="btn-salvar-lancamento", color="primary", n_clicks=0
+                    "Salvar Lançamento", id="btn-salvar-lancamento", color="primary", n_clicks=0
                 ),
             ]
         ),
