@@ -33,28 +33,42 @@ app = dash.Dash(
 server = app.server
 
 # ===============================
-# INICIALIZAÇÃO
+# INICIALIZAÇÃO CONTROLADA
 # ===============================
-app_logger.info(f"Inicializando {settings.APP_NAME} v{settings.APP_VERSION}")
-app_logger.info(f"Ambiente: {settings.ENVIRONMENT}")
-app_logger.info(f"Debug: {settings.DEBUG}")
+def initialize_application():
+    """
+    Executa rotinas de inicialização como criação de banco e seeds.
+    Deve ser idempotente.
+    """
+    app_logger.info(f"Inicializando {settings.APP_NAME} v{settings.APP_VERSION}")
+    app_logger.info(f"Ambiente: {settings.ENVIRONMENT} | Debug: {settings.DEBUG}")
 
-# Inicializa banco (apenas em desenvolvimento)
-if settings.ENVIRONMENT == "development":
-    try:
-        init_db()
-        app_logger.info("Banco de dados inicializado")
-        
-        # Seed de categorias padrão
-        from database.connection import get_db_session
-        from services.category_service import CategoryService
-        
-        with get_db_session() as db:
-            category_service = CategoryService(db)
-            category_service.seed_default_categories()
-            app_logger.info("Categorias padrão criadas")
-    
-    except Exception as e:
-        app_logger.error(f"Erro ao inicializar banco: {e}")
+    # Inicializa banco (apenas em desenvolvimento ou primeira execução)
+    if settings.ENVIRONMENT == "development":
+        try:
+            init_db()
+            
+            # Seed de categorias padrão
+            # Import tardio para evitar ciclos se houver dependências
+            from database.connection import get_db_session
+            from services.category_service import CategoryService
+            
+            with get_db_session() as db:
+                try:
+                    category_service = CategoryService(db)
+                    category_service.seed_default_categories()
+                    app_logger.info("Categorias verificadas/criadas")
+                except Exception as e:
+                     app_logger.error(f"Erro ao executar seed de categorias: {e}")
 
-app_logger.info("Aplicação iniciada com sucesso")
+        except Exception as e:
+            app_logger.error(f"Erro crítico na inicialização do ambiente de desenvolvimento: {e}")
+
+# Executa inicialização apenas se for o main ou se invocado explicitamente
+if __name__ == "__main__" or settings.ENVIRONMENT == "development":
+    initialize_application()
+else:
+    # Em produção (uWSGI/Gunicorn), apenas logamos que o app foi carregado
+    app_logger.info("Aplicação carregada (Modo Produção)")
+
+app_logger.info("App Context pronto.")

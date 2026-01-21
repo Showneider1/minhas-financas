@@ -8,14 +8,17 @@ from config.settings import settings
 from typing import Generator
 import logging
 
-logger = logging.getLogger(__name__)
+# Configuração de logger específico para o módulo de banco de dados
+logger = logging.getLogger("database.connection")
 
 # Cria engine
-print(f"🗄️  DATABASE_URL: {settings.DATABASE_URL}")
+logger.info(f"🗄️  Inicializando conexão com DB: {settings.DATABASE_URL}")
+
 engine = create_engine(
     settings.DATABASE_URL,
     connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {},
-    echo=False,
+    echo=settings.DEBUG and "sqlite" not in settings.DATABASE_URL, # Echo apenas se debug e não sqlite (muito verboso)
+    pool_pre_ping=True # Garante reconexão automática se a conexão cair
 )
 
 # Session factory
@@ -26,34 +29,50 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 def get_db_session() -> Generator[Session, None, None]:
     """
     Context manager para sessões do banco.
+    Garante commit em caso de sucesso e rollback em caso de erro.
+    
+    Uso:
+        with get_db_session() as db:
+            repo = UserRepo(db)
+            repo.create(...)
     """
     db = SessionLocal()
-    # print("🔵 Sessão do banco ABERTA") # Comentei para limpar o log
+    # logger.debug("🔵 Sessão do banco ABERTA") # Debug level para não poluir prod
     try:
         yield db
-        # print("🟢 Executando COMMIT...")
+        # logger.debug("🟢 Executando COMMIT...")
         db.commit()
-        # print("✅ COMMIT realizado com sucesso!")
     except Exception as e:
-        print(f"🔴 Erro na sessão - executando ROLLBACK: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"🔴 Erro na sessão - executando ROLLBACK. Erro: {str(e)}", exc_info=True)
         db.rollback()
         raise e
     finally:
-        # print("🔵 Fechando sessão do banco")
+        # logger.debug("🔵 Fechando sessão do banco")
         db.close()
 
 
 def init_db():
     """
     Inicializa o banco de dados criando todas as tabelas.
+    Importações locais para evitar ciclos, mas com tratamento de erro.
     """
-    from database.base import Base
-    import database.models.user
-    import database.models.account
-    import database.models.category
-    import database.models.transaction
-    import database.models.budget  # <--- ADICIONE ESTA LINHA AQUI
-    
-    Base.metadata.create_all(bind=engine)
+    try:
+        # Importar modelos aqui para garantir que o SQLAlchemy os conheça antes do create_all
+        from database.base import Base
+        # Imports explícitos para garantir o registro no Metadata
+        import database.models.user
+        import database.models.account
+        import database.models.category
+        import database.models.transaction
+        import database.models.budget
+        
+        logger.info("Recriando/Verificando tabelas do banco de dados...")
+        Base.metadata.create_all(bind=engine)
+        logger.info("✅ Tabelas verificadas/criadas com sucesso.")
+        
+    except ImportError as e:
+        logger.critical(f"Erro fatal ao importar modelos para inicialização do DB: {e}")
+        raise
+    except Exception as e:
+        logger.critical(f"Erro fatal ao inicializar o banco de dados: {e}")
+        raise
