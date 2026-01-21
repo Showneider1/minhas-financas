@@ -1,35 +1,34 @@
-"""
-Schemas de validação para contas.
-"""
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional
+from datetime import datetime
 from database.models.account import AccountType
 
-
-class AccountCreate(BaseModel):
-    """Schema para criação de conta."""
-    name: str = Field(..., min_length=1, max_length=100)
-    account_type: AccountType
-    initial_balance: float = Field(default=0.0)
-    color: str = Field(default="#2ecc71")  # ← ADICIONAR ESTA LINHA
-
-
-class AccountUpdate(BaseModel):
-    """Schema para atualização de conta."""
-    name: Optional[str] = Field(None, min_length=1, max_length=100)
-    account_type: Optional[AccountType] = None
-    color: Optional[str] = None  # ← ADICIONAR ESTA LINHA
-
-
-class AccountResponse(BaseModel):
-    """Schema de resposta de conta."""
-    id: int
+class AccountBase(BaseModel):
     name: str
     account_type: AccountType
-    initial_balance: float
-    current_balance: float
-    color: str
-    user_id: int
+    initial_balance: float = 0.0
+    color: Optional[str] = "#2ecc71"
+    icon: Optional[str] = "bi-bank"
     
+    # Novos campos opcionais
+    credit_limit: Optional[float] = 0.0
+    closing_day: Optional[int] = None
+    due_day: Optional[int] = None
+
+class AccountCreate(AccountBase):
+    pass
+
+class AccountUpdate(AccountBase):
+    name: Optional[str] = None
+    account_type: Optional[AccountType] = None
+
+class AccountResponse(AccountBase):
+    id: int
+    user_id: int
+    balance: float
+    is_active: bool
+    created_at: datetime
+    updated_at: Optional[datetime]
+
     class Config:
         from_attributes = True

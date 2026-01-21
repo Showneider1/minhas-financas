@@ -7,14 +7,16 @@ from database.base import Base
 from database.mixins import TimestampMixin, SoftDeleteMixin
 import enum
 
+
 class AccountType(str, enum.Enum):
     """Tipos de conta."""
     CHECKING = "checking"      # Conta corrente
     SAVINGS = "savings"        # Poupança
-    INVESTMENT = "investment"  # Corretora
-    CREDIT_CARD = "credit_card"# Cartão de crédito
+    INVESTMENT = "investment"  # Investimentos
+    CREDIT_CARD = "credit_card" # Cartão de crédito
     CASH = "cash"              # Dinheiro
-    OTHER = "other"            # Outros
+    OTHER = "other"            # Outras
+
 
 class Account(Base, TimestampMixin, SoftDeleteMixin):
     """
@@ -34,14 +36,18 @@ class Account(Base, TimestampMixin, SoftDeleteMixin):
     )
     currency = Column(String(3), default="BRL", nullable=False)
     
-    # Saldo
+    # Saldo e Valores
     balance = Column(Float, default=0.0, nullable=False)
     initial_balance = Column(Float, default=0.0, nullable=False)
     
-    # UI e Configurações de Cartão
+    # CAMPOS ESPECÍFICOS PARA CARTÃO DE CRÉDITO (Novos)
+    credit_limit = Column(Float, default=0.0, nullable=True)     # Limite do cartão
+    closing_day = Column(Integer, nullable=True)                 # Dia de fechamento da fatura (1-31)
+    due_day = Column(Integer, nullable=True)                     # Dia de vencimento da fatura (1-31)
+    
+    # Visual
     color = Column(String(20), default="#2ecc71", nullable=False)
-    closing_day = Column(Integer, nullable=True) # Dia fechamento fatura (ex: 25)
-    due_day = Column(Integer, nullable=True)     # Dia vencimento fatura (ex: 05)
+    icon = Column(String(50), default="bi-bank", nullable=True)  # Ícone do bootstrap
     
     # Status
     is_active = Column(Boolean, default=True, nullable=False)
@@ -51,6 +57,5 @@ class Account(Base, TimestampMixin, SoftDeleteMixin):
     user = relationship("User", back_populates="accounts")
     transactions = relationship("Transaction", back_populates="account", lazy="dynamic")
     
-    def update_balance(self, amount: float):
-        """Atualiza saldo da conta."""
-        self.balance += amount
+    def __repr__(self):
+        return f"<Account(id={self.id}, name='{self.name}', type='{self.account_type}')>"

@@ -1,224 +1,141 @@
-from dash import Input, Output, State, callback_context, no_update
-from dash import html
+"""
+Callbacks OTIMIZADOS da página de dashboard.
+"""
+from dash import Input, Output, State, html
 import dash_bootstrap_components as dbc
-import plotly.express as px
 import plotly.graph_objects as go
-from datetime import date
-import pandas as pd
-
+from datetime import datetime, date
 from app import app
 from database.connection import get_db_session
-from services.budget_service import BudgetService
-from services.category_service import CategoryService
-from database.models.category import TransactionType, Category
-from database.models.transaction import Transaction, TransactionStatus
-from sqlalchemy import func, extract
+from services.dashboard_service import DashboardService
+from database.models.category import TransactionType
+from config.logging_config import app_logger
 
 # ==========================================
-# 1. ORQUESTRADOR DO DASHBOARD (ATUALIZA TUDO)
+# ATUALIZAÇÃO GERAL (KPIS)
 # ==========================================
 @app.callback(
     Output("kpi-saldo", "children"),
     Output("kpi-receita", "children"),
     Output("kpi-despesa", "children"),
+    Output("kpi-receita-info", "children"),
+    Output("kpi-despesa-info", "children"),
+    Input("dashboard-periodo", "start_date"),
+    Input("dashboard-periodo", "end_date"),
+    Input("store-reload-dashboard", "data"),
+    Input("btn-update-dashboard", "n_clicks"),
+    State("store-user-id", "data"),
+)
+def update_kpis(start_date, end_date, _, __, user_id):
+    if not user_id:
+        return "R$ 0,00", "R$ 0,00", "R$ 0,00", "-", "-"
+
+    try:
+        dt_start = datetime.fromisoformat(start_date).date() if start_date else date.today().replace(day=1)
+        dt_end = datetime.fromisoformat(end_date).date() if end_date else date.today()
+    except:
+        dt_start = date.today().replace(day=1)
+        dt_end = date.today()
+
+    try:
+        with get_db_session() as db:
+            service = DashboardService(db)
+            data = service.get_overview(user_id, dt_start, dt_end)
+            
+            saldo_str = f"R$ {data['saldo']['contas']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            
+            receita_val = data['receitas']['pagas']
+            receita_str = f"R$ {receita_val:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            receita_info = f"Pendentes: R$ {data['receitas']['pendentes']:,.2f}"
+            
+            despesa_val = data['despesas']['pagas']
+            despesa_str = f"R$ {despesa_val:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            despesa_info = f"Pendentes: R$ {data['despesas']['pendentes']:,.2f}"
+            
+            return saldo_str, receita_str, despesa_str, receita_info, despesa_info
+
+    except Exception as e:
+        app_logger.error(f"Erro ao atualizar KPIs: {e}")
+        return "Erro", "Erro", "Erro", "-", "-"
+
+# ==========================================
+# GRÁFICOS E TABELA
+# ==========================================
+@app.callback(
     Output("grafico-fluxo-caixa", "figure"),
     Output("grafico-categorias", "figure"),
-    Output("container-budgets", "children"), # Barra de progresso das metas
-    
+    Output("tabela-proximos-vencimentos", "children"),
     Input("dashboard-periodo", "start_date"),
     Input("dashboard-periodo", "end_date"),
     Input("store-reload-dashboard", "data"),
     State("store-user-id", "data"),
 )
-def atualizar_dashboard(start_date, end_date, reload, user_id):
-    if not user_id: 
-        return "R$ 0,00", "R$ 0,00", "R$ 0,00", go.Figure(), go.Figure(), []
-
-    # 1. Tratamento de Datas
-    if not start_date: start_date = date.today().replace(day=1).isoformat()
-    if not end_date: end_date = date.today().isoformat()
-    
-    d_inicio = date.fromisoformat(start_date)
-    d_fim = date.fromisoformat(end_date)
-
-    with get_db_session() as db:
-        # ==========================================
-        # BUSCA DADOS (Query Otimizada em DataFrame)
-        # ==========================================
-        # Trazemos tudo de uma vez para não ficar indo no banco 5 vezes
-        query = db.query(Transaction).filter(
-            Transaction.user_id == user_id,
-            Transaction.paid_date >= d_inicio,
-            Transaction.paid_date <= d_fim,
-            Transaction.status == TransactionStatus.PAID # Só considera o que foi PAGO
-        )
-        df = pd.read_sql(query.statement, db.bind)
-
-        # ==========================
-        # A. KPIs (Saldo, Receita, Despesa)
-        # ==========================
-        val_receita = df[df["transaction_type"] == TransactionType.INCOME.value]["base_amount"].sum() if not df.empty else 0.0
-        val_despesa = df[df["transaction_type"] == TransactionType.EXPENSE.value]["base_amount"].sum() if not df.empty else 0.0
-        val_saldo = val_receita - val_despesa
-
-        kpi_saldo = f"R$ {val_saldo:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-        kpi_receita = f"R$ {val_receita:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-        kpi_despesa = f"R$ {val_despesa:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
-        # ==========================
-        # B. GRÁFICO FLUXO (Diário)
-        # ==========================
-        if not df.empty:
-            df_fluxo = df.groupby("paid_date")[["base_amount"]].sum().reset_index()
-            fig_fluxo = px.bar(df_fluxo, x="paid_date", y="base_amount", title="Movimentação Diária")
-            fig_fluxo.update_layout(margin=dict(l=0, r=0, t=30, b=0), height=300, template="plotly_white")
-        else:
-            fig_fluxo = go.Figure().add_annotation(text="Sem dados no período", showarrow=False)
-
-        # ==========================
-        # C. GRÁFICO CATEGORIAS (Despesas)
-        # ==========================
-        if not df.empty:
-            # Filtra só despesas
-            df_desp = df[df["transaction_type"] == TransactionType.EXPENSE.value]
-            
-            if not df_desp.empty:
-                # Agrupa por Categoria ID
-                df_cat_group = df_desp.groupby("category_id")["base_amount"].sum().reset_index()
-                
-                # Busca nomes das categorias no banco
-                cat_ids = df_cat_group["category_id"].unique().tolist()
-                cats_db = db.query(Category).filter(Category.id.in_(cat_ids)).all()
-                cat_map = {c.id: c.name for c in cats_db}
-                
-                df_cat_group["nome"] = df_cat_group["category_id"].map(cat_map)
-                
-                fig_pizza = px.pie(df_cat_group, values="base_amount", names="nome", hole=0.4)
-                fig_pizza.update_layout(margin=dict(l=0, r=0, t=30, b=0), height=300, template="plotly_white")
-            else:
-                fig_pizza = go.Figure().add_annotation(text="Sem despesas", showarrow=False)
-        else:
-            fig_pizza = go.Figure().add_annotation(text="Sem dados", showarrow=False)
-
-        # ==========================
-        # D. PROGRESSO DAS METAS (Budgets)
-        # ==========================
-        # Usamos o mês da data de INÍCIO do filtro para saber qual meta carregar
-        mes_ref = d_inicio.month
-        ano_ref = d_inicio.year
-        
-        budget_service = BudgetService(db)
-        budgets = budget_service.get_budgets_by_period(user_id, mes_ref, ano_ref)
-        
-        progress_bars = []
-        if not budgets:
-            progress_bars.append(html.P(f"Nenhuma meta definida para {mes_ref}/{ano_ref}.", className="text-muted small"))
-        else:
-            for budget in budgets:
-                # Quanto gastou nesta categoria neste mês? (Query direta para precisão)
-                gasto_real = db.query(func.sum(Transaction.base_amount)).filter(
-                    Transaction.user_id == user_id,
-                    Transaction.category_id == budget.category_id,
-                    Transaction.transaction_type == TransactionType.EXPENSE,
-                    Transaction.status == TransactionStatus.PAID,
-                    extract('month', Transaction.paid_date) == mes_ref,
-                    extract('year', Transaction.paid_date) == ano_ref
-                ).scalar() or 0.0
-                
-                pct = (gasto_real / budget.amount) * 100 if budget.amount > 0 else 0
-                
-                # Cores dinâmicas
-                if pct < 80: cor = "success"     # Verde (Tranquilo)
-                elif pct < 100: cor = "warning"  # Amarelo (Atenção)
-                else: cor = "danger"             # Vermelho (Estourou)
-                
-                # Nome da categoria (busca do objeto ou query)
-                nome_cat = budget.category.name if budget.category else "Categoria"
-                icon_cat = budget.category.icon if budget.category and budget.category.icon else ""
-
-                progress_bars.append(html.Div([
-                    html.Div([
-                        html.Span(f"{icon_cat} {nome_cat}", className="fw-bold"),
-                        html.Span(f"R$ {gasto_real:,.0f} / {budget.amount:,.0f}", className="float-end small")
-                    ]),
-                    dbc.Progress(value=pct, color=cor, className="mb-2", style={"height": "10px"}),
-                ]))
-
-        return kpi_saldo, kpi_receita, kpi_despesa, fig_fluxo, fig_pizza, progress_bars
-
-# ==========================================
-# 2. MODAL DE METAS (ABRIR/FECHAR)
-# ==========================================
-@app.callback(
-    Output("modal-budget", "is_open"),
-    Output("select-budget-category", "options"),
-    Input("btn-open-budget", "n_clicks"),
-    Input("btn-close-budget", "n_clicks"),
-    State("modal-budget", "is_open"),
-    State("store-user-id", "data"),
-    prevent_initial_call=True
-)
-def toggle_budget_modal(n_open, n_close, is_open, user_id):
-    ctx = callback_context
-    if not ctx.triggered: return no_update
-    
-    trigger_id = ctx.triggered[0]["prop_id"].split(".")[0]
-
-    # Abrir: Carrega categorias
-    if trigger_id == "btn-open-budget":
-        if not user_id: return no_update, []
-        try:
-            with get_db_session() as db:
-                cat_service = CategoryService(db)
-                cats = cat_service.get_available_categories(user_id, TransactionType.EXPENSE)
-                options = [{"label": f"{c.icon or ''} {c.name}", "value": c.id} for c in cats]
-            return True, options
-        except Exception:
-            return True, []
-
-    # Fechar
-    return False, no_update
-
-# ==========================================
-# 3. SALVAR META
-# ==========================================
-@app.callback(
-    Output("budget-feedback", "children"),
-    Output("store-reload-dashboard", "data", allow_duplicate=True),
-    Input("btn-save-budget", "n_clicks"),
-    State("select-budget-category", "value"),
-    State("input-budget-amount", "value"),
-    State("dashboard-periodo", "start_date"), # Data referência para o mês da meta
-    State("store-user-id", "data"),
-    prevent_initial_call=True
-)
-def salvar_meta(n_clicks, category_id, amount, start_date, user_id):
-    if not n_clicks: return no_update
-    
-    if not category_id or not amount:
-        return dbc.Alert("Preencha categoria e valor!", color="warning"), no_update
+def update_charts_and_table(start_date, end_date, _, user_id):
+    if not user_id:
+        return go.Figure(), go.Figure(), html.P("Sem dados")
 
     try:
-        # Define Mês/Ano com base no filtro do Dashboard
-        if start_date:
-            data_ref = date.fromisoformat(start_date)
-        else:
-            data_ref = date.today()
-            
-        mes = data_ref.month
-        ano = data_ref.year
+        dt_start = datetime.fromisoformat(start_date).date() if start_date else date.today().replace(day=1)
+        dt_end = datetime.fromisoformat(end_date).date() if end_date else date.today()
+    except:
+        dt_start = date.today().replace(day=1)
+        dt_end = date.today()
 
+    fig1 = go.Figure()
+    fig2 = go.Figure()
+    table = html.Div()
+
+    try:
         with get_db_session() as db:
-            service = BudgetService(db)
-            service.save_budget(
-                user_id=user_id,
-                category_id=int(category_id),
-                amount=float(amount),
-                month=mes,
-                year=ano
-            )
+            service = DashboardService(db)
             
-        return dbc.Alert(f"✅ Meta salva para {mes}/{ano}!", color="success", duration=4000), True
+            # 1. Gráfico de Evolução
+            evolution = service.get_monthly_evolution(user_id, months=6)
+            months = [item['month'] for item in evolution['receitas']]
+            receitas = [item['value'] for item in evolution['receitas']]
+            despesas = [item['value'] for item in evolution['despesas']]
+            
+            fig1.add_trace(go.Bar(x=months, y=receitas, name='Receitas', marker_color='#2ecc71'))
+            fig1.add_trace(go.Bar(x=months, y=despesas, name='Despesas', marker_color='#e74c3c'))
+            fig1.update_layout(barmode='group', margin=dict(l=20, r=20, t=30, b=20), legend=dict(orientation="h"), template="plotly_white")
+
+            # 2. Gráfico de Categorias
+            cats = service.get_category_breakdown(user_id, TransactionType.EXPENSE, dt_start, dt_end)
+            if cats:
+                labels = [f"{c['icon'] or ''} {c['name']}" for c in cats]
+                values = [c['total'] for c in cats]
+                fig2.add_trace(go.Pie(labels=labels, values=values, hole=.5))
+                fig2.update_layout(margin=dict(l=20, r=20, t=30, b=20), showlegend=False, template="plotly_white")
+            else:
+                fig2.add_annotation(text="Sem despesas no período", showarrow=False)
+
+            # 3. Tabela de Próximos Vencimentos
+            upcoming = service.get_upcoming_expenses(user_id, limit=5)
+            
+            if not upcoming:
+                table = html.Div([
+                    html.I(className="bi bi-check-circle fs-1 text-success mb-2"),
+                    html.P("Tudo em dia!", className="text-muted")
+                ], className="text-center py-4")
+            else:
+                rows = []
+                for t in upcoming:
+                    val_fmt = f"R$ {t.base_amount:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                    date_fmt = t.due_date.strftime("%d/%m")
+                    cat_icon = t.category.icon if t.category else "📝"
+                    
+                    rows.append(html.Tr([
+                        html.Td(html.Span(date_fmt, className="badge bg-light text-dark border")),
+                        html.Td([
+                            html.Div(t.description, className="fw-bold text-truncate", style={"maxWidth": "150px"}),
+                            html.Small(f"{cat_icon} {t.category.name if t.category else 'Geral'}", className="text-muted")
+                        ]),
+                        html.Td(val_fmt, className="text-end fw-bold text-danger"),
+                    ]))
+                
+                table = dbc.Table([html.Tbody(rows)], borderless=True, hover=True, responsive=True, className="align-middle mb-0")
 
     except Exception as e:
-        return dbc.Alert(f"Erro: {str(e)}", color="danger"), no_update
+        app_logger.error(f"Erro nos gráficos/tabela: {e}")
+
+    return fig1, fig2, table

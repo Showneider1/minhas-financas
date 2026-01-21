@@ -1,19 +1,18 @@
 """
-Repository para operações com transações.
+Repository robusto para operações com transações.
 """
 from typing import List, Optional, Tuple
 from datetime import date
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func, and_, or_, desc
+from sqlalchemy import func, and_, or_, desc, asc
 from database.models.transaction import Transaction, TransactionStatus
 from database.models.category import TransactionType, Category
-from database.models.account import Account
 from database.repositories.base_repo import BaseRepository
-
 
 class TransactionRepository(BaseRepository[Transaction]):
     """
-    Repository de transações com queries otimizadas.
+    Repository de transações.
+    Gerencia CRUD e regras de negócio de persistência.
     """
     
     def __init__(self, db: Session):
@@ -36,19 +35,13 @@ class TransactionRepository(BaseRepository[Transaction]):
         is_recurring: bool = False,
     ) -> Transaction:
         """
-        Cria nova transação.
-        
-        Args:
-            Vários parâmetros da transação
-        
-        Returns:
-            Transaction criada
+        Cria uma transação calculando o valor final (amount) automaticamente.
         """
-        # Calcula valor final
+        # Regra de Negócio: O valor final é a base + juros - descontos
         amount = base_amount + interest - discount - cashback
         
-        # Define status
-        status = TransactionStatus.PAID if paid_date else TransactionStatus.PENDING
+        # Nota: O campo 'status' é uma property no Model, não salvamos no banco.
+        # O banco salva apenas 'paid_date'.
         
         return self.create(
             user_id=user_id,
@@ -62,37 +55,39 @@ class TransactionRepository(BaseRepository[Transaction]):
             discount=discount,
             cashback=cashback,
             transaction_type=transaction_type,
-            status=status,
             due_date=due_date,
             paid_date=paid_date,
             is_recurring=is_recurring,
         )
-    
+
     def get_with_relations(self, transaction_id: int) -> Optional[Transaction]:
-        """
-        Busca transação com relacionamentos carregados.
-        
-        Args:
-            transaction_id: ID da transação
-        
-        Returns:
-            Transaction com category e account
-        """
+        """Busca transação com Account e Category já carregados (Eager Loading)."""
         return self.db.query(Transaction).options(
             joinedload(Transaction.category),
             joinedload(Transaction.account),
         ).filter(
-            Transaction.id == transaction_id,
-            Transaction.is_deleted == False,
+            Transaction.id == transaction_id
         ).first()
-    
+
+    def mark_as_paid(self, transaction_id: int, paid_date: Optional[date] = None) -> bool:
+        """
+        Marca uma transação como paga. Se nenhuma data for fornecida, usa hoje.
+        """
+        transaction = self.get_by_id(transaction_id)
+        if not transaction:
+            return False
+        
+        transaction.paid_date = paid_date or date.today()
+        self.db.flush() # Persiste a mudança na sessão atual
+        return True
+
     def filter_transactions(
         self,
         user_id: int,
         start_date: Optional[date] = None,
         end_date: Optional[date] = None,
         transaction_type: Optional[TransactionType] = None,
-        status: Optional[TransactionStatus] = None,
+        status: Optional[str] = None, # Recebe 'PAID', 'PENDING' ou None
         category_ids: Optional[List[int]] = None,
         account_ids: Optional[List[int]] = None,
         min_amount: Optional[float] = None,
@@ -101,56 +96,54 @@ class TransactionRepository(BaseRepository[Transaction]):
         is_recurring: Optional[bool] = None,
         page: int = 1,
         page_size: int = 50,
-        sort_by: str = "due_date",
-        sort_desc: bool = True,
     ) -> Tuple[List[Transaction], int]:
         """
-        Filtra transações com paginação.
-        
-        Returns:
-            Tupla (lista_transacoes, total_count)
+        Motor de busca principal para listagens (Extrato, Relatórios).
+        Substitui get_by_category e outros filtros isolados.
         """
         query = self.db.query(Transaction).options(
             joinedload(Transaction.category),
             joinedload(Transaction.account),
-        ).filter(
-            Transaction.user_id == user_id,
-            Transaction.is_deleted == False,
-        )
+        ).filter(Transaction.user_id == user_id)
         
-        # Filtros de data
-        if start_date:
-            query = query.filter(Transaction.due_date >= start_date)
-        if end_date:
-            query = query.filter(Transaction.due_date <= end_date)
+        # 1. Filtro de Data Híbrido (Inteligente)
+        if start_date and end_date:
+            # Se o usuário quer ver os PAGOS, filtramos pela data de PAGAMENTO
+            if status == "PAID":
+                query = query.filter(Transaction.paid_date >= start_date, Transaction.paid_date <= end_date)
+            # Se quer ver PENDENTES ou GERAL, filtramos pelo VENCIMENTO
+            else:
+                query = query.filter(Transaction.due_date >= start_date, Transaction.due_date <= end_date)
         
-        # Filtro de tipo
+        # 2. Filtros Diretos
         if transaction_type:
             query = query.filter(Transaction.transaction_type == transaction_type)
         
-        # Filtro de status
-        if status:
-            query = query.filter(Transaction.status == status)
-        
-        # Filtro de categorias
         if category_ids:
             query = query.filter(Transaction.category_id.in_(category_ids))
-        
-        # Filtro de contas
+            
         if account_ids:
             query = query.filter(Transaction.account_id.in_(account_ids))
-        
-        # Filtro de valor
+
+        # 3. Filtros de Valor (Restaurados do original)
         if min_amount is not None:
             query = query.filter(Transaction.amount >= min_amount)
         if max_amount is not None:
             query = query.filter(Transaction.amount <= max_amount)
-        
-        # Filtro de recorrência
+
+        # 4. Filtro de Recorrência (Restaurado)
         if is_recurring is not None:
             query = query.filter(Transaction.is_recurring == is_recurring)
         
-        # Busca textual
+        # 5. Correção do Bug de Status (SQLAlchemy não filtra property)
+        if status:
+            s_val = status.value if hasattr(status, 'value') else status
+            if s_val == "PAID":
+                query = query.filter(Transaction.paid_date.isnot(None))
+            elif s_val == "PENDING":
+                query = query.filter(Transaction.paid_date.is_(None))
+            
+        # 6. Busca Textual
         if search:
             search_term = f"%{search}%"
             query = query.filter(
@@ -160,179 +153,82 @@ class TransactionRepository(BaseRepository[Transaction]):
                 )
             )
         
-        # Total antes da paginação
+        # Paginação e Ordenação
         total = query.count()
+        query = query.order_by(desc(Transaction.due_date))
         
-        # Ordenação
-        order_field = getattr(Transaction, sort_by, Transaction.due_date)
-        query = query.order_by(desc(order_field) if sort_desc else order_field)
+        if page_size:
+            offset = (page - 1) * page_size
+            query = query.offset(offset).limit(page_size)
+            
+        return query.all(), total
+
+    # Wrapper simplificado para compatibilidade com callback de Extrato
+    def get_filtered(self, user_id, start_date, end_date, account_id, category_id, status, type_):
+        acc_ids = [account_id] if account_id else None
+        cat_ids = [category_id] if category_id else None
         
-        # Paginação
-        offset = (page - 1) * page_size
-        transactions = query.offset(offset).limit(page_size).all()
-        
-        return transactions, total
-    
-    def sum_by_type(
-        self,
-        user_id: int,
-        transaction_type: TransactionType,
-        start_date: Optional[date] = None,
-        end_date: Optional[date] = None,
-        status: Optional[TransactionStatus] = None,
-    ) -> float:
-        """
-        Soma valores por tipo de transação.
-        
-        Args:
-            user_id: ID do usuário
-            transaction_type: INCOME ou EXPENSE
-            start_date: Data inicial
-            end_date: Data final
-            status: Filtrar por status
-        
-        Returns:
-            Soma total
-        """
+        txs, _ = self.filter_transactions(
+            user_id=user_id,
+            start_date=start_date,
+            end_date=end_date,
+            account_ids=acc_ids,
+            category_ids=cat_ids,
+            status=status,
+            transaction_type=type_,
+            page_size=1000 # Limite alto para extrato contínuo
+        )
+        return txs
+
+    def sum_by_type(self, user_id, transaction_type, start_date, end_date, status):
+        """Calcula totais para KPIs."""
         query = self.db.query(func.sum(Transaction.amount)).filter(
             Transaction.user_id == user_id,
-            Transaction.transaction_type == transaction_type,
-            Transaction.is_deleted == False,
+            Transaction.transaction_type == transaction_type
         )
         
-        if start_date:
-            query = query.filter(Transaction.due_date >= start_date)
-        if end_date:
-            query = query.filter(Transaction.due_date <= end_date)
-        if status:
-            query = query.filter(Transaction.status == status)
+        is_paid = (status == TransactionStatus.PAID or status == "PAID")
         
-        result = query.scalar()
-        return result or 0.0
-    
-    def get_by_category(
-        self,
-        user_id: int,
-        category_id: int,
-        start_date: Optional[date] = None,
-        end_date: Optional[date] = None,
-    ) -> List[Transaction]:
-        """
-        Lista transações de uma categoria.
-        
-        Args:
-            user_id: ID do usuário
-            category_id: ID da categoria
-            start_date: Data inicial
-            end_date: Data final
-        
-        Returns:
-            Lista de transações
-        """
-        query = self.db.query(Transaction).filter(
-            Transaction.user_id == user_id,
-            Transaction.category_id == category_id,
-            Transaction.is_deleted == False,
-        )
-        
-        if start_date:
-            query = query.filter(Transaction.due_date >= start_date)
-        if end_date:
-            query = query.filter(Transaction.due_date <= end_date)
-        
-        return query.order_by(desc(Transaction.due_date)).all()
-    
+        if is_paid:
+            query = query.filter(
+                Transaction.paid_date.isnot(None),
+                Transaction.paid_date >= start_date,
+                Transaction.paid_date <= end_date
+            )
+        else:
+            query = query.filter(
+                Transaction.paid_date.is_(None),
+                Transaction.due_date >= start_date,
+                Transaction.due_date <= end_date
+            )
+            
+        return query.scalar() or 0.0
+
     def get_overdue(self, user_id: int) -> List[Transaction]:
-        """
-        Lista transações atrasadas.
-        
-        Args:
-            user_id: ID do usuário
-        
-        Returns:
-            Lista de transações atrasadas
-        """
+        """Retorna transações vencidas e não pagas."""
         today = date.today()
-        
         return self.db.query(Transaction).filter(
             Transaction.user_id == user_id,
-            Transaction.status == TransactionStatus.PENDING,
-            Transaction.due_date < today,
-            Transaction.is_deleted == False,
-        ).order_by(Transaction.due_date).all()
-    
-    def mark_as_paid(
-        self,
-        transaction_id: int,
-        paid_date: Optional[date] = None,
-    ) -> bool:
-        """
-        Marca transação como paga.
-        
-        Args:
-            transaction_id: ID da transação
-            paid_date: Data do pagamento (hoje se None)
-        
-        Returns:
-            True se marcado
-        """
-        transaction = self.get_by_id(transaction_id)
-        if not transaction:
-            return False
-        
-        transaction.mark_as_paid(paid_date)
-        self.db.flush()
-        return True
-    
-    def get_category_totals(
-        self,
-        user_id: int,
-        transaction_type: TransactionType,
-        start_date: Optional[date] = None,
-        end_date: Optional[date] = None,
-    ) -> List[dict]:
-        """
-        Retorna totais agrupados por categoria.
-        
-        Args:
-            user_id: ID do usuário
-            transaction_type: Tipo de transação
-            start_date: Data inicial
-            end_date: Data final
-        
-        Returns:
-            Lista de dicts com {category_id, category_name, total, count}
-        """
-        query = self.db.query(
+            Transaction.paid_date.is_(None),
+            Transaction.due_date < today
+        ).order_by(asc(Transaction.due_date)).all()
+
+    def get_category_totals(self, user_id, transaction_type, start_date, end_date):
+        """Agregação para gráficos de pizza."""
+        return self.db.query(
             Transaction.category_id,
             Category.name,
-            func.sum(Transaction.amount).label('total'),
-            func.count(Transaction.id).label('count'),
+            Category.icon,
+            Category.color,
+            func.sum(Transaction.amount).label('total')
         ).join(
             Category, Transaction.category_id == Category.id
         ).filter(
             Transaction.user_id == user_id,
             Transaction.transaction_type == transaction_type,
-            Transaction.status == TransactionStatus.PAID,
-            Transaction.is_deleted == False,
-        )
-        
-        if start_date:
-            query = query.filter(Transaction.due_date >= start_date)
-        if end_date:
-            query = query.filter(Transaction.due_date <= end_date)
-        
-        results = query.group_by(
-            Transaction.category_id,
-            Category.name,
+            Transaction.paid_date.isnot(None),
+            Transaction.paid_date >= start_date,
+            Transaction.paid_date <= end_date
+        ).group_by(
+            Transaction.category_id, Category.name, Category.icon, Category.color
         ).order_by(desc('total')).all()
-        
-        return [
-            {
-                "category_id": r.category_id,
-                "category_name": r.name,
-                "total": float(r.total or 0),
-                "count": r.count,
-            }
-            for r in results
-        ]
