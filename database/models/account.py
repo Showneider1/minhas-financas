@@ -56,6 +56,8 @@ class Account(Base, TimestampMixin, SoftDeleteMixin):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     user = relationship("User", back_populates="accounts")
     transactions = relationship("Transaction", back_populates="account", lazy="dynamic")
+        goals           = relationship("Goal",          back_populates="account")
+    scheduled_bills  = relationship("ScheduledBill", back_populates="account")
     
     def __repr__(self):
         return f"<Account(id={self.id}, name='{self.name}', type='{self.account_type}')>"
