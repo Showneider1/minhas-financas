@@ -1,0 +1,326 @@
+/* =========================================================
+   1. IMPORTAÇÕES & RESET
+   ========================================================= */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+:root {
+  /* --- Cores de Marca (Refinadas) --- */
+  --primary-500: #3B82F6; /* Azul vibrante */
+  --primary-600: #2563EB; /* Hover */
+  --primary-100: #EFF6FF; /* Background suave */
+
+  --success-500: #10B981;
+  --success-bg: #D1FAE5;
+  
+  --danger-500: #EF4444;
+  --danger-bg: #FEE2E2;
+
+  /* --- Tons de Cinza (Neutros) --- */
+  --gray-50: #F9FAFB;  /* Fundo da página */
+  --gray-100: #F3F4F6;
+  --gray-200: #E5E7EB; /* Bordas */
+  --gray-400: #9CA3AF;
+  --gray-500: #6B7280; /* Texto secundário */
+  --gray-700: #374151; /* Texto primário */
+  --gray-900: #111827; /* Títulos */
+  
+  --white: #FFFFFF;
+
+  /* --- Spacing & Radius --- */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  
+  /* --- Sombras (Elevation) --- */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+/* =========================================================
+   2. GLOBAL
+   ========================================================= */
+body {
+  background-color: var(--gray-50);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  color: var(--gray-700);
+  -webkit-font-smoothing: antialiased; /* Texto mais nítido */
+  line-height: 1.5;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  color: var(--gray-900);
+  font-weight: 600;
+  letter-spacing: -0.025em; /* Tracking apertado para modernidade */
+  margin-bottom: 0.5rem;
+}
+
+.text-muted {
+  color: var(--gray-500) !important;
+}
+
+/* =========================================================
+   3. CARDS (Minimalistas)
+   ========================================================= */
+.card {
+  background-color: var(--white);
+  border: 1px solid var(--gray-200); /* Borda sutil em vez de sombra pesada */
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Efeito de "Lift" no hover apenas se tiver a classe hover-shadow */
+.card:hover.hover-shadow {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+  border-color: transparent;
+}
+
+.card-header {
+  background-color: transparent;
+  border-bottom: 1px solid var(--gray-100);
+  padding: 1.25rem 1.5rem;
+}
+
+.card-body {
+  padding: 1.5rem;
+}
+
+/* =========================================================
+   4. BOTÕES & INPUTS
+   ========================================================= */
+.btn {
+  font-weight: 500;
+  border-radius: var(--radius-md);
+  padding: 0.5rem 1rem;
+  transition: all 0.2s ease;
+  letter-spacing: 0.01em;
+}
+
+.btn-primary {
+  background-color: var(--primary-500);
+  border: 1px solid transparent;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+
+.btn-primary:hover {
+  background-color: var(--primary-600);
+  transform: translateY(-1px);
+}
+
+/* Inputs Modernos */
+.form-control, .dash-dropdown .Select-control {
+  border: 1px solid var(--gray-200) !important;
+  border-radius: var(--radius-md) !important;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.95rem;
+  color: var(--gray-900);
+  background-color: var(--white);
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+
+.form-control:focus {
+  border-color: var(--primary-500) !important;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15) !important; /* Anel de foco suave */
+  outline: 0;
+}
+
+/* =========================================================
+   5. AG GRID (Estilização Premium)
+   ========================================================= */
+.ag-theme-alpine {
+    /* Variáveis do Grid */
+    --ag-foreground-color: var(--gray-700);
+    --ag-background-color: var(--white);
+    --ag-header-foreground-color: var(--gray-500);
+    --ag-header-background-color: var(--white);
+    --ag-odd-row-background-color: var(--white);
+    --ag-row-border-color: var(--gray-100);
+    --ag-font-family: 'Inter', sans-serif;
+    --ag-font-size: 14px;
+    
+    /* Remove bordas grossas */
+    border: none !important;
+}
+
+.ag-root-wrapper {
+    border-radius: var(--radius-md);
+    border: 1px solid var(--gray-200) !important;
+}
+
+/* Cabeçalho da Tabela */
+.ag-header-cell-label {
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.05em;
+    color: var(--gray-500);
+}
+
+/* Linhas */
+.ag-row {
+    border-bottom: 1px solid var(--gray-100);
+}
+
+.ag-row:hover {
+    background-color: var(--gray-50) !important; /* Hover sutil */
+}
+
+/* Remove linhas verticais */
+.ag-header-cell::after, .ag-cell {
+    border-right: none !important;
+}
+
+/* --- Cores de Status na Tabela --- */
+.valor-positivo {
+    color: var(--success-500) !important;
+    font-weight: 600;
+    background-color: var(--success-bg);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 13px;
+    display: inline-flex;
+    align-items: center;
+}
+
+.valor-negativo {
+    color: var(--danger-500) !important;
+    font-weight: 600;
+    background-color: var(--danger-bg);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+/* Botão Lixeira na Tabela */
+.btn-trash {
+    color: var(--gray-400);
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 16px;
+}
+.btn-trash:hover {
+    color: var(--danger-500);
+    transform: scale(1.1);
+}
+
+/* =========================================================
+   6. SCROLLBAR (Minimalista)
+   ========================================================= */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--gray-200);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--gray-400);
+}
+
+/* =========================================================
+   7. UTILITÁRIOS EXTRAS
+   ========================================================= */
+   
+/* Texto de ajuda pequeno */
+small, .small {
+    font-size: 0.85rem;
+    color: var(--gray-500);
+}
+
+/* DatePicker customizado para não parecer antigo */
+.DateInput_input {
+    font-family: 'Inter', sans-serif !important;
+    font-weight: 400 !important;
+    color: var(--gray-700) !important;
+    border-bottom: 2px solid transparent !important;
+}
+.DateInput_input__focused {
+    border-bottom: 2px solid var(--primary-500) !important;
+}
+
+/* =========================================================
+   8. SIDEBAR (Correção do Posicionamento)
+   ========================================================= */
+
+.sidebar {
+    position: fixed;       /* Fixa na tela */
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 260px;          /* Largura fixa */
+    padding: 2rem 1.5rem;  /* Espaçamento interno */
+    background-color: var(--white); /* Fundo branco limpo */
+    border-right: 1px solid var(--gray-200); /* Borda fina direita */
+    z-index: 1000;         /* Garante que fique acima do conteúdo */
+    box-shadow: var(--shadow-sm); /* Sombra leve */
+}
+
+/* Links de Navegação */
+.nav-link {
+    color: var(--gray-500);
+    font-weight: 500;
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius-md);
+    margin-bottom: 0.5rem;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+}
+
+/* Ícones dentro dos links */
+.nav-link i {
+    font-size: 1.1rem;
+    margin-right: 12px;
+    color: var(--gray-400);
+    transition: color 0.2s;
+}
+
+/* Hover (Passar o mouse) */
+.nav-link:hover {
+    background-color: var(--gray-50);
+    color: var(--primary-500);
+}
+
+.nav-link:hover i {
+    color: var(--primary-500);
+}
+
+/* Link Ativo (Página atual) */
+.nav-link.active {
+    background-color: var(--primary-100);
+    color: var(--primary-600);
+    font-weight: 600;
+}
+
+.nav-link.active i {
+    color: var(--primary-600);
+}
+
+/* Cabeçalho da Sidebar */
+.sidebar-header h2 {
+    font-size: 1.5rem;
+    color: var(--primary-600);
+    margin-bottom: 0.5rem;
+}
+
+/* Perfil do Usuário no rodapé */
+#sidebar-user-name {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--gray-900);
+}
+
+#sidebar-user-email {
+    font-size: 0.8rem;
+    display: block;
+}

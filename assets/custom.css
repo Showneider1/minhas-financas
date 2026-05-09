@@ -1,0 +1,107 @@
+/* ============================================
+   FINANÇAS — Estilos Customizados
+   Arquivo: assets/custom.css
+   ============================================ */
+
+/* ---- SIDEBAR ---- */
+.sidebar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.15) transparent;
+}
+.sidebar::-webkit-scrollbar { width: 4px; }
+.sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
+
+/* Links da Sidebar */
+.sidebar-link {
+  color: rgba(255, 255, 255, 0.72) !important;
+  border-radius: 8px !important;
+  margin-bottom: 2px;
+  font-size: 0.9rem;
+  padding: 10px 14px !important;
+  transition: all 0.18s ease;
+}
+.sidebar-link:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: #fff !important;
+}
+.sidebar-link.active {
+  background: rgba(255, 255, 255, 0.18) !important;
+  color: #fff !important;
+  font-weight: 600;
+  box-shadow: inset 3px 0 0 rgba(255,255,255,0.7);
+}
+
+/* ---- CONTENT AREA ---- */
+.content {
+  margin-left: 240px !important;
+  padding: 24px 28px !important;
+  min-height: 100vh;
+  background: #f5f6fa;
+}
+
+/* ---- KPI CARDS ---- */
+.card {
+  border-radius: 10px !important;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.10) !important;
+}
+
+/* ---- MODAL ---- */
+.modal-content {
+  border-radius: 14px !important;
+  border: none !important;
+}
+.modal-header {
+  background: #f8f9fa;
+  border-radius: 14px 14px 0 0 !important;
+  border-bottom: 1px solid #e9ecef;
+  padding: 16px 20px;
+}
+.modal-footer {
+  background: #f8f9fa;
+  border-radius: 0 0 14px 14px !important;
+  border-top: 1px solid #e9ecef;
+  padding: 12px 20px;
+}
+
+/* ---- DATE PICKER ---- */
+.SingleDatePickerInput,
+.DateRangePickerInput {
+  border: 1px solid #ced4da !important;
+  border-radius: 6px !important;
+  padding: 2px 6px;
+}
+.DateInput_input {
+  font-size: 0.875rem !important;
+  padding: 6px 8px !important;
+}
+
+/* ---- GRÁFICOS ---- */
+.js-plotly-plot .plotly .modebar { display: none !important; }
+
+/* ---- SCROLLBAR GLOBAL ---- */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #ced4da; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #adb5bd; }
+
+/* ---- BADGES DE VENCIMENTO ---- */
+.badge {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* ---- BOTÕES ---- */
+.btn-primary { border-radius: 8px !important; }
+.btn-secondary { border-radius: 8px !important; }
+
+/* ---- RESPONSIVO ---- */
+@media (max-width: 768px) {
+  .content {
+    margin-left: 0 !important;
+    padding: 16px !important;
+  }
+}
