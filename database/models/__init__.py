@@ -8,6 +8,8 @@ from database.models.transaction import Transaction, TransactionStatus
 from database.models.budget import Budget
 # Importando o novo módulo de investimentos
 from database.models.investment import Asset, InvestmentOperation, AssetType, OperationType
+from database.models.goal import Goal, GoalStatus, GoalCategory
+from database.models.scheduled_bill import ScheduledBill, BillType, BillStatus, BillRecurrence
 
 __all__ = [
     "User",
@@ -16,4 +18,6 @@ __all__ = [
     "Transaction", "TransactionStatus",
     "Budget",
     "Asset", "InvestmentOperation", "AssetType", "OperationType",
+        "Goal", "GoalStatus", "GoalCategory",
+    "ScheduledBill", "BillType", "BillStatus", "BillRecurrence",
 ]
