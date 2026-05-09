@@ -33,6 +33,7 @@ class Category(Base):
     # Relacionamentos
     user = relationship("User", back_populates="categories")
     transactions = relationship("Transaction", back_populates="category")
+        scheduled_bills = relationship("ScheduledBill", back_populates="category")
     
     # Auto-relacionamento
     parent = relationship("Category", remote_side=[id], backref="subcategories")
