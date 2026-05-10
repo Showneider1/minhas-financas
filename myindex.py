@@ -12,6 +12,7 @@ from pages import (
     relatorios_page,
     configuracoes_page,
     login_page,
+    goals_page,
 )
 from config.logging_config import app_logger
 
@@ -88,6 +89,9 @@ def display_page(pathname, auth_data):
     
     elif pathname == "/configuracoes":
         content = configuracoes_page.layout
+
+    elif pathname == "/metas":
+        content = goals_page.layout
     
     else:
         # Página 404

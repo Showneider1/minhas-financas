@@ -64,3 +64,10 @@ try:
     print("✓ Budget callbacks carregados")
 except Exception as e:
     print(f"⚠ Aviso budget_callbacks: {e}")
+
+# ── Metas Financeiras ──────────────────────────────────────────────
+try:
+    import callbacks.goal_callbacks  # noqa: F401
+    print("✓ Goal callbacks carregados")
+except Exception as _e:
+    print(f"⚠ Aviso goal_callbacks: {_e}")

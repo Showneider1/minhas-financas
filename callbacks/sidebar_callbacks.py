@@ -1,27 +1,24 @@
 """
 Callbacks da sidebar.
+Fix: prevent_initial_call removido + url como trigger secundário
+garante que nome/email apareçam corretamente ao navegar.
 """
-from dash import Input, Output, State, callback_context, no_update
+from dash import Input, Output
 from dash.exceptions import PreventUpdate
 from app import app
 
 
-# REMOVIDO O CALLBACK DO MODAL - Agora está em transactions_callbacks
-
-
 @app.callback(
-    Output("sidebar-user-name", "children"),
+    Output("sidebar-user-name",  "children"),
     Output("sidebar-user-email", "children"),
-    Input("auth-store", "data"),
-    prevent_initial_call=True,
+    Input("auth-store",  "data"),
+    Input("url",         "pathname"),
+    prevent_initial_call=False,
 )
-def atualizar_info_usuario(auth_data):
-    """
-    Atualiza informações do usuário na sidebar.
-    """
-    if auth_data and "email" in auth_data:
-        name = auth_data.get("name", "Usuário")
-        email = auth_data["email"]
+def atualizar_info_usuario(auth_data, _pathname):
+    """Atualiza nome e e-mail do usuário na sidebar."""
+    if auth_data and isinstance(auth_data, dict):
+        name  = auth_data.get("name",  "") or "Usuário"
+        email = auth_data.get("email", "") or ""
         return name, email
-    
     raise PreventUpdate
