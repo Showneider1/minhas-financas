@@ -12,6 +12,7 @@ import enum
 def _utcnow():
     """
     Retorna datetime atual em UTC timezone-aware.
+
     BUG 8 CORRIGIDO: substitui datetime.utcnow() depreciado no Python 3.12+.
     """
     return datetime.now(timezone.utc)
@@ -42,21 +43,26 @@ class Transaction(Base):
     status = Column(Enum(TransactionStatus), default=TransactionStatus.PENDING, index=True)
 
     # Parcelamento & Recorrência
-    is_recurring        = Column(Boolean, default=False)
-    installment_number  = Column(Integer, default=1)
-    total_installments  = Column(Integer, default=1)
+    is_recurring       = Column(Boolean, default=False)
+    installment_number = Column(Integer, default=1)
+    total_installments = Column(Integer, default=1)
 
     # Foreign Keys
-    user_id     = Column(Integer, ForeignKey("users.id"),       nullable=False, index=True)
-    account_id  = Column(Integer, ForeignKey("accounts.id"),    nullable=False)
-    category_id = Column(Integer, ForeignKey("categories.id"),  nullable=False)
+    user_id     = Column(Integer, ForeignKey("users.id"),      nullable=False, index=True)
+    account_id  = Column(Integer, ForeignKey("accounts.id"),   nullable=False)
+    category_id = Column(Integer, ForeignKey("categories.id"), nullable=False)
 
-    # Metadata (timezone-aware)
-    notes      = Column(String(500), nullable=True)
+    notes = Column(String(500), nullable=True)
+
+    # Importacao bancaria em lote
+    import_hash           = Column(String(64), nullable=True, unique=True, index=True)
+    categorization_source = Column(String(20), nullable=True, default="manual")
+
+    # Timestamps
     created_at = Column(DateTime(timezone=True), default=_utcnow)
     updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
 
-    # Relacionamentos
+    # Relationships
     user     = relationship("User",     back_populates="transactions")
     account  = relationship("Account",  back_populates="transactions")
     category = relationship("Category", back_populates="transactions")
