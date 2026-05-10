@@ -9,55 +9,40 @@ import enum
 
 
 class AccountType(str, enum.Enum):
-    """Tipos de conta."""
-    CHECKING = "checking"      # Conta corrente
-    SAVINGS = "savings"        # Poupança
-    INVESTMENT = "investment"  # Investimentos
-    CREDIT_CARD = "credit_card" # Cartão de crédito
-    CASH = "cash"              # Dinheiro
-    OTHER = "other"            # Outras
+    CHECKING    = "checking"
+    SAVINGS     = "savings"
+    INVESTMENT  = "investment"
+    CREDIT_CARD = "credit_card"
+    CASH        = "cash"
+    OTHER       = "other"
 
 
 class Account(Base, TimestampMixin, SoftDeleteMixin):
-    """
-    Conta financeira do usuário.
-    """
     __tablename__ = "accounts"
 
-    # Identificação
-    id = Column(Integer, primary_key=True, index=True)
+    id   = Column(Integer, primary_key=True, index=True)
     name = Column(String(200), nullable=False)
-    
-    # Tipo e moeda
-    account_type = Column(
-        SQLEnum(AccountType), 
-        default=AccountType.CHECKING, 
-        nullable=False
-    )
-    currency = Column(String(3), default="BRL", nullable=False)
-    
-    # Saldo e Valores
-    balance = Column(Float, default=0.0, nullable=False)
+
+    account_type = Column(SQLEnum(AccountType), default=AccountType.CHECKING, nullable=False)
+    currency     = Column(String(3), default="BRL", nullable=False)
+
+    balance         = Column(Float, default=0.0, nullable=False)
     initial_balance = Column(Float, default=0.0, nullable=False)
-    
-    # CAMPOS ESPECÍFICOS PARA CARTÃO DE CRÉDITO (Novos)
-    credit_limit = Column(Float, default=0.0, nullable=True)     # Limite do cartão
-    closing_day = Column(Integer, nullable=True)                 # Dia de fechamento da fatura (1-31)
-    due_day = Column(Integer, nullable=True)                     # Dia de vencimento da fatura (1-31)
-    
-    # Visual
+
+    credit_limit = Column(Float,   default=0.0, nullable=True)
+    closing_day  = Column(Integer, nullable=True)
+    due_day      = Column(Integer, nullable=True)
+
     color = Column(String(20), default="#2ecc71", nullable=False)
-    icon = Column(String(50), default="bi-bank", nullable=True)  # Ícone do bootstrap
-    
-    # Status
+    icon  = Column(String(50), default="bi-bank",  nullable=True)
+
     is_active = Column(Boolean, default=True, nullable=False)
-    
-    # Relacionamentos
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    user = relationship("User", back_populates="accounts")
-    transactions = relationship("Transaction", back_populates="account", lazy="dynamic")
+
+    user_id         = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    user            = relationship("User",          back_populates="accounts")
+    transactions    = relationship("Transaction",   back_populates="account", lazy="dynamic")
     goals           = relationship("Goal",          back_populates="account")
-    scheduled_bills  = relationship("ScheduledBill", back_populates="account")
-    
+    scheduled_bills = relationship("ScheduledBill", back_populates="account")
+
     def __repr__(self):
         return f"<Account(id={self.id}, name='{self.name}', type='{self.account_type}')>"
