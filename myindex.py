@@ -43,7 +43,7 @@ app.layout = html.Div([
     dcc.Store(id="store-modal-state", storage_type="memory", data={"is_open": False}),
 
     # Download components
-            Download(id="download-extrato"),
+                            dcc.Download(id="download-extrato"),
     dcc.Download(id="download-dashboard"),
 
     # Modal de novo lançamento (Global)
