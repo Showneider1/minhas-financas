@@ -101,7 +101,7 @@ register_layout = dbc.Container(
                             ),
                             
                             # Feedback
-                            html.Div(id="auth-feedback-register"),
+                                                    html.Div(id="auth-feedback-register-display"),
                             
                             # Formulário de Registro
                             dbc.Form([
