@@ -43,8 +43,7 @@ app.layout = html.Div([
     dcc.Store(id="store-modal-state", storage_type="memory", data={"is_open": False}),
 
     # Download components
-            html.Div(id="auth-feedback-register"),  # FIX: garante que o Output existe no layout raiz
-        dcc.Download(id="download-extrato"),
+            Download(id="download-extrato"),
     dcc.Download(id="download-dashboard"),
 
     # Modal de novo lançamento (Global)
