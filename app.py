@@ -79,6 +79,7 @@ def initialize_application():
 if __name__ == "__main__":
     initialize_application()
 else:
-    app_logger.info("Aplicação carregada (módulo importado — init delegada ao entrypoint)")
+        app_logger.info("Aplicação carregada como módulo – executando inicialização...")
+    initialize_application()
 
 app_logger.info("App Context pronto.")
