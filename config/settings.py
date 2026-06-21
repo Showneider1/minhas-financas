@@ -8,10 +8,10 @@ from pathlib import Path
 # Tenta importar do pydantic v2, senão usa v1
 try:
     from pydantic_settings import BaseSettings
-    from pydantic import ConfigDict, field_validator
+    from pydantic import ConfigDict
     PYDANTIC_V2 = True
 except ImportError:
-    from pydantic import BaseSettings, validator
+    from pydantic import BaseSettings
     PYDANTIC_V2 = False
 
 # Carrega .env se existir
@@ -30,8 +30,8 @@ class Settings(BaseSettings):
     # ===============================
     APP_NAME: str = "Sistema Financeiro Pessoal"
     APP_VERSION: str = "1.0.0"
-    ENVIRONMENT: str = "development"
-    DEBUG: bool = True
+    ENVIRONMENT: str = "production"  # Alterado para seguro por padrão
+    DEBUG: bool = False              # Risco Alto se = True em Prod
     HOST: str = "0.0.0.0"
     PORT: int = 8050
     
@@ -71,32 +71,13 @@ class Settings(BaseSettings):
     ENABLE_PASSWORD_RESET: bool = True
     AUDIT_ENABLED: bool = True
     
-    # ===============================
-    # VALIDAÇÃO CRÍTICA PARA DEPLOY
-    # ===============================
-    if PYDANTIC_V2:
-        @field_validator("DATABASE_URL")
-        @classmethod
-        def assemble_db_connection(cls, v: str) -> str:
-            """Corrige string de conexão do Render/Heroku para SQLAlchemy."""
-            if v and v.startswith("postgres://"):
-                return v.replace("postgres://", "postgresql://", 1)
-            return v
-    else:
-        @validator("DATABASE_URL", pre=True)
-        def assemble_db_connection(cls, v: str) -> str:
-            """Corrige string de conexão do Render/Heroku para SQLAlchemy."""
-            if v and v.startswith("postgres://"):
-                return v.replace("postgres://", "postgresql://", 1)
-            return v
-
     # Config para Pydantic v2
     if PYDANTIC_V2:
         model_config = ConfigDict(
             env_file=".env",
             env_file_encoding="utf-8",
             case_sensitive=True,
-            extra="ignore",
+            extra="ignore",  # Ignora campos extras do .env
         )
     else:
         # Config para Pydantic v1
@@ -104,15 +85,12 @@ class Settings(BaseSettings):
             env_file = ".env"
             env_file_encoding = "utf-8"
             case_sensitive = True
-            extra = "ignore"
+            extra = "ignore"  # Ignora campos extras do .env
 
 
-# Cria diretórios necessários automaticamente
-try:
-    Path("logs").mkdir(exist_ok=True)
-    Path("data").mkdir(exist_ok=True)
-except Exception:
-    pass # Em ambientes read-only ou cloud, isso pode falhar silenciosamente
+# Cria diretórios necessários
+Path("logs").mkdir(exist_ok=True)
+Path("data").mkdir(exist_ok=True)
 
 # Instância global das configurações
 settings = Settings()
