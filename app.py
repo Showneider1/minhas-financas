@@ -22,6 +22,8 @@ external_stylesheets = [
 app = dash.Dash(
     __name__,
     external_stylesheets=external_stylesheets,
+    # Cuidado: Supressões de callback podem mascarar bugs arquiteturais no Dash. 
+    # Mantenha True apenas se depender de layouts dinâmicos estritos.
     suppress_callback_exceptions=True,
     title=settings.APP_NAME,
     update_title="Carregando...",
@@ -32,54 +34,35 @@ app = dash.Dash(
 
 server = app.server
 
-
 # ===============================
-# INICIALIZAÇÃO CONTROLADA
+# INICIALIZAÇÃO
 # ===============================
-def initialize_application():
-    """
-    Executa rotinas de inicialização como criação de banco e seeds.
-    Deve ser idempotente — seguro de chamar múltiplas vezes sem efeitos colaterais.
-    """
+def setup_application():
+    """Executa scripts e validações de startup da aplicação."""
     app_logger.info(f"Inicializando {settings.APP_NAME} v{settings.APP_VERSION}")
-    app_logger.info(f"Ambiente: {settings.ENVIRONMENT} | Debug: {settings.DEBUG}")
+    app_logger.info(f"Ambiente: {settings.ENVIRONMENT}")
+    app_logger.info(f"Debug: {settings.DEBUG}")
 
-    try:
-        # init_db() usa apenas create_all (seguro — não apaga dados existentes)
-        init_db()
-
-        # Seed de categorias padrão (idempotente — verifica existência antes de inserir)
-        from database.connection import get_db_session
-        from services.category_service import CategoryService
-
-        with get_db_session() as db:
-            try:
+    # Inicializa banco (apenas em desenvolvimento)
+    # Recomendação Arquitetural: Em produção, delegar isso para o Alembic ou script CLI.
+    if settings.ENVIRONMENT == "development":
+        try:
+            init_db()
+            app_logger.info("Banco de dados inicializado")
+            
+            # Seed de categorias padrão
+            from database.connection import get_db_session
+            from services.category_service import CategoryService
+            
+            with get_db_session() as db:
                 category_service = CategoryService(db)
                 category_service.seed_default_categories()
-                app_logger.info("Categorias verificadas/criadas")
-            except Exception as e:
-                app_logger.error(f"Erro ao executar seed de categorias: {e}")
+                app_logger.info("Categorias padrão criadas")
+        
+        except Exception as e:
+            app_logger.error(f"Erro crítico ao inicializar banco: {e}", exc_info=True)
 
-    except Exception as e:
-        app_logger.error(f"Erro crítico na inicialização: {e}")
+    app_logger.info("Aplicação iniciada com sucesso")
 
-
-# ──────────────────────────────────────────────────────────────────
-# BUG 2 CORRIGIDO: initialize_application() é chamada APENAS quando
-# este módulo é o entry-point direto (__name__ == "__main__").
-#
-# Antes: `if __name__ == "__main__" or settings.ENVIRONMENT == "development"`
-#   → executava a init a cada import do módulo em dev, causando
-#     race conditions com múltiplos workers do Gunicorn.
-#
-# Agora: a condição de ENVIRONMENT foi removida daqui.
-#   Em produção/staging, o Gunicorn deve chamar initialize_application()
-#   via hook `post_fork` ou via script de entrypoint separado.
-# ──────────────────────────────────────────────────────────────────
-if __name__ == "__main__":
-    initialize_application()
-else:
-        app_logger.info("Aplicação carregada como módulo – executando inicialização...")
-        initialize_application()
-
-app_logger.info("App Context pronto.")
+# Chamada no contexto principal
+setup_application()
