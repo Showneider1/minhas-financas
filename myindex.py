@@ -12,10 +12,9 @@ from pages import (
     relatorios_page,
     configuracoes_page,
     login_page,
-    goals_page,
 )
 from config.logging_config import app_logger
-
+from middleware.auth_middleware import check_auth
 
 # ===============================
 # LAYOUT PRINCIPAL
@@ -23,33 +22,19 @@ from config.logging_config import app_logger
 app.layout = html.Div([
     # URL para roteamento
     dcc.Location(id="url", refresh=False),
-
-    # Stores globais (Memória do navegador)
+    
+    # Stores globais
     dcc.Store(id="auth-store", storage_type="session"),
     dcc.Store(id="store-user-id", storage_type="session"),
-
-    # === SINAIS DE ATUALIZAÇÃO ===
-    # 1. Sinal principal — lido pelos callbacks de KPIs e gráficos
-    dcc.Store(id="store-reload-dashboard", storage_type="memory"),
-
-    # 2. Sinal auxiliar — escrito por confirmar_exclusao,
-    #    propagado ao store-reload-dashboard pelo consolidador
-    dcc.Store(id="store-reload-aux", storage_type="memory"),
-
-    # 3. Guarda o ID da transação que está sendo editada
-    dcc.Store(id="store-transacao-id-editar", data=None, storage_type="memory"),
-    # =============================
-
-    dcc.Store(id="store-modal-state", storage_type="memory", data={"is_open": False}),
-
+    
     # Download components
-                            dcc.Download(id="download-extrato"),
+    dcc.Download(id="download-extrato"),
     dcc.Download(id="download-dashboard"),
-
-    # Modal de novo lançamento (Global)
+    
+    # Modal de novo lançamento
     modal_novo_lancamento,
-
-    # Conteúdo renderizado (Páginas)
+    
+    # Conteúdo renderizado
     html.Div(id="page-content"),
 ])
 
@@ -63,71 +48,97 @@ app.layout = html.Div([
     Input("auth-store", "data"),
 )
 def display_page(pathname, auth_data):
+    """
+    Gerencia roteamento e controle de acesso com validação criptográfica.
+    
+    Args:
+        pathname: Caminho da URL
+        auth_data: Dados de autenticação (não confiável por vir do Client)
+    
+    Returns:
+        Layout da página
+    """
+    # Páginas públicas (sem autenticação)
     public_pages = ["/", "/login", "/register"]
-
-    if pathname not in public_pages and not auth_data:
-        app_logger.warning(f"Acesso não autorizado: {pathname}")
+    
+    # Validação do Token no Backend
+    is_authenticated = check_auth(auth_data)
+    
+    # Se não autenticado e tentando acessar página privada
+    if pathname not in public_pages and not is_authenticated:
+        app_logger.warning(f"Acesso não autorizado bloqueado: {pathname}")
         return login_page.layout
-
-    if pathname in ("/", "/login"):
+    
+    # Roteamento
+    if pathname == "/" or pathname == "/login":
         return login_page.layout
-
-    if pathname == "/register":
+    
+    elif pathname == "/register":
         return login_page.register_layout
-
-    content = None
-
-    if pathname == "/dashboard":
-        content = dashboard_page.layout()
-
-    elif pathname == "/extrato":
-        content = extrato_page.layout
-
-    elif pathname == "/relatorios":
-        content = relatorios_page.layout
-
-    elif pathname == "/configuracoes":
-        content = configuracoes_page.layout
-
-    elif pathname == "/metas":
-        content = goals_page.layout
-
-    else:
-        try:
-            from components.shared.error import error_page_404
-            return error_page_404()
-        except Exception:
-            return html.Div(
-                dbc.Container([
-                    html.H1("404", className="display-1 fw-bold"),
-                    html.P("Página não encontrada.", className="lead"),
-                    dbc.Button("Voltar ao Início", href="/dashboard", color="primary"),
-                ], className="py-5 text-center")
-            )
-
-    if content:
+    
+    elif pathname == "/dashboard":
+        if not is_authenticated:
+            return login_page.layout
         return html.Div([
             sidebar,
             html.Div(
-                content,
+                dashboard_page.layout,
                 className="content",
                 style={"marginLeft": "280px", "padding": "20px"},
             )
         ])
-
-    return login_page.layout
+    
+    elif pathname == "/extrato":
+        if not is_authenticated:
+            return login_page.layout
+        return html.Div([
+            sidebar,
+            html.Div(
+                extrato_page.layout,
+                className="content",
+                style={"marginLeft": "280px", "padding": "20px"},
+            )
+        ])
+    
+    elif pathname == "/relatorios":
+        if not is_authenticated:
+            return login_page.layout
+        return html.Div([
+            sidebar,
+            html.Div(
+                relatorios_page.layout,
+                className="content",
+                style={"marginLeft": "280px", "padding": "20px"},
+            )
+        ])
+    
+    elif pathname == "/configuracoes":
+        if not is_authenticated:
+            return login_page.layout
+        return html.Div([
+            sidebar,
+            html.Div(
+                configuracoes_page.layout,
+                className="content",
+                style={"marginLeft": "280px", "padding": "20px"},
+            )
+        ])
+    
+    else:
+        # Página 404
+        from components.shared.error import error_page_404
+        return error_page_404()
 
 
 # ===============================
 # REGISTRA CALLBACKS
 # ===============================
+# Deve vir depois da definição do layout
 try:
     import callbacks
-    app_logger.info("✅ Callbacks registrados com sucesso!")
+    app_logger.info("Callbacks registrados")
 except Exception as e:
-    app_logger.error(f"❌ Erro ao registrar callbacks: {e}")
-    import traceback
-    traceback.print_exc()
+    app_logger.warning(f"Erro ao registrar callbacks: {e}")
 
 
 # ===============================
@@ -135,12 +146,14 @@ except Exception as e:
 # ===============================
 if __name__ == "__main__":
     from config.settings import settings
-
-    app_logger.info(f"🚀 Iniciando servidor em http://localhost:{settings.PORT}")
-
+    
+    app_logger.info(f"Iniciando servidor em http://localhost:{settings.PORT}")
+    
     app.run_server(
         debug=settings.DEBUG,
         host=settings.HOST,
         port=settings.PORT,
         dev_tools_hot_reload=settings.DEBUG,
+        dev_tools_ui=settings.DEBUG,
+        dev_tools_serve_dev_bundles=settings.DEBUG,
     )
