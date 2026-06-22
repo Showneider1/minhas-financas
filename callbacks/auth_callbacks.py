@@ -1,9 +1,8 @@
 """
 Callbacks de autenticação (login, registro, logout).
 """
-from dash import Input, Output, State, callback_context, no_update
+from dash import Input, Output, State, callback_context, no_update, dcc, html
 import dash_bootstrap_components as dbc
-from pydantic import ValidationError                          # ← ADICIONAR
 from app import app
 from database.connection import get_db_session
 from services.auth_services import AuthService
@@ -19,7 +18,7 @@ print("🔐 Registrando callbacks de autenticação...")
     [
         Output("auth-store", "data"),
         Output("auth-feedback", "children"),
-        Output("url", "pathname"),
+        Output("url", "pathname"),  # Mantido na assinatura, mas ignorado no retorno
     ],
     Input("btn-login", "n_clicks"),
     State("login-email", "value"),
@@ -31,11 +30,11 @@ def fazer_login(n_clicks, email, password):
     print(f"\n🔵 LOGIN CALLBACK EXECUTADO!")
     print(f"   - n_clicks: {n_clicks}")
     print(f"   - email: {email}")
-
+    
     try:
         if not n_clicks:
             return no_update, no_update, no_update
-
+        
         if not email or not password:
             return no_update, dbc.Alert(
                 "Preencha email e senha",
@@ -43,29 +42,31 @@ def fazer_login(n_clicks, email, password):
                 duration=3000,
                 dismissable=True,
             ), no_update
-
+        
         login_data = UserLogin(email=email, password=password)
-
+        
         with get_db_session() as db:
             auth_service = AuthService(db)
             token_response = auth_service.authenticate_user(login_data)
-
+        
         auth_data = {
-            "authenticated": True,
             "token": token_response.access_token,
             "user_id": token_response.user_id,
             "email": token_response.email,
         }
-
+        
         print(f"   ✅ Login bem-sucedido! User ID: {token_response.user_id}")
-
-        return auth_data, dbc.Alert(
-            "Login realizado com sucesso!",
-            color="success",
-            duration=2000,
-            dismissable=True,
-        ), "/dashboard"
-
+        
+        # BUGFIX: Injetamos o redirecionamento diretamente no HTML gerado.
+        # Isto força o Dash a guardar o token na sessão ANTES de navegar para o dashboard,
+        # resolvendo a condição de corrida que prendia o utilizador no ecrã de login.
+        feedback_content = html.Div([
+            dbc.Alert("Login realizado com sucesso! A carregar dashboard...", color="success", duration=2000),
+            dcc.Location(pathname="/dashboard", id="redirect-after-login")
+        ])
+        
+        return auth_data, feedback_content, no_update
+    
     except AppException as e:
         print(f"   ❌ Erro: {e.message}")
         return no_update, dbc.Alert(
@@ -74,20 +75,9 @@ def fazer_login(n_clicks, email, password):
             duration=4000,
             dismissable=True,
         ), no_update
-
-    except ValidationError as e:                             # ← ADICIONAR
-        erros = "; ".join([err["msg"] for err in e.errors()])
-        return no_update, dbc.Alert(
-            f"Dados inválidos: {erros}",
-            color="danger",
-            duration=5000,
-            dismissable=True,
-        ), no_update
-
+    
     except Exception as e:
         print(f"   ❌ Erro inesperado: {e}")
-        import traceback
-        traceback.print_exc()
         return no_update, dbc.Alert(
             f"Erro ao fazer login: {str(e)}",
             color="danger",
@@ -111,57 +101,71 @@ def fazer_login(n_clicks, email, password):
 def fazer_registro(n_clicks, name, email, password, password_confirm):
     """Processa registro de novo usuário."""
     print(f"\n🟢 REGISTRO CALLBACK EXECUTADO!")
-
+    
     try:
         if not n_clicks:
             return no_update, no_update
-
+        
         if not name or not email or not password or not password_confirm:
-            return dbc.Alert("Preencha todos os campos", color="warning", duration=3000, dismissable=True), no_update
-
+            return dbc.Alert(
+                "Preencha todos os campos",
+                color="warning",
+                duration=3000,
+                dismissable=True,
+            ), no_update
+        
         if password != password_confirm:
-            return dbc.Alert("As senhas não conferem", color="danger", duration=3000, dismissable=True), no_update
-
-        if len(password) < 8:
-            return dbc.Alert("A senha deve ter no mínimo 8 caracteres", color="warning", duration=3000, dismissable=True), no_update
-
-        if not any(c.isdigit() for c in password):
-            return dbc.Alert("A senha deve conter pelo menos um número", color="warning", duration=3000, dismissable=True), no_update
-
-        if not any(c.isupper() for c in password):
-            return dbc.Alert("A senha deve conter pelo menos uma letra maiúscula", color="warning", duration=3000, dismissable=True), no_update
-
-        register_data = UserCreate(name=name, email=email, password=password)
-
+            return dbc.Alert(
+                "As senhas não conferem",
+                color="danger",
+                duration=3000,
+                dismissable=True,
+            ), no_update
+        
+        if len(password) < 6:
+            return dbc.Alert(
+                "A senha deve ter no mínimo 6 caracteres",
+                color="warning",
+                duration=3000,
+                dismissable=True,
+            ), no_update
+        
+        register_data = UserCreate(
+            name=name,
+            email=email,
+            password=password,
+        )
+        
         with get_db_session() as db:
             auth_service = AuthService(db)
             user = auth_service.register_user(register_data)
-            db.flush()              # ← garante ID gerado antes de fechar
-            user_id = user.id       # ← captura dentro da sessão
-            user_email = user.email # ← captura dentro da sessão
-
-        print(f"   ✅ Usuário registrado! ID: {user_id}")
-
+        
+        print(f"   ✅ Usuário registrado! ID: {user.id}")
+        
         return dbc.Alert(
             "Conta criada com sucesso! Faça login para continuar.",
             color="success",
             duration=4000,
             dismissable=True,
         ), "/login"
-
+    
     except AppException as e:
         print(f"   ❌ Erro: {e.message}")
-        return dbc.Alert(str(e.message), color="danger", duration=4000, dismissable=True), no_update
-
-    except ValidationError as e:
-        erros = "; ".join([err["msg"] for err in e.errors()])
-        return dbc.Alert(f"Dados inválidos: {erros}", color="danger", duration=5000, dismissable=True), no_update
-
+        return dbc.Alert(
+            str(e.message),
+            color="danger",
+            duration=4000,
+            dismissable=True,
+        ), no_update
+    
     except Exception as e:
         print(f"   ❌ Erro inesperado: {e}")
-        import traceback
-        traceback.print_exc()
-        return dbc.Alert(f"Erro ao criar conta: {str(e)}", color="danger", duration=4000, dismissable=True), no_update
+        return dbc.Alert(
+            f"Erro ao criar conta: {str(e)}",
+            color="danger",
+            duration=4000,
+            dismissable=True,
+        ), no_update
 
 
 @app.callback(
@@ -180,7 +184,7 @@ def fazer_logout(n_clicks, auth_data):
         user_id = auth_data.get("user_id")
         print(f"   ✓ Logout: usuário {user_id}")
         return True, "/login"
-
+    
     return no_update, no_update
 
 
