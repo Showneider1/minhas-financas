@@ -79,7 +79,9 @@ def check_auth(auth_data: dict) -> bool:
     if not auth_data:
         return False
     
-    token = auth_data.get("token")
+    # BUGFIX: O backend de login (TokenResponse) retorna 'access_token'.
+    # Garantimos que ambas as chaves funcionem.
+    token = auth_data.get("access_token") or auth_data.get("token")
     if not token:
         return False
     
