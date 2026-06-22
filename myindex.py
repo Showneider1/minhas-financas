@@ -17,39 +17,16 @@ from config.logging_config import app_logger
 from middleware.auth_middleware import check_auth
 
 # ===============================
-# HELPERS DE LAYOUT (BUGFIXES)
+# HELPERS DE LAYOUT
 # ===============================
 def render_layout(layout_obj):
-    """
-    Avalia o layout importado. Se for uma função (útil para layouts dinâmicos 
-    que atualizam datas no Dash), ele invoca a função. 
-    Caso contrário, retorna o componente diretamente.
-    """
+    """Renderiza layout estático ou executa função de layout dinâmico."""
     if callable(layout_obj):
         return layout_obj()
     return layout_obj
 
-
-def get_private_layout(content_layout):
-    """
-    Envolve o conteúdo das páginas privadas com a sidebar e o modal.
-    BUGFIX: O modal deve ser injetado dinamicamente JUNTO com a sidebar.
-    Se o modal ficar estático no app.layout e a sidebar for dinâmica, 
-    o Dash perde a referência do callback em ambiente de Produção (debug=False).
-    """
-    return html.Div([
-        sidebar,
-        modal_novo_lancamento,  # <-- Agora Modal e Sidebar nascem e morrem juntos
-        html.Div(
-            render_layout(content_layout),
-            className="content",
-            style={"marginLeft": "280px", "padding": "20px"},
-        )
-    ])
-
-
 # ===============================
-# LAYOUT PRINCIPAL
+# LAYOUT PRINCIPAL (BUGFIX DE RAIZ)
 # ===============================
 app.layout = html.Div([
     # URL para roteamento
@@ -58,10 +35,15 @@ app.layout = html.Div([
     # Stores globais
     dcc.Store(id="auth-store", storage_type="session"),
     dcc.Store(id="store-user-id", storage_type="session"),
+    dcc.Store(id="store-reload-dashboard", data=0),  # Centralizado na raiz
     
     # Download components
     dcc.Download(id="download-extrato"),
     dcc.Download(id="download-dashboard"),
+    
+    # Sidebar e Modal obrigatoriamente na raiz para o Dash compilar os Callbacks
+    html.Div(sidebar, id="sidebar-container", style={"display": "none"}),
+    modal_novo_lancamento,
     
     # Conteúdo renderizado
     html.Div(id="page-content"),
@@ -72,66 +54,71 @@ app.layout = html.Div([
 # CALLBACK DE ROTEAMENTO
 # ===============================
 @app.callback(
-    Output("page-content", "children"),
-    Input("url", "pathname"),
-    Input("auth-store", "data"),
+    [Output("page-content", "children"), Output("sidebar-container", "style")],
+    [Input("url", "pathname"), Input("auth-store", "data")],
 )
 def display_page(pathname, auth_data):
     """
-    Gerencia roteamento e controle de acesso com validação criptográfica.
+    Gerencia roteamento, visibilidade da Sidebar e validação de acesso.
     """
-    # Páginas públicas (sem autenticação)
     public_pages = ["/", "/login", "/register"]
-    
-    # Validação do Token no Backend
     is_authenticated = check_auth(auth_data)
     
-    # Se não autenticado e tentando acessar página privada
+    # Estilos de visibilidade da Sidebar
+    HIDE_SIDEBAR = {"display": "none"}
+    SHOW_SIDEBAR = {"display": "block"}
+    
+    def wrap_private(layout_component):
+        return html.Div(
+            render_layout(layout_component),
+            className="content",
+            style={"marginLeft": "280px", "padding": "20px"},
+        )
+    
+    # Bloqueio de acesso
     if pathname not in public_pages and not is_authenticated:
         app_logger.warning(f"Acesso não autorizado bloqueado: {pathname}")
-        return render_layout(login_page.layout)
+        return render_layout(login_page.layout), HIDE_SIDEBAR
     
     # Roteamento
     if pathname == "/" or pathname == "/login":
         if is_authenticated:
-            return dcc.Location(pathname="/dashboard", id="redirect-dashboard")
-        return render_layout(login_page.layout)
+            return dcc.Location(pathname="/dashboard", id="redirect-dash"), HIDE_SIDEBAR
+        return render_layout(login_page.layout), HIDE_SIDEBAR
     
     elif pathname == "/register":
         if is_authenticated:
-            return dcc.Location(pathname="/dashboard", id="redirect-dashboard")
-        return render_layout(login_page.register_layout)
+            return dcc.Location(pathname="/dashboard", id="redirect-dash"), HIDE_SIDEBAR
+        return render_layout(login_page.register_layout), HIDE_SIDEBAR
     
     elif pathname == "/dashboard":
         if not is_authenticated:
-            return render_layout(login_page.layout)
-        return get_private_layout(dashboard_page.layout)
+            return render_layout(login_page.layout), HIDE_SIDEBAR
+        return wrap_private(dashboard_page.layout), SHOW_SIDEBAR
     
     elif pathname == "/extrato":
         if not is_authenticated:
-            return render_layout(login_page.layout)
-        return get_private_layout(extrato_page.layout)
+            return render_layout(login_page.layout), HIDE_SIDEBAR
+        return wrap_private(extrato_page.layout), SHOW_SIDEBAR
     
     elif pathname == "/relatorios":
         if not is_authenticated:
-            return render_layout(login_page.layout)
-        return get_private_layout(relatorios_page.layout)
+            return render_layout(login_page.layout), HIDE_SIDEBAR
+        return wrap_private(relatorios_page.layout), SHOW_SIDEBAR
     
     elif pathname == "/configuracoes":
         if not is_authenticated:
-            return render_layout(login_page.layout)
-        return get_private_layout(configuracoes_page.layout)
+            return render_layout(login_page.layout), HIDE_SIDEBAR
+        return wrap_private(configuracoes_page.layout), SHOW_SIDEBAR
     
     else:
-        # Página 404
         from components.shared.error import error_page_404
-        return render_layout(error_page_404)
+        return render_layout(error_page_404), HIDE_SIDEBAR
 
 
 # ===============================
 # REGISTRA CALLBACKS
 # ===============================
-# Deve vir depois da definição do layout
 try:
     import callbacks
     app_logger.info("Callbacks registrados")
