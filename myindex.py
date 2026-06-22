@@ -17,7 +17,7 @@ from config.logging_config import app_logger
 from middleware.auth_middleware import check_auth
 
 # ===============================
-# HELPER DE LAYOUT (BUGFIX)
+# HELPERS DE LAYOUT (BUGFIXES)
 # ===============================
 def render_layout(layout_obj):
     """
@@ -28,6 +28,25 @@ def render_layout(layout_obj):
     if callable(layout_obj):
         return layout_obj()
     return layout_obj
+
+
+def get_private_layout(content_layout):
+    """
+    Envolve o conteúdo das páginas privadas com a sidebar e o modal.
+    BUGFIX: O modal deve ser injetado dinamicamente JUNTO com a sidebar.
+    Se o modal ficar estático no app.layout e a sidebar for dinâmica, 
+    o Dash perde a referência do callback em ambiente de Produção (debug=False).
+    """
+    return html.Div([
+        sidebar,
+        modal_novo_lancamento,  # <-- Agora Modal e Sidebar nascem e morrem juntos
+        html.Div(
+            render_layout(content_layout),
+            className="content",
+            style={"marginLeft": "280px", "padding": "20px"},
+        )
+    ])
+
 
 # ===============================
 # LAYOUT PRINCIPAL
@@ -43,9 +62,6 @@ app.layout = html.Div([
     # Download components
     dcc.Download(id="download-extrato"),
     dcc.Download(id="download-dashboard"),
-    
-    # Modal de novo lançamento
-    modal_novo_lancamento,
     
     # Conteúdo renderizado
     html.Div(id="page-content"),
@@ -67,7 +83,7 @@ def display_page(pathname, auth_data):
     # Páginas públicas (sem autenticação)
     public_pages = ["/", "/login", "/register"]
     
-    # Validação do Token no Backend (Restauração de Segurança)
+    # Validação do Token no Backend
     is_authenticated = check_auth(auth_data)
     
     # Se não autenticado e tentando acessar página privada
@@ -89,50 +105,22 @@ def display_page(pathname, auth_data):
     elif pathname == "/dashboard":
         if not is_authenticated:
             return render_layout(login_page.layout)
-        return html.Div([
-            sidebar,
-            html.Div(
-                render_layout(dashboard_page.layout),  # Proteção contra func layout
-                className="content",
-                style={"marginLeft": "280px", "padding": "20px"},
-            )
-        ])
+        return get_private_layout(dashboard_page.layout)
     
     elif pathname == "/extrato":
         if not is_authenticated:
             return render_layout(login_page.layout)
-        return html.Div([
-            sidebar,
-            html.Div(
-                render_layout(extrato_page.layout),    # Proteção contra func layout
-                className="content",
-                style={"marginLeft": "280px", "padding": "20px"},
-            )
-        ])
+        return get_private_layout(extrato_page.layout)
     
     elif pathname == "/relatorios":
         if not is_authenticated:
             return render_layout(login_page.layout)
-        return html.Div([
-            sidebar,
-            html.Div(
-                render_layout(relatorios_page.layout), # Proteção contra func layout
-                className="content",
-                style={"marginLeft": "280px", "padding": "20px"},
-            )
-        ])
+        return get_private_layout(relatorios_page.layout)
     
     elif pathname == "/configuracoes":
         if not is_authenticated:
             return render_layout(login_page.layout)
-        return html.Div([
-            sidebar,
-            html.Div(
-                render_layout(configuracoes_page.layout), # Proteção contra func layout
-                className="content",
-                style={"marginLeft": "280px", "padding": "20px"},
-            )
-        ])
+        return get_private_layout(configuracoes_page.layout)
     
     else:
         # Página 404
