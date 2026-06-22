@@ -17,6 +17,19 @@ from config.logging_config import app_logger
 from middleware.auth_middleware import check_auth
 
 # ===============================
+# HELPER DE LAYOUT (BUGFIX)
+# ===============================
+def render_layout(layout_obj):
+    """
+    Avalia o layout importado. Se for uma função (útil para layouts dinâmicos 
+    que atualizam datas no Dash), ele invoca a função. 
+    Caso contrário, retorna o componente diretamente.
+    """
+    if callable(layout_obj):
+        return layout_obj()
+    return layout_obj
+
+# ===============================
 # LAYOUT PRINCIPAL
 # ===============================
 app.layout = html.Div([
@@ -50,44 +63,36 @@ app.layout = html.Div([
 def display_page(pathname, auth_data):
     """
     Gerencia roteamento e controle de acesso com validação criptográfica.
-    
-    Args:
-        pathname: Caminho da URL
-        auth_data: Dados de autenticação (não confiável por vir do Client)
-    
-    Returns:
-        Layout da página
     """
     # Páginas públicas (sem autenticação)
     public_pages = ["/", "/login", "/register"]
     
-    # Validação do Token no Backend
+    # Validação do Token no Backend (Restauração de Segurança)
     is_authenticated = check_auth(auth_data)
     
     # Se não autenticado e tentando acessar página privada
     if pathname not in public_pages and not is_authenticated:
         app_logger.warning(f"Acesso não autorizado bloqueado: {pathname}")
-        return login_page.layout
+        return render_layout(login_page.layout)
     
     # Roteamento
     if pathname == "/" or pathname == "/login":
-        # BUGFIX: Se estiver logado, dispara redirecionamento forçado pro dashboard.
         if is_authenticated:
             return dcc.Location(pathname="/dashboard", id="redirect-dashboard")
-        return login_page.layout
+        return render_layout(login_page.layout)
     
     elif pathname == "/register":
         if is_authenticated:
             return dcc.Location(pathname="/dashboard", id="redirect-dashboard")
-        return login_page.register_layout
+        return render_layout(login_page.register_layout)
     
     elif pathname == "/dashboard":
         if not is_authenticated:
-            return login_page.layout
+            return render_layout(login_page.layout)
         return html.Div([
             sidebar,
             html.Div(
-                dashboard_page.layout,
+                render_layout(dashboard_page.layout),  # Proteção contra func layout
                 className="content",
                 style={"marginLeft": "280px", "padding": "20px"},
             )
@@ -95,11 +100,11 @@ def display_page(pathname, auth_data):
     
     elif pathname == "/extrato":
         if not is_authenticated:
-            return login_page.layout
+            return render_layout(login_page.layout)
         return html.Div([
             sidebar,
             html.Div(
-                extrato_page.layout,
+                render_layout(extrato_page.layout),    # Proteção contra func layout
                 className="content",
                 style={"marginLeft": "280px", "padding": "20px"},
             )
@@ -107,11 +112,11 @@ def display_page(pathname, auth_data):
     
     elif pathname == "/relatorios":
         if not is_authenticated:
-            return login_page.layout
+            return render_layout(login_page.layout)
         return html.Div([
             sidebar,
             html.Div(
-                relatorios_page.layout,
+                render_layout(relatorios_page.layout), # Proteção contra func layout
                 className="content",
                 style={"marginLeft": "280px", "padding": "20px"},
             )
@@ -119,11 +124,11 @@ def display_page(pathname, auth_data):
     
     elif pathname == "/configuracoes":
         if not is_authenticated:
-            return login_page.layout
+            return render_layout(login_page.layout)
         return html.Div([
             sidebar,
             html.Div(
-                configuracoes_page.layout,
+                render_layout(configuracoes_page.layout), # Proteção contra func layout
                 className="content",
                 style={"marginLeft": "280px", "padding": "20px"},
             )
@@ -132,7 +137,7 @@ def display_page(pathname, auth_data):
     else:
         # Página 404
         from components.shared.error import error_page_404
-        return error_page_404()
+        return render_layout(error_page_404)
 
 
 # ===============================
