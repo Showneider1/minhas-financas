@@ -71,9 +71,14 @@ def display_page(pathname, auth_data):
     
     # Roteamento
     if pathname == "/" or pathname == "/login":
+        # BUGFIX: Se estiver logado, dispara redirecionamento forçado pro dashboard.
+        if is_authenticated:
+            return dcc.Location(pathname="/dashboard", id="redirect-dashboard")
         return login_page.layout
     
     elif pathname == "/register":
+        if is_authenticated:
+            return dcc.Location(pathname="/dashboard", id="redirect-dashboard")
         return login_page.register_layout
     
     elif pathname == "/dashboard":
