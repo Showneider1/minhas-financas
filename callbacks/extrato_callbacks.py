@@ -6,7 +6,7 @@ from calendar import monthrange
 from datetime import date
 
 import dash_bootstrap_components as dbc
-from dash import ALL, Input, Output, State, ctx, html, no_update
+from dash import ALL, Input, Output, State, ctx, dcc, html, no_update
 
 from app import app
 from config.logging_config import app_logger
@@ -16,6 +16,7 @@ from database.repositories.transaction_repo import TransactionRepository
 from middleware.auth_context import resolve_user
 from services.account_service import AccountService
 from services.category_service import CategoryService
+from services.export_service import ExportService
 from services.finance_service import FinanceService
 from utils.exceptions import AuthenticationError
 
@@ -404,6 +405,60 @@ def _build_pagination(page, total):
         )
     )
     return dbc.Pagination(items, className="mb-0")
+
+
+# ─── Exportar CSV com os filtros atuais ───────────────────────────────────────
+@app.callback(
+    Output("download-dataframe-csv", "data"),
+    Input("btn-export-csv", "n_clicks"),
+    State("extrato-filter-month", "value"),
+    State("extrato-filter-year", "value"),
+    State("extrato-filter-search", "value"),
+    State("extrato-filter-account", "value"),
+    State("extrato-filter-category", "value"),
+    State("extrato-filter-type", "value"),
+    State("extrato-filter-status", "value"),
+    State("auth-store", "data"),
+    prevent_initial_call=True,
+)
+def exportar_extrato_csv(n_clicks, month, year, search, acc_id, cat_id, type_, status, auth_data):
+    """Gera CSV com todas as transações dos filtros atuais, sem paginação."""
+    if not n_clicks:
+        return no_update
+
+    try:
+        user_id = resolve_user(auth_data)
+        month = int(month or date.today().month)
+        year = int(year or date.today().year)
+        start_date = date(year, month, 1)
+        end_date = date(year, month, monthrange(year, month)[1])
+
+        account_id = int(acc_id) if acc_id else None
+        category_id = int(cat_id) if cat_id else None
+        transaction_type = None if type_ == "ALL" else TransactionType(type_)
+        status_filter = None if status == "ALL" else status
+
+        with get_db_session() as db:
+            transactions = FinanceService(db).export_filtered_transactions(
+                user_id=user_id,
+                start_date=start_date,
+                end_date=end_date,
+                transaction_type=transaction_type,
+                status=status_filter,
+                account_id=account_id,
+                category_id=category_id,
+                search=search,
+            )
+
+        csv_content = ExportService.transactions_to_csv(transactions)
+        filename = f"extrato_{year}-{month:02d}.csv"
+        return dcc.send_string(csv_content, filename=filename)
+
+    except AuthenticationError:
+        return None
+    except Exception as e:
+        app_logger.error(f"Erro ao exportar CSV do extrato: {e}")
+        return None
 
 
 # ─── Paginação ────────────────────────────────────────────────────────────────

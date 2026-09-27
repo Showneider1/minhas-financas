@@ -135,6 +135,11 @@ class TransactionRepository(BaseRepository[Transaction]):
                 query = query.filter(Transaction.paid_date.isnot(None))
             elif s_val == "PENDING":
                 query = query.filter(Transaction.paid_date.is_(None))
+            elif s_val == "OVERDUE":
+                query = query.filter(
+                    Transaction.paid_date.is_(None),
+                    Transaction.due_date < date.today(),
+                )
 
         if search:
             term = f"%{search[:100]}%"
@@ -267,6 +272,44 @@ class TransactionRepository(BaseRepository[Transaction]):
                 pending_expense or 0, where="tx_repo.summary.pending_expense"
             ),
         }
+
+    def export_filtered_transactions(
+        self,
+        *,
+        user_id: int,
+        start_date: date | None,
+        end_date: date | None,
+        transaction_type: TransactionType | None,
+        status: str | None,
+        category_ids: list[int] | None,
+        account_ids: list[int] | None,
+        search: str | None,
+        is_recurring: bool | None = None,
+    ) -> list[Transaction]:
+        """Consulta completa para exportação, reaproveitando os filtros da UI.
+
+        - Sem `LIMIT/OFFSET`: o relatório deve conter todos os resultados.
+        - `joinedload` evita N+1 ao montar as colunas Categoria/Conta.
+        - `user_id` é obrigatório (isolamento anti-IDOR).
+        """
+        query = self._build_filtered_query(
+            user_id=user_id,
+            start_date=start_date,
+            end_date=end_date,
+            transaction_type=transaction_type,
+            status=status,
+            category_ids=category_ids,
+            account_ids=account_ids,
+            min_amount=None,
+            max_amount=None,
+            search=search,
+            is_recurring=is_recurring,
+        ).options(
+            joinedload(Transaction.category),
+            joinedload(Transaction.account),
+        )
+
+        return query.order_by(desc(Transaction.due_date)).all()
 
     def get_filtered(
         self,

@@ -212,6 +212,32 @@ class FinanceService:
             "balance_previsto": income_prev - expense_prev,
         }
 
+    def export_filtered_transactions(
+        self,
+        *,
+        user_id: int,
+        start_date: date,
+        end_date: date,
+        transaction_type: TransactionType | None = None,
+        status: str | None = None,
+        account_id: int | None = None,
+        category_id: int | None = None,
+        search: str | None = None,
+    ):
+        """Delega ao repositório a busca completa usada na exportação CSV."""
+        from database.repositories.transaction_repo import TransactionRepository
+
+        return TransactionRepository(self.db).export_filtered_transactions(
+            user_id=user_id,
+            start_date=start_date,
+            end_date=end_date,
+            transaction_type=transaction_type,
+            status=status,
+            category_ids=[category_id] if category_id else None,
+            account_ids=[account_id] if account_id else None,
+            search=search,
+        )
+
     # ------------------------------------------------------------------
     # Helpers (isolamento)
     # ------------------------------------------------------------------

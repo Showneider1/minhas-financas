@@ -20,6 +20,7 @@ layout = dbc.Container(
         dcc.Store(id="extrato-reload-trigger", data=0),
         dcc.Store(id="extrato-page-current", data=1),
         dcc.Store(id="extrato-del-id", data=None),
+        dcc.Download(id="download-dataframe-csv"),
         # Cabecalho
         dbc.Row(
             [
@@ -239,13 +240,29 @@ layout = dbc.Container(
                                     width=8,
                                 ),
                                 dbc.Col(
-                                    dbc.Button(
-                                        [html.I(className="bi bi-x-circle me-1"), "Limpar filtros"],
-                                        id="extrato-btn-clear",
-                                        size="sm",
-                                        color="secondary",
-                                        outline=True,
-                                    ),
+                                    [
+                                        dbc.Button(
+                                            [
+                                                html.I(className="bi bi-filetype-csv me-1"),
+                                                "Exportar CSV",
+                                            ],
+                                            id="btn-export-csv",
+                                            size="sm",
+                                            color="primary",
+                                            outline=True,
+                                            className="me-2",
+                                        ),
+                                        dbc.Button(
+                                            [
+                                                html.I(className="bi bi-x-circle me-1"),
+                                                "Limpar filtros",
+                                            ],
+                                            id="extrato-btn-clear",
+                                            size="sm",
+                                            color="secondary",
+                                            outline=True,
+                                        ),
+                                    ],
                                     width=4,
                                     className="text-end",
                                 ),

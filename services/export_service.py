@@ -15,6 +15,7 @@ from reportlab.lib.units import inch
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from config.logging_config import app_logger
+from database.enums import TransactionType
 
 
 class ExportService:
@@ -90,6 +91,51 @@ class ExportService:
         output.seek(0)
         app_logger.info("Arquivo Excel gerado com sucesso")
         return output
+
+    @staticmethod
+    def transactions_to_csv(transactions, delimiter: str = ";") -> str:
+        """Gera CSV amigável a partir de transações já filtradas.
+
+        Colunas:
+            Data, Descrição, Conta, Categoria, Tipo, Valor (R$), Status
+        """
+        if not transactions:
+            rows = [
+                {
+                    "Data": "",
+                    "Descrição": "",
+                    "Conta": "",
+                    "Categoria": "",
+                    "Tipo": "",
+                    "Valor (R$)": "",
+                    "Status": "",
+                }
+            ]
+        else:
+            rows = [
+                {
+                    "Data": t.due_date.strftime("%d/%m/%Y"),
+                    "Descrição": t.description,
+                    "Conta": t.account.name if t.account else "-",
+                    "Categoria": t.category.name if t.category else "-",
+                    "Tipo": ExportService._transaction_type_label(t.transaction_type),
+                    "Valor (R$)": f"{t.base_amount:.2f}".replace(".", ","),
+                    "Status": "Pago" if t.paid_date else "Pendente",
+                }
+                for t in transactions
+            ]
+
+        df = pd.DataFrame(rows)
+        return df.to_csv(index=False, sep=delimiter, encoding="utf-8-sig")
+
+    @staticmethod
+    def _transaction_type_label(transaction_type) -> str:
+        labels = {
+            TransactionType.INCOME: "Receita",
+            TransactionType.EXPENSE: "Despesa",
+            TransactionType.TRANSFER: "Transferência",
+        }
+        return labels.get(transaction_type, "Outro")
 
     @staticmethod
     def to_csv(
