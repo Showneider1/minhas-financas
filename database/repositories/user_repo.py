@@ -27,13 +27,13 @@ class UserRepository:
         em nenhum ponto do sistema.
         ──────────────────────────────────────────────────────────────
         """
-        return self.db.query(User).filter(User.email == email, User.is_deleted == False).first()
+        return self.db.query(User).filter(User.email == email, User.is_deleted.is_(False)).first()
 
     def email_exists(self, email: str, exclude_id: int | None = None) -> bool:
         """Verifica se email já está cadastrado (ignora usuários deletados)."""
         query = self.db.query(User.id).filter(
             User.email == email,
-            User.is_deleted == False,
+            User.is_deleted.is_(False),
         )
         if exclude_id:
             query = query.filter(User.id != exclude_id)
@@ -58,7 +58,7 @@ class UserRepository:
         BUG 7 CORRIGIDO: filtro is_deleted adicionado — antes retornava
         usuários deletados via soft delete, expondo dados indevidos.
         """
-        return self.db.query(User).filter(User.id == user_id, User.is_deleted == False).first()
+        return self.db.query(User).filter(User.id == user_id, User.is_deleted.is_(False)).first()
 
     def soft_delete_user(self, user_id: int) -> bool:
         """

@@ -218,7 +218,7 @@ class RecurrenceService:
             self.db.query(Transaction)
             .filter(
                 Transaction.user_id == user_id,
-                Transaction.is_recurring == True,
+                Transaction.is_recurring.is_(True),
                 extract("month", Transaction.due_date) == source_month,
                 extract("year", Transaction.due_date) == source_year,
             )

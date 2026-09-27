@@ -38,7 +38,9 @@ def _job_update_overdue_bills() -> None:
         from services.scheduled_bill_service import ScheduledBillService
 
         with get_db_session() as db:
-            users = db.query(User).filter(User.is_active == True, User.is_deleted == False).all()
+            users = (
+                db.query(User).filter(User.is_active.is_(True), User.is_deleted.is_(False)).all()
+            )
             total_updated = 0
             for user in users:
                 svc = ScheduledBillService(db)
@@ -65,7 +67,9 @@ def _job_process_recurrences() -> None:
         with get_db_session() as db:
             from datetime import date as _date
 
-            users = db.query(User).filter(User.is_active == True, User.is_deleted == False).all()
+            users = (
+                db.query(User).filter(User.is_active.is_(True), User.is_deleted.is_(False)).all()
+            )
             total_processed = 0
             today = _date.today()
             for user in users:
@@ -93,7 +97,9 @@ def _job_check_goals() -> None:
         from services.goal_service import GoalService
 
         with get_db_session() as db:
-            users = db.query(User).filter(User.is_active == True, User.is_deleted == False).all()
+            users = (
+                db.query(User).filter(User.is_active.is_(True), User.is_deleted.is_(False)).all()
+            )
             goals_completed = 0
             for user in users:
                 svc = GoalService(db)
@@ -122,11 +128,11 @@ def _job_send_weekly_reports() -> None:
 
         with get_db_session() as db:
             query = db.query(User).filter(
-                User.is_active == True,
-                User.is_deleted == False,
+                User.is_active.is_(True),
+                User.is_deleted.is_(False),
             )
             if hasattr(User, "email_notifications"):
-                query = query.filter(User.email_notifications == True)
+                query = query.filter(User.email_notifications.is_(True))
 
             users = query.all()
             sent = 0

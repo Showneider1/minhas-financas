@@ -146,7 +146,7 @@ class CategoryService:
             query = self.db.query(Category).filter(
                 Category.name == cat_data["name"],
                 Category.transaction_type == cat_data["type"],
-                Category.is_system == True,
+                Category.is_system.is_(True),
             )
             if user_id is not None:
                 query = query.filter(Category.user_id == user_id)

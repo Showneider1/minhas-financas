@@ -10,19 +10,23 @@ def _auth_data():
 
 
 def test_investimentos_route_renders_page_when_authenticated():
-    rendered = display_page("/investimentos", _auth_data())
+    content, sidebar_style = display_page("/investimentos", _auth_data())
 
-    assert rendered is not login_page.layout
-    assert rendered.children[1].children is not None
+    assert content is not login_page.layout
+    assert content.children is not None
+    assert sidebar_style == {"display": "block"}
 
 
 def test_recorrencia_route_renders_page_when_authenticated():
-    rendered = display_page("/recorrencia", _auth_data())
+    content, sidebar_style = display_page("/recorrencia", _auth_data())
 
-    assert rendered is not login_page.layout
-    assert rendered.children[1].children is not None
+    assert content is not login_page.layout
+    assert content.children is not None
+    assert sidebar_style == {"display": "block"}
 
 
 def test_new_routes_are_protected_without_token():
-    assert display_page("/investimentos", None) is login_page.layout
-    assert display_page("/recorrencia", None) is login_page.layout
+    for pathname in ("/investimentos", "/recorrencia"):
+        content, sidebar_style = display_page(pathname, None)
+        assert content is login_page.layout
+        assert sidebar_style == {"display": "none"}

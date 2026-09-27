@@ -182,14 +182,14 @@ def _render_categorias(db, user_id):
                 dbc.ListGroupItem(
                     [
                         dbc.Row(
-                                [
-                                    dbc.Col(
-                                        [
-                                            html.I(
-                                                className=(
-                                                    "bi bi-arrow-return-right text-muted me-2 ms-4"
-                                                )
-                                            ),
+                            [
+                                dbc.Col(
+                                    [
+                                        html.I(
+                                            className=(
+                                                "bi bi-arrow-return-right text-muted me-2 ms-4"
+                                            )
+                                        ),
                                         html.Span(filho.name, className="small"),
                                         _tipo_badge(filho.transaction_type),
                                     ],

@@ -5,7 +5,7 @@ Nunca usar store-user-id como autoridade.
 """
 
 import dash_bootstrap_components as dbc
-from dash import Input, Output, State, ctx, no_update, html
+from dash import Input, Output, State, ctx, html, no_update
 
 from app import app
 from config.logging_config import app_logger
@@ -13,9 +13,9 @@ from database.connection import get_db_session
 from middleware.auth_context import resolve_user
 from middleware.rate_limiter import client_ip, hit
 from services.investment_service import (
-    InvestmentService,
     InsufficientFundsError,
     InsufficientPositionError,
+    InvestmentService,
     InvestmentValidationError,
 )
 from utils.exceptions import AuthenticationError
@@ -23,11 +23,13 @@ from utils.exceptions import AuthenticationError
 
 def _fmt_brl(value) -> str:
     from decimal import Decimal as _D
+
     amount = value if isinstance(value, _D) else _D(str(value or 0))
     return f"R$ {amount:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
 # ─── 1. Carregar carteira ─────────────────────────────────────────────────────
+
 
 @app.callback(
     Output("invest-portfolio-table", "children"),
@@ -92,6 +94,7 @@ def load_portfolio(auth_data, _reload):
 
 # ─── 2. Abrir/fechar modal ────────────────────────────────────────────────────
 
+
 @app.callback(
     Output("invest-operation-modal", "is_open"),
     Output("invest-edit-id", "data", allow_duplicate=True),
@@ -111,6 +114,7 @@ def toggle_invest_modal(n_new, n_cancel, n_save, is_open):
 
 
 # ─── 3. Salvar operação ───────────────────────────────────────────────────────
+
 
 @app.callback(
     Output("invest-modal-alert", "children"),

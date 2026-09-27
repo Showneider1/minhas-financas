@@ -2,6 +2,7 @@
 Repository para operações com categorias.
 """
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from database.models.category import Category, TransactionType
@@ -25,7 +26,7 @@ class CategoryRepository:
             self.db.query(Category)
             .filter(
                 Category.transaction_type == transaction_type,
-                ((Category.is_system == True) | (Category.user_id == user_id)),
+                or_(Category.is_system, Category.user_id == user_id),
             )
             .order_by(Category.name)
             .all()
@@ -37,7 +38,7 @@ class CategoryRepository:
         """
         return (
             self.db.query(Category)
-            .filter((Category.is_system == True) | (Category.user_id == user_id))
+            .filter(or_(Category.is_system, Category.user_id == user_id))
             .order_by(Category.transaction_type, Category.name)
             .all()
         )

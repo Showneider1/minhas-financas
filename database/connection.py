@@ -98,7 +98,7 @@ def init_db():
         # Imports explícitos para garantir o registro no Metadata
         # (todos os models — goals/scheduled_bills/investment ficavam de fora e
         #  nunca tinham tabela física criada; aditivo, não apaga nada)
-        import database.models.user
+        import database.models.user  # noqa: F401 — registra o model no metadata
         from database.base import Base
 
         logger.info("Recriando/Verificando tabelas do banco de dados...")

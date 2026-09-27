@@ -15,13 +15,12 @@ Compatibilidade SQLite/Postgres:
 """
 
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
-from typing import Union
 
 Q2 = Decimal("0.01")
 Q4 = Decimal("0.0001")
 Q8 = Decimal("0.00000001")
 
-MoneyLike = Union[Decimal, int, str]
+MoneyLike = Decimal | int | str
 
 
 def _coerce(value: MoneyLike, where: str) -> Decimal:

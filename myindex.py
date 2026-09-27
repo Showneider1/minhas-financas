@@ -3,13 +3,13 @@ Arquivo principal - Entry point da aplicação.
 Gerencia roteamento e layout principal.
 """
 
-import dash_bootstrap_components as dbc
 from dash import Input, Output, dcc, html
 
 import callbacks  # noqa: F401
 from app import app, server
 from components.sidebar import modal_novo_lancamento, sidebar
 from config.logging_config import app_logger
+from middleware.auth_middleware import check_auth
 from middleware.http_rate_limit import init_http_rate_limit
 from pages import (
     configuracoes_page,
@@ -25,32 +25,38 @@ from pages import (
 # P1 segurança: rajadas no endpoint de escrita retornam HTTP 429 por IP.
 init_http_rate_limit(server)
 
+
 # ===============================
-# LAYOUT PRINCIPAL
+# HELPERS DE LAYOUT
+# ===============================
+def render_layout(layout_obj):
+    """Renderiza layout estático ou executa função de layout dinâmico."""
+    if callable(layout_obj):
+        return layout_obj()
+    return layout_obj
+
+
+# ===============================
+# LAYOUT PRINCIPAL (BUGFIX DE RAIZ)
 # ===============================
 app.layout = html.Div(
     [
         # URL para roteamento
         dcc.Location(id="url", refresh=False),
-        # Stores globais (Memória do navegador)
+        # Stores globais
         dcc.Store(id="auth-store", storage_type="session"),
         dcc.Store(id="store-user-id", storage_type="session"),
-        # === SINAIS DE ATUALIZAÇÃO ===
-        # 1. Sinal principal — lido pelos callbacks de KPIs e gráficos
-        dcc.Store(id="store-reload-dashboard", storage_type="memory"),
-        # 2. Sinal auxiliar — escrito por confirmar_exclusao,
-        #    propagado ao store-reload-dashboard pelo consolidador
+        dcc.Store(id="store-reload-dashboard", data=0),
         dcc.Store(id="store-reload-aux", storage_type="memory"),
-        # 3. Guarda o ID da transação que está sendo editada
         dcc.Store(id="store-transacao-id-editar", data=None, storage_type="memory"),
-        # =============================
         dcc.Store(id="store-modal-state", storage_type="memory", data={"is_open": False}),
         # Download components
         dcc.Download(id="download-extrato"),
         dcc.Download(id="download-dashboard"),
-        # Modal de novo lançamento (Global)
+        # Sidebar e Modal obrigatoriamente na raiz para o Dash compilar os Callbacks
+        html.Div(sidebar, id="sidebar-container", style={"display": "none"}),
         modal_novo_lancamento,
-        # Conteúdo renderizado (Páginas)
+        # Conteúdo renderizado
         html.Div(id="page-content"),
     ]
 )
@@ -60,94 +66,77 @@ app.layout = html.Div(
 # CALLBACK DE ROTEAMENTO
 # ===============================
 @app.callback(
-    Output("page-content", "children"),
-    Input("url", "pathname"),
-    Input("auth-store", "data"),
+    [Output("page-content", "children"), Output("sidebar-container", "style")],
+    [Input("url", "pathname"), Input("auth-store", "data")],
 )
 def display_page(pathname, auth_data):
+    """Gerencia roteamento, visibilidade da Sidebar e validação de acesso."""
     public_pages = ["/", "/login", "/register"]
+    is_authenticated = check_auth(auth_data)
 
-    # P0 (IDOR): presença do store não autentica — valida assinatura/expiração.
-    from config.security import verify_token
+    HIDE_SIDEBAR = {"display": "none"}
+    SHOW_SIDEBAR = {"display": "block"}
 
-    token = (auth_data or {}).get("token") if isinstance(auth_data, dict) else None
-    authenticated = verify_token(token) is not None if token else False
-
-    if pathname not in public_pages and not authenticated:
-        app_logger.warning(f"Acesso não autorizado: {pathname}")
-        return login_page.layout
-
-    if pathname in ("/", "/login"):
-        return login_page.layout
-
-    if pathname == "/register":
-        return login_page.register_layout
-
-    content = None
-
-    if pathname == "/dashboard":
-        content = dashboard_page.layout()
-
-    elif pathname == "/extrato":
-        content = extrato_page.layout
-
-    elif pathname == "/relatorios":
-        content = relatorios_page.layout
-
-    elif pathname == "/configuracoes":
-        content = configuracoes_page.layout
-
-    elif pathname == "/metas":
-        content = goals_page.layout
-
-    elif pathname == "/investimentos":
-        content = investimentos_page.layout()
-
-    elif pathname == "/recorrencia":
-        content = recorrencia_page.layout()
-
-    else:
-        try:
-            from components.shared.error import error_page_404
-
-            return error_page_404()
-        except Exception:
-            return html.Div(
-                dbc.Container(
-                    [
-                        html.H1("404", className="display-1 fw-bold"),
-                        html.P("Página não encontrada.", className="lead"),
-                        dbc.Button("Voltar ao Início", href="/dashboard", color="primary"),
-                    ],
-                    className="py-5 text-center",
-                )
-            )
-
-    if content:
+    def wrap_private(layout_component):
         return html.Div(
-            [
-                sidebar,
-                html.Div(
-                    content,
-                    className="content",
-                    style={"marginLeft": "280px", "padding": "20px"},
-                ),
-            ]
+            render_layout(layout_component),
+            className="content",
+            style={"marginLeft": "280px", "padding": "20px"},
         )
 
-    return login_page.layout
+    # Bloqueio de acesso
+    if pathname not in public_pages and not is_authenticated:
+        app_logger.warning(f"Acesso não autorizado bloqueado: {pathname}")
+        return render_layout(login_page.layout), HIDE_SIDEBAR
 
+    if pathname in ("/", "/login"):
+        if is_authenticated:
+            return dcc.Location(pathname="/dashboard", id="redirect-dash"), HIDE_SIDEBAR
+        return render_layout(login_page.layout), HIDE_SIDEBAR
 
-# ===============================
-# REGISTRA CALLBACKS
-# ===============================
-try:
-    app_logger.info("✅ Callbacks registrados com sucesso!")
-except Exception as e:
-    app_logger.error(f"❌ Erro ao registrar callbacks: {e}")
-    import traceback
+    if pathname == "/register":
+        if is_authenticated:
+            return dcc.Location(pathname="/dashboard", id="redirect-dash"), HIDE_SIDEBAR
+        return render_layout(login_page.register_layout), HIDE_SIDEBAR
 
-    traceback.print_exc()
+    if pathname == "/dashboard":
+        if not is_authenticated:
+            return render_layout(login_page.layout), HIDE_SIDEBAR
+        return wrap_private(dashboard_page.layout), SHOW_SIDEBAR
+
+    if pathname == "/extrato":
+        if not is_authenticated:
+            return render_layout(login_page.layout), HIDE_SIDEBAR
+        return wrap_private(extrato_page.layout), SHOW_SIDEBAR
+
+    if pathname == "/relatorios":
+        if not is_authenticated:
+            return render_layout(login_page.layout), HIDE_SIDEBAR
+        return wrap_private(relatorios_page.layout), SHOW_SIDEBAR
+
+    if pathname == "/configuracoes":
+        if not is_authenticated:
+            return render_layout(login_page.layout), HIDE_SIDEBAR
+        return wrap_private(configuracoes_page.layout), SHOW_SIDEBAR
+
+    if pathname == "/metas":
+        if not is_authenticated:
+            return render_layout(login_page.layout), HIDE_SIDEBAR
+        return wrap_private(goals_page.layout), SHOW_SIDEBAR
+
+    if pathname == "/investimentos":
+        if not is_authenticated:
+            return render_layout(login_page.layout), HIDE_SIDEBAR
+        return wrap_private(investimentos_page.layout), SHOW_SIDEBAR
+
+    if pathname == "/recorrencia":
+        if not is_authenticated:
+            return render_layout(login_page.layout), HIDE_SIDEBAR
+        return wrap_private(recorrencia_page.layout), SHOW_SIDEBAR
+
+    from components.shared.error import error_page_404
+
+    return render_layout(error_page_404), HIDE_SIDEBAR
 
 
 # ===============================
@@ -156,7 +145,7 @@ except Exception as e:
 if __name__ == "__main__":
     from config.settings import settings
 
-    app_logger.info(f"🚀 Iniciando servidor em http://localhost:{settings.PORT}")
+    app_logger.info(f"Iniciando servidor em http://localhost:{settings.PORT}")
 
     app.run_server(
         debug=settings.DEBUG,

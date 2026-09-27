@@ -55,7 +55,7 @@ def update_forecast(start_date, end_date, _reload, auth_data):
             datetime.fromisoformat(start_date).date() if start_date else date.today().replace(day=1)
         )
         dt_end = datetime.fromisoformat(end_date).date() if end_date else date.today()
-    except:
+    except (TypeError, ValueError):
         dt_start = date.today().replace(day=1)
         dt_end = date.today()
 

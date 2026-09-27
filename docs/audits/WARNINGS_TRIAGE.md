@@ -65,6 +65,7 @@ Baixo. Apenas aviso de deprecação, funcionalidade mantida por compatibilidade.
 Mudar import para:
 ```python
 from sqlalchemy.orm import declarative_base
+
 Base = declarative_base()
 ```
 **Decisão QA:** Corrigir em hotfix técnico. Não sistêmico.

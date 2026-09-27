@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 from config.logging_config import app_logger
 from database.models.asset_price import AssetPrice
 
-
 B3_TICKER_PATTERN = re.compile(r"^[A-Z]{4}\d{1,2}$")
 
 

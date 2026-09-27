@@ -733,9 +733,7 @@ class InvestmentService:
                 )
 
         return {
-            "total_current_value": to_money2(
-                total_current_value, where="investment.summary.total"
-            ),
+            "total_current_value": to_money2(total_current_value, where="investment.summary.total"),
             "total_cost": to_money2(total_cost, where="investment.summary.cost"),
             "positions": sorted(positions, key=lambda item: item["ticker"]),
         }
@@ -817,7 +815,7 @@ class InvestmentService:
                         sale_date=sell.date,
                     )
                 )
-        return sorted(lines, key=lambda l: l.sale_date)
+        return sorted(lines, key=lambda item: item.sale_date)
 
     def _avg_price_until(self, asset_id: int, until_date: date, until_id: int) -> Decimal:
         """PM ponderado com taxas até (data, id) — replay parcial."""

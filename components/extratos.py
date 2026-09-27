@@ -13,7 +13,7 @@ from components.shared.cards import kpi_card
 # =============================
 try:
     locale.setlocale(locale.LC_TIME, "pt_BR.UTF-8")
-except:
+except locale.Error:
     pass
 
 MES_ANO_ATUAL = date.today().strftime("%B %Y").capitalize()

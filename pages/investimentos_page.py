@@ -4,10 +4,10 @@ Exibe carteira derivada do InvestmentService e permite registrar
 compra/venda/proventos/split via serviço.
 """
 
-import dash_bootstrap_components as dbc
-from dash import dcc, html
 from datetime import date
 
+import dash_bootstrap_components as dbc
+from dash import dcc, html
 
 OP_TYPE_OPTIONS = [
     {"label": "Compra", "value": "BUY"},

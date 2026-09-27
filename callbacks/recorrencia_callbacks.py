@@ -20,11 +20,13 @@ from utils.exceptions import AuthenticationError
 
 def _fmt_brl(value) -> str:
     from decimal import Decimal as _D
+
     amount = value if isinstance(value, _D) else _D(str(value or 0))
     return f"R$ {amount:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
 # ─── 1. Carregar tabela de recorrências ───────────────────────────────────────
+
 
 @app.callback(
     Output("recurrence-table", "children"),
@@ -127,6 +129,7 @@ def load_recurrences(auth_data, _reload):
 
 # ─── 2. Abrir/fechar modal ────────────────────────────────────────────────────
 
+
 @app.callback(
     Output("recurrence-modal", "is_open"),
     Output("rec-edit-id", "data", allow_duplicate=True),
@@ -146,6 +149,7 @@ def toggle_recurrence_modal(n_new, n_cancel, n_save, is_open):
 
 
 # ─── 3. Pausar / retomar / cancelar recorrência ───────────────────────────────
+
 
 def _get_triggered_id():
     return ctx.triggered_id
@@ -226,6 +230,7 @@ def manage_recurrence_action(_pause_clicks, _resume_clicks, _cancel_clicks, auth
 
 
 # ─── 4. Salvar recorrência ────────────────────────────────────────────────────
+
 
 @app.callback(
     Output("rec-modal-alert", "children"),

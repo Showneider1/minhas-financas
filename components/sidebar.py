@@ -203,12 +203,12 @@ modal_novo_lancamento = dbc.Modal(
                                         {
                                             "label": html.Span(
                                                 [
-                                                     html.I(
-                                                         className=(
-                                                             "bi bi-arrow-up-circle-fill "
-                                                             "text-success me-1"
-                                                         )
-                                                     ),
+                                                    html.I(
+                                                        className=(
+                                                            "bi bi-arrow-up-circle-fill "
+                                                            "text-success me-1"
+                                                        )
+                                                    ),
                                                     " Receita",
                                                 ]
                                             ),
@@ -217,12 +217,12 @@ modal_novo_lancamento = dbc.Modal(
                                         {
                                             "label": html.Span(
                                                 [
-                                                     html.I(
-                                                         className=(
-                                                             "bi bi-arrow-down-circle-fill "
-                                                             "text-danger me-1"
-                                                         )
-                                                     ),
+                                                    html.I(
+                                                        className=(
+                                                            "bi bi-arrow-down-circle-fill "
+                                                            "text-danger me-1"
+                                                        )
+                                                    ),
                                                     " Despesa",
                                                 ]
                                             ),
@@ -368,12 +368,12 @@ modal_novo_lancamento = dbc.Modal(
                                                                 html.P(
                                                                     "Lançamento pago?",
                                                                     className="mb-0 fw-bold small",
-                                                                 ),
-                                                                 html.Small(
-                                                                     "Marque se já foi "
-                                                                     "pago/recebido",
-                                                                     className="text-muted",
-                                                                 ),
+                                                                ),
+                                                                html.Small(
+                                                                    "Marque se já foi "
+                                                                    "pago/recebido",
+                                                                    className="text-muted",
+                                                                ),
                                                             ]
                                                         ),
                                                         dbc.Col(

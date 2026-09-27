@@ -4,10 +4,10 @@ Exibe contas recorrentes ativas e permite criar assinatura/conta fixa,
 pausar e cancelar via BillRecurrenceService.
 """
 
-import dash_bootstrap_components as dbc
-from dash import dcc, html
 from datetime import date
 
+import dash_bootstrap_components as dbc
+from dash import dcc, html
 
 BILL_TYPE_OPTIONS = [
     {"label": "Despesa", "value": "payable"},
@@ -234,8 +234,10 @@ def layout():
                             dbc.Card(
                                 [
                                     dbc.CardHeader(
-                                        [html.I(className="bi bi-list-check me-2"),
-                                         "Contas Ativas"],
+                                        [
+                                            html.I(className="bi bi-list-check me-2"),
+                                            "Contas Ativas",
+                                        ],
                                         className="bg-white fw-bold border-0 pb-0",
                                     ),
                                     dbc.CardBody(

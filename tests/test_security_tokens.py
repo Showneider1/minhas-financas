@@ -53,9 +53,7 @@ def test_tampered_and_wrong_type_denied(db):
     payload = security.decode_token(access)
 
     # Adulteração determinística: mesma estrutura, assinatura válida com outra chave.
-    tampered = jwt.encode(
-        payload, "x" * 32, algorithm=security.settings.JWT_ALGORITHM
-    )
+    tampered = jwt.encode(payload, "x" * 32, algorithm=security.settings.JWT_ALGORITHM)
 
     assert verify_token(tampered) is None
     assert verify_token("") is None

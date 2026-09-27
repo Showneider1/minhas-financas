@@ -38,11 +38,11 @@ class AccountRepository(BaseRepository[Account]):
             Lista de contas
         """
         query = self.db.query(Account).filter(
-            Account.user_id == user_id, Account.is_deleted == False
+            Account.user_id == user_id, Account.is_deleted.is_(False)
         )
 
         if not include_inactive:
-            query = query.filter(Account.is_active == True)
+            query = query.filter(Account.is_active.is_(True))
 
         return query.order_by(Account.name).all()
 
@@ -64,7 +64,9 @@ class AccountRepository(BaseRepository[Account]):
         return (
             self.db.query(Account)
             .filter(
-                Account.id == account_id, Account.user_id == user_id, Account.is_deleted == False
+                Account.id == account_id,
+                Account.user_id == user_id,
+                Account.is_deleted.is_(False),
             )
             .first()
         )

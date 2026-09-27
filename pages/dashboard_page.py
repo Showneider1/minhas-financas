@@ -70,6 +70,19 @@ def layout():
                         width="auto",
                         className="d-flex align-items-center",
                     ),
+                    dbc.Col(
+                        [
+                            dbc.Button(
+                                [html.I(className="bi bi-download me-1"), "Exportar"],
+                                id="btn-export-dashboard",
+                                color="primary",
+                                outline=True,
+                                size="sm",
+                            ),
+                        ],
+                        width="auto",
+                        className="d-flex align-items-center",
+                    ),
                 ],
                 align="center",
                 className="mb-4",

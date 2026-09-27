@@ -1,9 +1,8 @@
 """Modelo de cache/histórico de preços de mercado de ativos."""
 
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 
-from sqlalchemy import Column, Date, DateTime, Index, Integer, Numeric, String
-from sqlalchemy import UniqueConstraint
+from sqlalchemy import Column, Date, DateTime, Index, Integer, Numeric, String, UniqueConstraint
 
 from database.base import Base
 
