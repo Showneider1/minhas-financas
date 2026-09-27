@@ -17,6 +17,8 @@ from sqlalchemy.orm import Session, joinedload
 from database.models.category import Category, TransactionType
 from database.models.transaction import Transaction, TransactionStatus
 from services.balance_service import BalanceService
+from services.bill_recurrence_service import BillRecurrenceService
+from services.investment_service import InvestmentService
 from utils.money import to_money2
 
 ZERO = Decimal("0.00")
@@ -60,6 +62,44 @@ class DashboardService:
         P0: antes somava só transações (sem initial_balance, sem TRANSFER).
         """
         return self.balances.get_total_balance(user_id)
+
+    def get_wealth_summary(self, user_id: int) -> dict[str, Decimal]:
+        """Consolida caixa e investimentos para o dashboard principal.
+
+        Regra matemática:
+            Patrimônio Líquido = Saldo de Caixa + Valor Atual da Carteira.
+        """
+        cash_balance = self.get_saldo_calculado(user_id)
+        portfolio = InvestmentService(self.db).get_position_summary(user_id)
+        investments_total = to_money2(
+            portfolio["total_current_value"], where="dashboard.wealth.investments"
+        )
+        net_worth = to_money2(cash_balance + investments_total, where="dashboard.wealth.net")
+        return {
+            "cash_balance": cash_balance,
+            "investments_total": investments_total,
+            "net_worth": net_worth,
+        }
+
+    def get_upcoming_recurring_bills(
+        self, user_id: int, days_ahead: int = 30, limit: int = 10
+    ) -> list[dict[str, Any]]:
+        """Lista próximas ocorrências de contas recorrentes para o dashboard."""
+        today = date.today()
+        horizon = today + timedelta(days=days_ahead)
+        results: list[dict[str, Any]] = []
+        svc = BillRecurrenceService(self.db)
+
+        cursor = today.replace(day=1)
+        while cursor <= horizon:
+            for item in svc.project_period(user_id, cursor.year, cursor.month):
+                due = date.fromisoformat(item["due_date"])
+                if today <= due <= horizon:
+                    results.append(item)
+            cursor = cursor + relativedelta(months=1)
+
+        results.sort(key=lambda item: item["due_date"])
+        return results[:limit]
 
     def get_overview(self, user_id: int, start_date: date, end_date: date) -> dict[str, Any]:
         summary = self.balances.get_period_summary(user_id, start_date, end_date)

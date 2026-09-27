@@ -20,9 +20,11 @@ Sem integração com frontend (P1 backend-only).
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import extract
 from sqlalchemy.orm import Session
@@ -623,6 +625,103 @@ class InvestmentService:
         assets = self.db.query(Asset).filter(Asset.user_id == user_id).all()
         positions = [self.get_position(a.id, user_id) for a in assets]
         return sorted((p for p in positions if p.quantity > 0), key=lambda p: p.ticker)
+
+    def get_position_summary(self, user_id: int) -> dict[str, Any]:
+        """Resume carteira por valor atual sem gerar queries N+1.
+
+        O dashboard consome este método para consolidar patrimônio. Como a P1
+        ainda não possui cotação externa, o preço atual usa o último preço
+        operacional do ativo (após ajuste por splits).
+        """
+        assets = self.db.query(Asset).filter(Asset.user_id == user_id).all()
+        if not assets:
+            return {
+                "total_current_value": to_money2(0, where="investment.summary.total"),
+                "total_cost": to_money2(0, where="investment.summary.cost"),
+                "positions": [],
+            }
+
+        asset_ids = [asset.id for asset in assets]
+        operations = (
+            self.db.query(InvestmentOperation)
+            .filter(InvestmentOperation.asset_id.in_(asset_ids))
+            .order_by(
+                InvestmentOperation.asset_id.asc(),
+                InvestmentOperation.date.asc(),
+                InvestmentOperation.id.asc(),
+            )
+            .all()
+        )
+        ops_by_asset = defaultdict(list)
+        for op in operations:
+            ops_by_asset[op.asset_id].append(op)
+
+        positions = []
+        total_current_value = Decimal("0")
+        total_cost = Decimal("0")
+
+        for asset in assets:
+            qty = Decimal("0")
+            cost = Decimal("0")
+            fees = Decimal("0")
+            dividends = Decimal("0")
+            current_price = Decimal("0")
+
+            for op in ops_by_asset[asset.id]:
+                op_qty = Decimal(str(op.quantity or 0))
+                op_price = Decimal(str(op.price_per_unit or 0))
+                op_fees = Decimal(str(op.fees or 0))
+                op_total = Decimal(str(op.total_amount or 0))
+
+                if op.operation_type == OperationType.BUY:
+                    cost += op_qty * op_price + op_fees
+                    qty += op_qty
+                    fees += op_fees
+                    current_price = op_price
+                elif op.operation_type == OperationType.SELL:
+                    avg = cost / qty if qty > 0 else Decimal("0")
+                    cost -= avg * op_qty
+                    qty -= op_qty
+                    fees += op_fees
+                    current_price = op_price
+                elif op.operation_type == OperationType.SPLIT:
+                    if op_qty > 0:
+                        qty *= op_qty
+                        if current_price > 0:
+                            current_price = (current_price / op_qty).quantize(Q8)
+                elif op.operation_type in (OperationType.DIVIDEND, OperationType.INTEREST):
+                    dividends += op_total
+
+            if qty > 0:
+                avg_price = (cost / qty).quantize(Q8)
+                if current_price <= 0:
+                    current_price = avg_price
+                market_value = to_money2(qty * current_price, where="investment.summary.value")
+                total_current_value += market_value
+                total_cost += cost
+                positions.append(
+                    {
+                        "asset_id": asset.id,
+                        "ticker": asset.ticker,
+                        "name": asset.name,
+                        "asset_type": asset.asset_type.value,
+                        "quantity": qty.quantize(Q8),
+                        "average_price": avg_price,
+                        "current_price": current_price.quantize(Q8),
+                        "current_value": market_value,
+                        "total_cost": cost.quantize(Q8),
+                        "total_fees": fees.quantize(Q8),
+                        "dividends": dividends.quantize(Q2),
+                    }
+                )
+
+        return {
+            "total_current_value": to_money2(
+                total_current_value, where="investment.summary.total"
+            ),
+            "total_cost": to_money2(total_cost, where="investment.summary.cost"),
+            "positions": sorted(positions, key=lambda item: item["ticker"]),
+        }
 
     def get_portfolio_summary_by_type(self, user_id: int) -> dict[str, Decimal]:
         """Custo carregado por tipo de ativo (NÃO é valor de mercado)."""

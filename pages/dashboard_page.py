@@ -74,14 +74,39 @@ def layout():
                 align="center",
                 className="mb-4",
             ),
-            # Linha 1: 4 KPIs
+            # Linha 1: KPIs patrimoniais + fluxo do período
             dbc.Row(
                 [
                     dbc.Col(
                         _kpi_card("Saldo em Caixa", "kpi-saldo", "text-primary", icon="🏦"),
                         width=12,
                         sm=6,
-                        lg=3,
+                        lg=4,
+                        className="mb-3",
+                    ),
+                    dbc.Col(
+                        _kpi_card(
+                            "Investimentos",
+                            "kpi-investimentos",
+                            "text-info",
+                            icon="📊",
+                        ),
+                        width=12,
+                        sm=6,
+                        lg=4,
+                        className="mb-3",
+                    ),
+                    dbc.Col(
+                        _kpi_card(
+                            "Patrimônio Total",
+                            "kpi-patrimonio",
+                            "text-dark",
+                            "kpi-patrimonio-info",
+                            icon="💼",
+                        ),
+                        width=12,
+                        sm=6,
+                        lg=4,
                         className="mb-3",
                     ),
                     dbc.Col(
@@ -90,7 +115,7 @@ def layout():
                         ),
                         width=12,
                         sm=6,
-                        lg=3,
+                        lg=4,
                         className="mb-3",
                     ),
                     dbc.Col(
@@ -99,7 +124,7 @@ def layout():
                         ),
                         width=12,
                         sm=6,
-                        lg=3,
+                        lg=4,
                         className="mb-3",
                     ),
                     dbc.Col(
@@ -112,7 +137,7 @@ def layout():
                         ),
                         width=12,
                         sm=6,
-                        lg=3,
+                        lg=4,
                         className="mb-3",
                     ),
                 ]
@@ -184,6 +209,28 @@ def layout():
                                                     style={
                                                         "overflowY": "auto",
                                                         "maxHeight": "200px",
+                                                    },
+                                                ),
+                                            ),
+                                            html.Hr(className="my-2"),
+                                            html.Div(
+                                                [
+                                                    html.I(
+                                                        className="bi bi-repeat me-1 text-primary"
+                                                    ),
+                                                    html.Small(
+                                                        "Próximas recorrências",
+                                                        className="fw-semibold text-muted",
+                                                    ),
+                                                ],
+                                                className="mb-2",
+                                            ),
+                                            dcc.Loading(
+                                                html.Div(
+                                                    id="tabela-recorrencias-dashboard",
+                                                    style={
+                                                        "overflowY": "auto",
+                                                        "maxHeight": "140px",
                                                     },
                                                 ),
                                             ),

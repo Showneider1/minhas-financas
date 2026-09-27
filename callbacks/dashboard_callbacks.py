@@ -45,7 +45,35 @@ def _fim_do_mes(d: date) -> date:
     return d.replace(day=monthrange(d.year, d.month)[1])
 
 
-# ─── KPIs ─────────────────────────────────────────────────────────────────────
+# ─── KPIs patrimoniais ────────────────────────────────────────────────────────
+@app.callback(
+    Output("kpi-investimentos", "children"),
+    Output("kpi-patrimonio", "children"),
+    Output("kpi-patrimonio-info", "children"),
+    Input("dashboard-periodo", "start_date"),
+    Input("dashboard-periodo", "end_date"),
+    Input("store-reload-dashboard", "data"),
+    Input("btn-update-dashboard", "n_clicks"),
+    State("auth-store", "data"),
+)
+def update_wealth_cards(_start_date, _end_date, _reload, _btn, auth_data):
+    try:
+        user_id = resolve_user(auth_data)
+        with get_db_session() as db:
+            wealth = DashboardService(db).get_wealth_summary(user_id)
+        return (
+            _fmt_brl(wealth["investments_total"]),
+            _fmt_brl(wealth["net_worth"]),
+            f"Caixa: {_fmt_brl(wealth['cash_balance'])}",
+        )
+    except AuthenticationError:
+        return "R$ 0,00", "R$ 0,00", ""
+    except Exception as e:
+        app_logger.error(f"Patrimônio: {e}")
+        return "Erro", "Erro", "Erro"
+
+
+# ─── KPIs do período ──────────────────────────────────────────────────────────
 @app.callback(
     Output("kpi-saldo", "children"),
     Output("kpi-receita", "children"),
@@ -402,6 +430,63 @@ def update_charts_and_table(start_date, end_date, _reload, tipo_cat, auth_data):
         app_logger.error(f"Graficos/tabela: {e}")
 
     return fig1, fig2, table, top_cats_div, tot_rec, tot_desp, tot_saldo
+
+
+# ─── Próximas recorrências da Home ────────────────────────────────────────────
+@app.callback(
+    Output("tabela-recorrencias-dashboard", "children"),
+    Input("auth-store", "data"),
+    Input("store-reload-dashboard", "data"),
+)
+def update_dashboard_recurrences(auth_data, _reload):
+    try:
+        user_id = resolve_user(auth_data)
+        with get_db_session() as db:
+            bills = DashboardService(db).get_upcoming_recurring_bills(user_id)
+
+        if not bills:
+            return html.P("Nenhuma recorrência próxima.", className="text-muted small mb-0")
+
+        rows = []
+        for bill in bills:
+            status = "Gerada" if bill["already_generated"] else "Projetada"
+            badge_color = "success" if bill["already_generated"] else "primary"
+            amount_color = "text-danger" if bill["bill_type"] == "payable" else "text-success"
+            rows.append(
+                html.Div(
+                    [
+                        html.Div(
+                            [
+                                html.Strong(bill["name"], className="small"),
+                                html.Span(
+                                    status,
+                                    className=f"badge bg-{badge_color}-subtle text-{badge_color} "
+                                    "ms-2",
+                                ),
+                            ],
+                            className="d-flex justify-content-between align-items-center",
+                        ),
+                        html.Div(
+                            [
+                                html.Small(f"Vence: {bill['due_date']}", className="text-muted"),
+                                html.Small(
+                                    _fmt_brl(bill["amount"]),
+                                    className=f"fw-bold {amount_color}",
+                                ),
+                            ],
+                            className="d-flex justify-content-between align-items-center",
+                        ),
+                        html.Hr(className="my-2"),
+                    ]
+                )
+            )
+        return html.Div(rows)
+
+    except AuthenticationError:
+        return html.P("Sessão expirada — faça login novamente.", className="text-muted small")
+    except Exception as e:
+        app_logger.error(f"Recorrências dashboard: {e}")
+        return html.P("Erro ao carregar recorrências.", className="text-danger small")
 
 
 # ─── Sincronizar filtro Categoria ↔ Top Categorias ───────────────────────────
