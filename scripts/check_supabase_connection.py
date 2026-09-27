@@ -28,6 +28,9 @@ def _get_target_url() -> str:
         os.getenv("SUPABASE_DB_URL_POOLER", "").strip()
         or os.getenv("MIGRATION_TARGET_URL", "").strip()
     )
+    # Placeholders de preenchimento offline equivalem a ausente.
+    if not url or "PREENCHER_OFFLINE" in url or "[USER]" in url:
+        return ""
     return url
 
 

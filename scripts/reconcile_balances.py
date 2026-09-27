@@ -13,7 +13,6 @@ URLs nunca são logadas.
 """
 import os
 import sys
-from decimal import Decimal
 
 SOURCE_URL = "sqlite:///./data/finance.db"
 
@@ -32,8 +31,8 @@ def _target_url() -> str:
     except ImportError:
         pass
     url = os.getenv("MIGRATION_TARGET_URL", "").strip()
-    if not url:
-        print("MIGRATION_TARGET_URL ausente — nada a reconciliar.")
+    if not url or "PREENCHER_OFFLINE" in url or "[USER]" in url:
+        print("MIGRATION_TARGET_URL ausente (ou placeholder) — nada a reconciliar.")
         sys.exit(2)
     return url
 

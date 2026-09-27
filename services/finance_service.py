@@ -26,19 +26,6 @@ class TransactionNotFound(LookupError):
     """Transação inexistente ou de outro usuário (não distinguir — anti-enumeração)."""
 
 
-def _coerce_type(value) -> TransactionType:
-    """Normaliza tipo vindo do schema (enum duplicado) para o enum do model.
-
-    P0: schemas/transaction_schema.py define seu próprio TransactionType;
-    `schema.TRANSFER == model.TRANSFER` é False (classes distintas).
-    Compara-se pelo valor canônico.
-    """
-    if isinstance(value, TransactionType):
-        return value
-    raw = getattr(value, "value", value)
-    return TransactionType(raw)
-
-
 class FinanceService:
     def __init__(self, db_session: Session):
         self.db = db_session
@@ -49,7 +36,8 @@ class FinanceService:
     # ------------------------------------------------------------------
     def create_transaction(self, user_id: int, transaction_data: TransactionCreate):
         """Cria transação comum (INCOME/EXPENSE). TRANSFER → TransferService."""
-        tx_type = _coerce_type(transaction_data.transaction_type)
+        # P1: enums unificados (database.enums) — comparação direta por identidade.
+        tx_type = transaction_data.transaction_type
         if tx_type == TransactionType.TRANSFER:
             raise ValueError(
                 "TRANSFER deve ser criado via TransferService.transfer "
@@ -111,7 +99,6 @@ class FinanceService:
         update_data = transaction_data.dict(exclude_unset=True)
 
         if "transaction_type" in update_data and update_data["transaction_type"] is not None:
-            update_data["transaction_type"] = _coerce_type(update_data["transaction_type"])
             if update_data["transaction_type"] == TransactionType.TRANSFER:
                 raise ValueError("Conversão para TRANSFER não permitida aqui.")
         if "base_amount" in update_data and update_data["base_amount"] is not None:
@@ -121,7 +108,6 @@ class FinanceService:
         if "category_id" in update_data and update_data["category_id"] is not None:
             new_cat = self._owned_category(user_id, update_data["category_id"])
             new_type = update_data.get("transaction_type", tx.transaction_type)
-            new_type = _coerce_type(new_type)
             if new_cat.transaction_type is not None and new_cat.transaction_type != new_type:
                 raise ValueError("Categoria incompatível com o tipo do lançamento.")
         if update_data.get("destination_account_id") is not None:

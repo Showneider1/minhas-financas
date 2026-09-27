@@ -1,41 +1,23 @@
 """
 Schemas Pydantic para Validação e Serialização de Transações.
 
-Contrato canônico (P0 — ADR-002):
+Contrato canônico (P0 — ADR-002 + P1 unificação):
 - `base_amount: Decimal` é o ÚNICO valor financeiro. Sem amount/interest/discount.
+- Enums importados de `database.enums` (fonte única — P1 unifica os duplicados
+  que existiam aqui; igualdade por identidade em toda a codebase).
 - Transferências: `transaction_type=TRANSFER` exige `destination_account_id`.
 """
 from pydantic import BaseModel, Field, validator, model_validator
 from typing import Optional
 from datetime import date, datetime
 from decimal import Decimal
-import enum
+from database.enums import TransactionType, TransactionStatus
 
-# ──────────────────────────────────────────────────────────────────
-# BUG 3 CORRIGIDO: Enums declarados aqui no schema, eliminando o
-# acoplamento direto com os models SQLAlchemy.
-#
-# Antes: `from database.models.transaction import TransactionType, TransactionStatus`
-#   → violava a separação de camadas: se o ORM mudasse, o schema quebrava.
-#
-# Agora: os Enums são definidos de forma independente no schema.
-#   Os models ORM devem importar estes Enums (ou manter os seus próprios
-#   compatíveis), garantindo que mudanças no ORM não impactem a camada
-#   de validação/serialização.
-# ──────────────────────────────────────────────────────────────────
-
-class TransactionType(str, enum.Enum):
-    """Tipo de transação — definido no schema para independência do ORM."""
-    INCOME   = "INCOME"
-    EXPENSE  = "EXPENSE"
-    TRANSFER = "TRANSFER"
-
-
-class TransactionStatus(str, enum.Enum):
-    """Status da transação — definido no schema para independência do ORM."""
-    PENDING   = "PENDING"
-    PAID      = "PAID"
-    CANCELLED = "CANCELLED"
+__all__ = [
+    "TransactionType", "TransactionStatus",
+    "TransactionBase", "TransactionCreate", "TransactionUpdate",
+    "TransactionResponse", "TransactionFilter",
+]
 
 
 # ==========================================

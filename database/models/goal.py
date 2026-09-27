@@ -1,32 +1,16 @@
 """Model de Metas Financeiras."""
-import enum
 from datetime import datetime, timezone
 from decimal import Decimal
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Enum, Text, Numeric
 from sqlalchemy.orm import relationship
 from database.base import Base
+from database.enums import GoalStatus, GoalCategory  # canônicos (P1)
+
+__all__ = ["Goal", "GoalStatus", "GoalCategory"]
 
 
 def _utcnow():
     return datetime.now(timezone.utc)
-
-
-class GoalStatus(str, enum.Enum):
-    ACTIVE = "active"
-    COMPLETED = "completed"
-    CANCELLED = "cancelled"
-    PAUSED = "paused"
-
-
-class GoalCategory(str, enum.Enum):
-    EMERGENCY_FUND = "emergency_fund"
-    TRAVEL = "travel"
-    EDUCATION = "education"
-    PROPERTY = "property"
-    VEHICLE = "vehicle"
-    RETIREMENT = "retirement"
-    INVESTMENT = "investment"
-    OTHER = "other"
 
 
 class Goal(Base):

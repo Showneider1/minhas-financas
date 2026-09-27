@@ -1,5 +1,4 @@
 """Model de Contas a Pagar e a Receber (ScheduledBill)."""
-import enum
 from datetime import datetime, timezone, date
 from sqlalchemy import (
     Column, Integer, String, Boolean, DateTime, Date, ForeignKey, Enum, Text,
@@ -7,34 +6,14 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 from database.base import Base
+from database.enums import BillType, BillStatus, BillRecurrence  # canônicos (P1)
+
+__all__ = ["ScheduledBill", "BillType", "BillStatus", "BillRecurrence"]
 
 
 
 def _utcnow():
     return datetime.now(timezone.utc)
-
-
-
-class BillType(str, enum.Enum):
-    PAYABLE = "payable"
-    RECEIVABLE = "receivable"
-
-
-
-class BillStatus(str, enum.Enum):
-    PENDING = "pending"
-    PAID = "paid"
-    OVERDUE = "overdue"
-    CANCELLED = "cancelled"
-
-
-
-class BillRecurrence(str, enum.Enum):
-    NONE = "none"
-    MONTHLY = "monthly"
-    WEEKLY = "weekly"
-    YEARLY = "yearly"
-    QUARTERLY = "quarterly"
 
 
 
@@ -64,6 +43,8 @@ class ScheduledBill(Base):
     # Status
     status     = Column(Enum(BillStatus, native_enum=False), default=BillStatus.PENDING, nullable=False, index=True)
     is_deleted = Column(Boolean, default=False)
+    # P1: pausa sem cancelar — bill pausado não gera recorrência nem alerta.
+    is_paused  = Column(Boolean, default=False, nullable=False, server_default="0")
 
     # Alertas
     reminder_days_before = Column(SmallInteger, default=3)

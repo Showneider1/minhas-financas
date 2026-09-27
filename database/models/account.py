@@ -7,17 +7,10 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 from database.base import Base
+from database.enums import AccountType  # canônico (P1) — re-export p/ compat
 from database.mixins import TimestampMixin, SoftDeleteMixin
-import enum
 
-
-class AccountType(str, enum.Enum):
-    CHECKING    = "checking"
-    SAVINGS     = "savings"
-    INVESTMENT  = "investment"
-    CREDIT_CARD = "credit_card"
-    CASH        = "cash"
-    OTHER       = "other"
+__all__ = ["Account", "AccountType"]
 
 
 class Account(Base, TimestampMixin, SoftDeleteMixin):

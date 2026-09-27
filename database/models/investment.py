@@ -8,7 +8,9 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 from database.base import Base
-import enum
+from database.enums import AssetType, OperationType  # canônicos (P1)
+
+__all__ = ["Asset", "InvestmentOperation", "AssetType", "OperationType"]
 
 
 def _utcnow():
@@ -18,25 +20,6 @@ def _utcnow():
     Mantém padrão já adotado em user.py e transaction.py.
     """
     return datetime.now(timezone.utc)
-
-
-class AssetType(enum.Enum):
-    """Tipos de Ativos Financeiros"""
-    STOCK        = "STOCK"    # Ações (ex: PETR4)
-    FII          = "FII"      # Fundos Imobiliários (ex: MXRF11)
-    FIXED_INCOME = "FIXED"    # Renda Fixa (ex: Tesouro Selic)
-    CRYPTO       = "CRYPTO"   # Criptomoedas (ex: BTC)
-    CURRENCY     = "CURRENCY" # Moedas (ex: USD)
-    ETF          = "ETF"      # ETFs (ex: IVVB11)
-
-
-class OperationType(enum.Enum):
-    """Tipos de Operação"""
-    BUY      = "BUY"      # Compra
-    SELL     = "SELL"     # Venda
-    DIVIDEND = "DIVIDEND" # Dividendos / Proventos
-    INTEREST = "INTEREST" # Juros sobre Capital / Rendimentos
-    SPLIT    = "SPLIT"    # Desdobramento
 
 
 class Asset(Base):

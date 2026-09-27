@@ -72,10 +72,11 @@ def _target_url() -> str:
     except ImportError:
         pass
     url = os.getenv("MIGRATION_TARGET_URL", "").strip()
-    if not url:
+    if not url or "PREENCHER_OFFLINE" in url or "[USER]" in url:
         print(
-            "MIGRATION_TARGET_URL ausente. Defina com a URL do banco destino "
-            "(Supabase pooler em staging; sqlite local só p/ validação)."
+            "MIGRATION_TARGET_URL ausente (ou ainda com placeholder offline). "
+            "Defina com a URL do banco destino (Supabase pooler em staging; "
+            "sqlite local só p/ validação)."
         )
         sys.exit(2)
     return url

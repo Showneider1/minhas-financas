@@ -6,7 +6,7 @@ def print_schema():
     table_names = inspector.get_table_names()
     
     print("="*40)
-    print(f"🔍 ESTRUTURA DO BANCO DE DADOS")
+    print("🔍 ESTRUTURA DO BANCO DE DADOS")
     print("="*40)
 
     for table_name in table_names:

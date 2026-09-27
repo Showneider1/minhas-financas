@@ -77,9 +77,6 @@ class TransactionRepository(BaseRepository[Transaction]):
         """
         Motor de busca principal para listagens (Extrato, Relatórios).
         """
-        # P0: normaliza enum do schema (classe distinta) para o enum do model.
-        if transaction_type is not None and not isinstance(transaction_type, TransactionType):
-            transaction_type = TransactionType(getattr(transaction_type, "value", transaction_type))
         query = self.db.query(Transaction).options(
             joinedload(Transaction.category),
             joinedload(Transaction.account),

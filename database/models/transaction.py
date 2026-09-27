@@ -15,8 +15,9 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 from database.base import Base
-from database.models.category import TransactionType
-import enum
+from database.enums import TransactionType, TransactionStatus  # canônicos (P1)
+
+__all__ = ["Transaction", "TransactionType", "TransactionStatus"]
 
 
 def _utcnow():
@@ -26,13 +27,6 @@ def _utcnow():
     BUG 8 CORRIGIDO: substitui datetime.utcnow() depreciado no Python 3.12+.
     """
     return datetime.now(timezone.utc)
-
-
-class TransactionStatus(enum.Enum):
-    """Status da transação."""
-    PENDING   = "PENDING"
-    PAID      = "PAID"
-    CANCELLED = "CANCELLED"
 
 
 class Transaction(Base):

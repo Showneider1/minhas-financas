@@ -4,13 +4,9 @@ Modelo de Categoria com suporte a subcategorias.
 from sqlalchemy import Column, Integer, String, Enum, Boolean, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 from database.base import Base
-import enum
+from database.enums import TransactionType  # canônico (P1) — re-export p/ compat
 
-
-class TransactionType(enum.Enum):
-    INCOME   = "INCOME"
-    EXPENSE  = "EXPENSE"
-    TRANSFER = "TRANSFER"
+__all__ = ["Category", "TransactionType"]
 
 
 class Category(Base):
