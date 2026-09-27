@@ -138,6 +138,13 @@ class CategoryService:
                 "color": "#16a085",
             },
             {"name": "Outros", "type": TransactionType.INCOME, "icon": "💵", "color": "#27ae60"},
+            # Transferências
+            {
+                "name": "Transferência",
+                "type": TransactionType.TRANSFER,
+                "icon": "🔁",
+                "color": "#95a5a6",
+            },
         ]
 
         created = 0

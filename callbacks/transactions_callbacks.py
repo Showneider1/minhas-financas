@@ -1,5 +1,10 @@
 """
-Callbacks de lançamentos financeiros (criar, editar, deletar).
+Callbacks do modal global de nova transação.
+
+Suporta:
+- Receita
+- Despesa
+- Transferência entre contas
 """
 
 from datetime import date
@@ -16,8 +21,10 @@ from database.models.transaction import Transaction
 from middleware.auth_context import resolve_user
 from schemas.transaction_schema import TransactionCreate, TransactionUpdate
 from services.account_service import AccountService
+from services.balance_service import BalanceService
 from services.category_service import CategoryService
 from services.finance_service import FinanceService
+from services.transfer_service import TransferError, TransferService
 from utils.exceptions import AuthenticationError
 
 
@@ -30,6 +37,7 @@ from utils.exceptions import AuthenticationError
     prevent_initial_call=True,
 )
 def resetar_modal_ao_mudar_pagina(pathname):
+    """Fecha o modal ao trocar de página."""
     return False
 
 
@@ -39,78 +47,98 @@ def resetar_modal_ao_mudar_pagina(pathname):
 @app.callback(
     Output("modal-novo-lancamento", "is_open", allow_duplicate=True),
     Output("store-transacao-id-editar", "data", allow_duplicate=True),
-    Output("data-pagamento", "disabled"),
     Input("btn-novo-lancamento", "n_clicks"),
     Input("btn-cancelar-modal", "n_clicks"),
-    Input("btn-salvar-lancamento", "n_clicks"),
-    Input("switch-pago", "value"),
     State("modal-novo-lancamento", "is_open"),
     prevent_initial_call=True,
 )
-def toggle_modal(n_novo, n_cancelar, n_salvar, switch_pago, is_open):
-    if not ctx.triggered:
-        return no_update, no_update, no_update
-
+def toggle_modal(n_novo, n_cancelar, is_open):
+    """Abre o modal no botão global e fecha no cancelar."""
     trigger_id = ctx.triggered_id
-    disable_date = not switch_pago
 
-    if trigger_id == "switch-pago":
-        return no_update, no_update, disable_date
+    if trigger_id == "btn-novo-lancamento" and n_novo:
+        return True, None
 
-    if trigger_id == "btn-novo-lancamento":
-        if not n_novo:
-            return no_update, no_update, no_update
-        return True, None, disable_date
+    if trigger_id == "btn-cancelar-modal" and n_cancelar:
+        return False, None
 
-    if trigger_id in ["btn-cancelar-modal", "btn-salvar-lancamento"]:
-        return False, None, False
+    return no_update, no_update
 
-    return is_open, no_update, disable_date
+
+@app.callback(
+    Output("data-pagamento", "disabled"),
+    Input("switch-pago", "value"),
+    prevent_initial_call=True,
+)
+def toggle_data_pagamento(pago):
+    """Habilita a data de pagamento apenas quando o lançamento já foi pago."""
+    return not pago
 
 
 # ==========================================
-# 3. CARREGAR OPÇÕES (CATEGORIAS E CONTAS)
+# 3. FORMULÁRIO DINÂMICO (RECEITA/DESPESA X TRANSFERÊNCIA)
+# ==========================================
+@app.callback(
+    Output("standard-section", "style"),
+    Output("transfer-section", "style"),
+    Input("tipo-lancamento", "value"),
+    prevent_initial_call=True,
+)
+def alternar_secoes_transacao(tipo):
+    """Alterna entre os campos padrão e os campos de transferência."""
+    if tipo == "TRANSFER":
+        return {"display": "none"}, {"display": "block"}
+    return {"display": "block"}, {"display": "none"}
+
+
+# ==========================================
+# 4. CARREGAR OPÇÕES (CATEGORIAS E CONTAS)
 # ==========================================
 @app.callback(
     Output("select-categoria", "options"),
     Output("select-conta", "options"),
+    Output("select-conta-destino", "options"),
     Input("tipo-lancamento", "value"),
     Input("auth-store", "data"),
     Input("modal-novo-lancamento", "is_open"),
     prevent_initial_call=True,
 )
 def carregar_opcoes(tipo, auth_data, is_open):
+    """Carrega categorias e contas do usuário logado."""
     if not is_open or not auth_data:
-        return no_update, no_update
+        return no_update, no_update, no_update
 
     try:
-        # P0 (IDOR): usuário derivado do JWT, nunca do frontend.
         user_id = resolve_user(auth_data)
         with get_db_session() as db:
-            cat_service = CategoryService(db)
-            cats = cat_service.get_available_categories(user_id, TransactionType(tipo))
-            opt_cats = [{"label": f"{c.icon} {c.name}", "value": c.id} for c in cats]
+            category_service = CategoryService(db)
+            categories = category_service.get_available_categories(user_id, TransactionType(tipo))
+            category_options = [
+                {"label": f"{category.icon} {category.name}", "value": category.id}
+                for category in categories
+            ]
 
-            acc_service = AccountService(db)
-            accs = acc_service.get_user_accounts(user_id)
-            opt_accs = [{"label": a.name, "value": a.id} for a in accs]
+            account_service = AccountService(db)
+            accounts = account_service.get_user_accounts(user_id)
+            account_options = [{"label": account.name, "value": account.id} for account in accounts]
 
-            return opt_cats, opt_accs
+            return category_options, account_options, account_options
     except AuthenticationError:
-        return [], []
-    except Exception as e:
-        app_logger.error(f"Erro ao carregar opções: {e}")
-        return [], []
+        return [], [], []
+    except Exception as exc:
+        app_logger.error(f"Erro ao carregar opções do modal: {exc}")
+        return [], [], []
 
 
 # ==========================================
-# 4. PREENCHER FORMULÁRIO (CRIAR OU EDITAR)
+# 5. PREENCHER FORMULÁRIO (CRIAR OU EDITAR)
 # ==========================================
 @app.callback(
     Output("input-valor", "value"),
     Output("input-descricao", "value"),
     Output("select-categoria", "value"),
     Output("select-conta", "value"),
+    Output("select-conta-destino", "value"),
     Output("tipo-lancamento", "value"),
     Output("data-compra", "date"),
     Output("data-vencimento", "date"),
@@ -126,19 +154,34 @@ def carregar_opcoes(tipo, auth_data, is_open):
     prevent_initial_call=True,
 )
 def preencher_formulario(is_open, edit_id, auth_data):
+    """Preenche o modal para criação ou edição."""
     if not is_open:
-        return (no_update,) * 13
+        return (no_update,) * 14
 
     hoje = date.today()
 
     if not edit_id:
-        return ("", "", None, None, "EXPENSE", hoje, hoje, hoje, True, [], 1, 1, "Novo Lançamento")
+        return (
+            "",
+            "",
+            None,
+            None,
+            None,
+            "EXPENSE",
+            hoje,
+            hoje,
+            hoje,
+            True,
+            [],
+            1,
+            1,
+            "Novo Lançamento",
+        )
 
     try:
-        # P0 (IDOR): edição só com dono derivado do JWT.
         user_id = resolve_user(auth_data)
         with get_db_session() as db:
-            t = (
+            transaction = (
                 db.query(Transaction)
                 .filter(
                     Transaction.id == edit_id,
@@ -147,45 +190,48 @@ def preencher_formulario(is_open, edit_id, auth_data):
                 .first()
             )
 
-            if not t:
-                return (no_update,) * 13
+            if not transaction:
+                return (no_update,) * 14
 
-            tipo = t.transaction_type.value
-            pago = True if t.paid_date else False
-            valor_fmt = (
-                f"{t.base_amount:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            tipo = transaction.transaction_type.value
+            pago = transaction.paid_date is not None
+            valor = (
+                f"{transaction.base_amount:,.2f}".replace(",", "X")
+                .replace(".", ",")
+                .replace("X", ".")
             )
-            recorrencia = ["recorrente"] if t.is_recurring else []
+            recorrencia = ["recorrente"] if transaction.is_recurring else []
 
             return (
-                valor_fmt,
-                t.description,
-                t.category_id,
-                t.account_id,
+                valor,
+                transaction.description,
+                transaction.category_id,
+                transaction.account_id,
+                transaction.destination_account_id,
                 tipo,
-                t.purchase_date,
-                t.due_date,
-                t.paid_date,
+                transaction.purchase_date,
+                transaction.due_date,
+                transaction.paid_date,
                 pago,
                 recorrencia,
-                t.installment_number,
-                t.total_installments,
+                transaction.installment_number,
+                transaction.total_installments,
                 "Editar Lançamento",
             )
     except AuthenticationError:
-        return (no_update,) * 13
-    except Exception as e:
-        app_logger.error(f"Erro ao carregar lançamento para edição: {e}")
-        return (no_update,) * 13
+        return (no_update,) * 14
+    except Exception as exc:
+        app_logger.error(f"Erro ao carregar lançamento para edição: {exc}")
+        return (no_update,) * 14
 
 
 # ==========================================
-# 5. SALVAR (CREATE / UPDATE)
-# — DONO ÚNICO do store-reload-dashboard —
+# 6. SALVAR (RECEITA, DESPESA OU TRANSFERÊNCIA)
 # ==========================================
 @app.callback(
     Output("feedback-transacao", "children"),
-    Output("store-reload-dashboard", "data"),  # <-- SEM allow_duplicate
+    Output("store-reload-dashboard", "data"),
+    Output("modal-novo-lancamento", "is_open", allow_duplicate=True),
     Input("btn-salvar-lancamento", "n_clicks"),
     State("auth-store", "data"),
     State("store-transacao-id-editar", "data"),
@@ -194,6 +240,7 @@ def preencher_formulario(is_open, edit_id, auth_data):
     State("input-descricao", "value"),
     State("select-categoria", "value"),
     State("select-conta", "value"),
+    State("select-conta-destino", "value"),
     State("data-compra", "date"),
     State("data-vencimento", "date"),
     State("data-pagamento", "date"),
@@ -211,96 +258,157 @@ def salvar_transacao(
     tipo,
     valor,
     descricao,
-    cat_id,
-    acc_id,
-    d_compra,
-    d_venc,
-    d_pagto,
-    switch_pago,
+    categoria_id,
+    conta_id,
+    conta_destino_id,
+    data_compra,
+    data_vencimento,
+    data_pagamento,
+    pago,
     recorrencia,
-    parc_atual,
-    parc_total,
+    parcela_atual,
+    total_parcelas,
     reload_counter,
 ):
-
+    """Cria ou atualiza a transação selecionada."""
     if not n_clicks:
-        return no_update, no_update
+        return no_update, no_update, no_update
 
     try:
-        # P0 (IDOR): usuário derivado do JWT; sessão inválida bloqueia escrita.
         user_id = resolve_user(auth_data)
+
         if not valor:
             raise ValueError("Valor é obrigatório")
-        if not cat_id:
-            raise ValueError("Selecione uma categoria")
-        if not acc_id:
-            raise ValueError("Selecione uma conta")
-        if not d_compra or not d_venc:
-            raise ValueError("Datas de Compra e Vencimento são obrigatórias")
+        if not data_compra or not data_vencimento:
+            raise ValueError("Datas de compra e vencimento são obrigatórias")
 
-        valor_str = str(valor).replace("R$", "").replace(" ", "").strip()
-        if "," in valor_str:
-            valor_limpo = valor_str.replace(".", "").replace(",", ".")
+        valor_texto = str(valor).replace("R$", "").replace(" ", "").strip()
+        if "," in valor_texto:
+            valor_limpo = valor_texto.replace(".", "").replace(",", ".")
         else:
-            valor_limpo = valor_str
+            valor_limpo = valor_texto
 
-        # P0 (Decimal): sem float no caminho monetário — Decimal direto.
         try:
             valor_decimal = Decimal(valor_limpo)
         except InvalidOperation:
             raise ValueError("Valor inválido")
+
         if valor_decimal <= 0:
             raise ValueError("Valor deve ser maior que zero")
 
-        date_purchase = date.fromisoformat(d_compra)
-        date_due = date.fromisoformat(d_venc)
+        data_purchase = date.fromisoformat(data_compra)
+        data_due = date.fromisoformat(data_vencimento)
+        if data_due < data_purchase:
+            raise ValueError("Vencimento não pode ser anterior à data de compra")
 
-        if date_due < date_purchase:
-            raise ValueError("Data de vencimento não pode ser anterior à data de compra")
+        data_paid = None
+        if pago:
+            data_paid = date.fromisoformat(data_pagamento) if data_pagamento else data_due
 
-        date_paid = None
-        if switch_pago:
-            date_paid = date.fromisoformat(d_pagto) if d_pagto else date_due
+        if tipo == "TRANSFER":
+            if edit_id:
+                raise ValueError("Edição de transferência ainda não suportada")
+            if not conta_id or not conta_destino_id:
+                raise ValueError("Selecione as contas de origem e destino")
+            if int(conta_id) == int(conta_destino_id):
+                raise ValueError("Conta de origem e destino devem ser diferentes")
 
-        is_recorrente = True if "recorrente" in (recorrencia or []) else False
+            with get_db_session() as db:
+                balance = BalanceService(db).get_account_balance(int(conta_id), user_id)
+                if pago and valor_decimal > balance:
+                    raise ValueError(
+                        "Saldo insuficiente na conta de origem para esta transferência"
+                    )
+
+                categorias = CategoryService(db).get_available_categories(
+                    user_id, TransactionType.TRANSFER
+                )
+                if not categorias:
+                    raise ValueError("Categoria de transferência não encontrada")
+                categoria_transferencia = categorias[0].id
+
+                TransferService(db).transfer(
+                    user_id=user_id,
+                    from_account_id=int(conta_id),
+                    to_account_id=int(conta_destino_id),
+                    amount=valor_decimal,
+                    due_date=data_due,
+                    paid_date=data_paid,
+                    description=descricao.strip() if descricao else "Transferência entre contas",
+                    category_id=categoria_transferencia,
+                )
+
+            return (
+                dbc.Alert(
+                    "✅ Transferência criada com sucesso!",
+                    color="success",
+                    duration=3000,
+                ),
+                (reload_counter or 0) + 1,
+                False,
+            )
+
+        if not categoria_id:
+            raise ValueError("Selecione uma categoria")
+        if not conta_id:
+            raise ValueError("Selecione uma conta")
+
+        is_recorrente = "recorrente" in (recorrencia or [])
 
         payload = TransactionCreate(
             description=descricao.strip() if descricao else "Sem descrição",
             base_amount=valor_decimal,
             transaction_type=TransactionType(tipo),
-            category_id=int(cat_id),
-            account_id=int(acc_id),
-            purchase_date=date_purchase,
-            due_date=date_due,
-            paid_date=date_paid,
+            category_id=int(categoria_id),
+            account_id=int(conta_id),
+            purchase_date=data_purchase,
+            due_date=data_due,
+            paid_date=data_paid,
             is_recurring=is_recorrente,
-            installment_number=int(parc_atual or 1),
-            total_installments=int(parc_total or 1),
+            installment_number=int(parcela_atual or 1),
+            total_installments=int(total_parcelas or 1),
             notes="",
         )
 
         with get_db_session() as db:
             finance_service = FinanceService(db)
             if edit_id:
-                # P0: update parcial usa TransactionUpdate (todos opcionais).
                 finance_service.update_transaction(
-                    edit_id, user_id, TransactionUpdate(**payload.model_dump())
+                    edit_id,
+                    user_id,
+                    TransactionUpdate(**payload.model_dump()),
                 )
-                msg = "✅ Lançamento atualizado com sucesso!"
+                mensagem = "✅ Lançamento atualizado com sucesso!"
             else:
                 finance_service.create_transaction(user_id, payload)
-                msg = "✅ Lançamento criado com sucesso!"
+                mensagem = "✅ Lançamento criado com sucesso!"
 
-        return dbc.Alert(msg, color="success", duration=3000), (reload_counter or 0) + 1
+        return (
+            dbc.Alert(mensagem, color="success", duration=3000),
+            (reload_counter or 0) + 1,
+            False,
+        )
 
-    except AuthenticationError as e:
-        return dbc.Alert(f"⚠️ {e.message}", color="warning", duration=4000), no_update
-
-    except ValueError as e:
-        return dbc.Alert(f"⚠️ {str(e)}", color="warning", duration=4000), no_update
-
-    except Exception as e:
-        app_logger.error(f"Erro ao salvar transação: {e}")
-        return dbc.Alert(
-            "❌ Erro inesperado ao salvar. Tente novamente.", color="danger", duration=5000
-        ), no_update
+    except AuthenticationError as exc:
+        return (
+            dbc.Alert(f"⚠️ {exc.message}", color="warning", duration=4000),
+            no_update,
+            True,
+        )
+    except (ValueError, TransferError) as exc:
+        return (
+            dbc.Alert(f"⚠️ {str(exc)}", color="warning", duration=4000),
+            no_update,
+            True,
+        )
+    except Exception as exc:
+        app_logger.error(f"Erro ao salvar transação: {exc}")
+        return (
+            dbc.Alert(
+                "❌ Erro inesperado ao salvar. Tente novamente.",
+                color="danger",
+                duration=5000,
+            ),
+            no_update,
+            True,
+        )
