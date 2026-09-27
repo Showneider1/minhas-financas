@@ -21,7 +21,19 @@
 - **SPLIT f:** `qty ×= f`, custo intacto. Fator via `quantity` da operação.
 - Escalas: 8 casas (qty/preço/PM/custo), 2 casas (proventos, P&L, totais).
 
-## 3. Limites (P2)
+## 3. Liquidação no caixa (P1 liquidação)
+
+- `investment_operations.transaction_id → transactions.id` (FK NULL, UNIQUE 1:1;
+  NULL só para SPLIT). Migration `7da1acfc6143`.
+- BUY debita EXPENSE paga de `qty×price + fees`; SELL/DIVIDEND creditam INCOME
+  (`qty×price − fees` / valor); categoria auto (`Investimentos`/`Proventos`).
+- Uma única unidade de trabalho: operação + transação + `recalculate` no mesmo
+  commit; `rollback` total em falha. Compra sem saldo → `InsufficientFundsError`
+  sem persistir nada. `void_operation` estorna op + transação e recusa se a
+  posição ficaria negativa.
+- SPLIT não liquida (`transaction_id` NULL).
+
+## 4. Limites (P2)
 
 Valor de mercado (cotações), IRPF com vendas parciais multi-ano além do
 `until(date,id)`, integração conta-corrente no dividendo, UI.

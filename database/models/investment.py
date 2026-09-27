@@ -57,6 +57,13 @@ class InvestmentOperation(Base):
     asset_id   = Column(Integer, ForeignKey("assets.id", ondelete="CASCADE"),   nullable=False)
     account_id = Column(Integer, ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True)  # De qual conta saiu o dinheiro?
 
+    # Liquidação no caixa (P1 liquidação): 1:1 com a Transaction de despesa/
+    # receita correspondente. NULL apenas para SPLIT (sem liquidação).
+    transaction_id = Column(
+        Integer, ForeignKey("transactions.id", ondelete="SET NULL"),
+        nullable=True, unique=True,
+    )
+
     # Dados da Operação
     operation_type = Column(Enum(OperationType, native_enum=False), nullable=False)
     date           = Column(Date, nullable=False, index=True)
@@ -74,6 +81,7 @@ class InvestmentOperation(Base):
     # Relacionamentos
     asset   = relationship("Asset",   back_populates="operations")
     account = relationship("Account")
+    transaction = relationship("Transaction")
 
     __table_args__ = (
         Index("ix_investment_ops_asset_date", "asset_id", "date"),

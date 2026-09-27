@@ -28,13 +28,17 @@ from sqlalchemy import extract
 from sqlalchemy.orm import Session
 
 from config.logging_config import app_logger
-from database.enums import AssetType, OperationType
+from database.enums import AssetType, OperationType, TransactionType
 from database.models.investment import Asset, InvestmentOperation
 from utils.money import to_money2, to_qty8
 
 
 class InsufficientPositionError(ValueError):
     """Venda sem saldo de cotas suficiente (oversell bloqueado)."""
+
+
+class InsufficientFundsError(ValueError):
+    """Compra sem saldo em conta para a liquidação (bloqueio anti-descoberto)."""
 
 
 class InvestmentValidationError(ValueError):
@@ -175,12 +179,17 @@ class InvestmentService:
         user_id: int,
         quantity,
         price_per_unit,
+        account_id: int,
         operation_date: Optional[date] = None,
         fees=0,
-        account_id: Optional[int] = None,
         notes: Optional[str] = None,
     ) -> InvestmentOperation:
-        """Registra COMPRA (dilui o PM com taxas no custo)."""
+        """Registra COMPRA com liquidação atômica no caixa.
+
+        Debita `account_id` em (qty×price + fees). Sem saldo →
+        InsufficientFundsError e NADA é persistido (operação + caixa
+        no mesmo commit; rollback total em falha).
+        """
         asset = self._owned_asset(asset_id, user_id)
         qty = to_qty8(quantity, where="invest.buy.qty")
         price = to_qty8(price_per_unit, where="invest.buy.price")
@@ -189,13 +198,35 @@ class InvestmentService:
             raise InvestmentValidationError("Quantidade da compra deve ser > 0.")
         if price < 0 or fee < 0:
             raise InvestmentValidationError("Preço/taxas não podem ser negativos.")
-        if account_id is not None:
-            self._owned_account(user_id, account_id)
-        total = (qty * price + fee).quantize(Q8)
-        return self._persist(
-            asset, OperationType.BUY, operation_date or date.today(),
-            qty, price, fee, total, account_id, notes,
-        )
+        account = self._owned_account(user_id, account_id)
+        from services.balance_service import BalanceService
+
+        settlement = to_money2(qty * price + fee, where="invest.buy.settle")
+        available = BalanceService(self.db).get_account_balance(account.id, user_id)
+        if settlement > available:
+            raise InsufficientFundsError(
+                f"Saldo insuficiente: liquidação {settlement} > saldo {available}."
+            )
+        try:
+            op = self._build_op(
+                asset, OperationType.BUY, operation_date or date.today(),
+                qty, price, fee, (qty * price + fee).quantize(Q8),
+                account.id, notes,
+            )
+            self._settle(
+                user_id, account.id, op,
+                kind="Compra",
+                tx_type=TransactionType.EXPENSE,
+                amount=settlement,
+                op_date=operation_date or date.today(),
+                ticker=asset.ticker,
+            )
+            self.db.commit()
+            self.db.refresh(op)
+        except Exception:
+            self.db.rollback()
+            raise
+        return op
 
     def sell(
         self,
@@ -203,12 +234,16 @@ class InvestmentService:
         user_id: int,
         quantity,
         price_per_unit,
+        account_id: int,
         operation_date: Optional[date] = None,
         fees=0,
-        account_id: Optional[int] = None,
         notes: Optional[str] = None,
     ) -> SellResult:
-        """Registra VENDA (bloqueia oversell; PM não muda; retorna P&L)."""
+        """Registra VENDA com liquidação atômica (bloqueia oversell; PM não muda).
+
+        Credita `account_id` em (qty×preço − taxas). Falha em qualquer ponto
+        desfaz operação + caixa (rollback total).
+        """
         asset = self._owned_asset(asset_id, user_id)
         qty = to_qty8(quantity, where="invest.sell.qty")
         price = to_qty8(price_per_unit, where="invest.sell.price")
@@ -217,8 +252,7 @@ class InvestmentService:
             raise InvestmentValidationError("Quantidade da venda deve ser > 0.")
         if price < 0 or fee < 0:
             raise InvestmentValidationError("Preço/taxas não podem ser negativos.")
-        if account_id is not None:
-            self._owned_account(user_id, account_id)
+        account = self._owned_account(user_id, account_id)
 
         pos = self.get_position(asset_id, user_id)
         if qty > pos.quantity:
@@ -227,11 +261,26 @@ class InvestmentService:
             )
         gross = (qty * (price - pos.avg_price)).quantize(Q8)
         net = (gross - fee).quantize(Q2)
-        total = (qty * price - fee).quantize(Q8)
-        op = self._persist(
-            asset, OperationType.SELL, operation_date or date.today(),
-            qty, price, fee, total, account_id, notes,
-        )
+        settlement = to_money2(qty * price - fee, where="invest.sell.settle")
+        try:
+            op = self._build_op(
+                asset, OperationType.SELL, operation_date or date.today(),
+                qty, price, fee, (qty * price - fee).quantize(Q8),
+                account.id, notes,
+            )
+            self._settle(
+                user_id, account.id, op,
+                kind="Venda",
+                tx_type=TransactionType.INCOME,
+                amount=settlement,
+                op_date=operation_date or date.today(),
+                ticker=asset.ticker,
+            )
+            self.db.commit()
+            self.db.refresh(op)
+        except Exception:
+            self.db.rollback()
+            raise
         app_logger.info(
             f"Venda {asset.ticker}: {qty} @ {price} (PM {pos.avg_price}) "
             f"P&L {net} (usuário {user_id})"
@@ -247,24 +296,38 @@ class InvestmentService:
         asset_id: int,
         user_id: int,
         amount,
+        account_id: int,
         operation_date: Optional[date] = None,
         kind: OperationType = OperationType.DIVIDEND,
-        account_id: Optional[int] = None,
         notes: Optional[str] = None,
     ) -> InvestmentOperation:
-        """Registra PROVENTO (não altera qty nem PM — só ganho)."""
+        """Registra PROVENTO com crédito atômico (não altera qty nem PM)."""
         if kind not in (OperationType.DIVIDEND, OperationType.INTEREST):
             raise InvestmentValidationError("Tipo de provento inválido.")
         asset = self._owned_asset(asset_id, user_id)
         value = to_money2(amount, where="invest.dividend")
         if value <= 0:
             raise InvestmentValidationError("Provento deve ser > 0.")
-        if account_id is not None:
-            self._owned_account(user_id, account_id)
-        return self._persist(
-            asset, kind, operation_date or date.today(),
-            ZERO, ZERO, ZERO, value, account_id, notes,
-        )
+        account = self._owned_account(user_id, account_id)
+        try:
+            op = self._build_op(
+                asset, kind, operation_date or date.today(),
+                ZERO, ZERO, ZERO, value, account.id, notes,
+            )
+            self._settle(
+                user_id, account.id, op,
+                kind="Dividendo" if kind == OperationType.DIVIDEND else "JCP",
+                tx_type=TransactionType.INCOME,
+                amount=value,
+                op_date=operation_date or date.today(),
+                ticker=asset.ticker,
+            )
+            self.db.commit()
+            self.db.refresh(op)
+        except Exception:
+            self.db.rollback()
+            raise
+        return op
 
     def apply_split(
         self,
@@ -274,17 +337,76 @@ class InvestmentService:
         operation_date: Optional[date] = None,
         notes: Optional[str] = None,
     ) -> InvestmentOperation:
-        """Aplica DESDOBRAMENTO f:1 (qty ×= f, custo intacto)."""
+        """Aplica DESDOBRAMENTO f:1 (qty ×= f, custo intacto, SEM caixa)."""
         asset = self._owned_asset(asset_id, user_id)
         f = to_qty8(factor, where="invest.split")
         if f <= 0:
             raise InvestmentValidationError("Fator do split deve ser > 0.")
-        return self._persist(
-            asset, OperationType.SPLIT, operation_date or date.today(),
-            f, ZERO, ZERO, ZERO, None, notes or f"split {f}:1",
-        )
+        try:
+            op = self._build_op(
+                asset, OperationType.SPLIT, operation_date or date.today(),
+                f, ZERO, ZERO, ZERO, None, notes or f"split {f}:1",
+            )
+            self.db.commit()
+            self.db.refresh(op)
+        except Exception:
+            self.db.rollback()
+            raise
+        return op
 
-    def _persist(
+    def void_operation(self, operation_id: int, user_id: int) -> bool:
+        """Estorna operação de investimento + sua liquidação (atômico).
+
+        Remove a operação E a Transaction vinculada, recalcula o saldo.
+        Recusa se o replay sem a operação deixar posição negativa.
+        """
+        op = (
+            self.db.query(InvestmentOperation)
+            .join(Asset, Asset.id == InvestmentOperation.asset_id)
+            .filter(
+                InvestmentOperation.id == operation_id,
+                Asset.user_id == user_id,
+            )
+            .first()
+        )
+        if not op:
+            raise InvestmentValidationError("Operação não encontrada para este usuário.")
+        try:
+            tx_id = op.transaction_id
+            account_id = op.account_id
+            self.db.delete(op)
+            self.db.flush()
+            if tx_id:
+                from database.models.transaction import Transaction
+
+                tx = self.db.query(Transaction).filter(
+                    Transaction.id == tx_id, Transaction.user_id == user_id
+                ).first()
+                if tx:
+                    account_id = account_id or tx.account_id
+                    self.db.delete(tx)
+                    self.db.flush()
+            # Integridade do ledger restante: posição nunca negativa.
+            pos = self.get_position(op.asset_id, user_id)
+            if pos.quantity < 0:
+                raise InvestmentValidationError(
+                    "Estorno recusado: deixaria a posição negativa."
+                )
+            if account_id:
+                from services.balance_service import BalanceService
+
+                BalanceService(self.db).recalculate_and_persist(account_id, user_id)
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
+        app_logger.info(f"Operação {operation_id} estornada (usuário {user_id})")
+        return True
+
+    # ------------------------------------------------------------------
+    # Liquidação (interno — sem commit; o chamador confirma)
+    # ------------------------------------------------------------------
+    def _build_op(
         self, asset: Asset, op_type: OperationType, op_date: date,
         qty: Decimal, price: Decimal, fee: Decimal, total: Decimal,
         account_id: Optional[int], notes: Optional[str],
@@ -295,25 +417,91 @@ class InvestmentService:
             quantity=qty, price_per_unit=price, fees=fee, total_amount=total,
             notes=(notes or "")[:255] or None,
         )
-        try:
-            self.db.add(op)
-            self.db.commit()
-            self.db.refresh(op)
-        except Exception:
-            self.db.rollback()
-            raise
+        self.db.add(op)
+        self.db.flush()
         return op
 
-    def _owned_account(self, user_id: int, account_id: int) -> None:
+    def _settle(
+        self, user_id: int, account_id: int, op: InvestmentOperation,
+        kind: str, tx_type, amount: Decimal, op_date: date, ticker: str,
+    ) -> None:
+        """Cria a Transaction PAGA da liquidação e vincula (flush, sem commit)."""
+        from database.models.transaction import Transaction, TransactionStatus
+
+        category_id = self._ensure_cash_category(user_id, tx_type)
+        tx = Transaction(
+            user_id=user_id,
+            description=f"{kind} {ticker} {op.quantity} × {op.price_per_unit}".strip()[:255],
+            base_amount=amount,
+            transaction_type=tx_type,
+            account_id=account_id,
+            category_id=category_id,
+            purchase_date=op_date,
+            due_date=op_date,
+            paid_date=op_date,
+            status=TransactionStatus.PAID,
+            notes=f"liquidação investment_operation:{op.id}",
+        )
+        self.db.add(tx)
+        self.db.flush()
+        op.transaction_id = tx.id
+        self.db.flush()
+        from services.balance_service import BalanceService
+
+        BalanceService(self.db).recalculate_and_persist(account_id, user_id)
+
+    def _ensure_cash_category(self, user_id: int, tx_type) -> int:
+        """Categoria do dono para liquidações (cria uma vez, idempotente)."""
+        from database.models.category import Category
+
+        name = "Investimentos" if tx_type.value == "EXPENSE" else "Proventos"
+        cat = (
+            self.db.query(Category)
+            .filter(
+                Category.user_id == user_id,
+                Category.name == name,
+                Category.transaction_type == tx_type,
+            )
+            .first()
+        )
+        if cat:
+            return cat.id
+        cat = Category(
+            user_id=user_id, name=name, transaction_type=tx_type,
+            icon="📈", color="#16a085", is_system=False,
+        )
+        self.db.add(cat)
+        try:
+            self.db.flush()
+        except Exception:
+            self.db.rollback()
+            # Race ou legado: busca novamente (UNIQUE name+user).
+            cat = (
+                self.db.query(Category)
+                .filter(Category.user_id == user_id, Category.name == name)
+                .first()
+            )
+            if not cat:
+                raise
+        return cat.id
+
+    def _owned_account(self, user_id: int, account_id: int):
         from database.models.account import Account
 
-        owned = (
-            self.db.query(Account.id)
+        if account_id is None:
+            raise InvestmentValidationError(
+                "Operação de investimento exige account_id (liquidação no caixa)."
+            )
+        account = (
+            self.db.query(Account)
             .filter(Account.id == account_id, Account.user_id == user_id)
             .first()
         )
-        if not owned:
+        if not account:
             raise InvestmentValidationError("Conta não pertence a este usuário.")
+        if not account.is_active or getattr(account, "is_deleted", False):
+            raise InvestmentValidationError("Conta inativa para liquidação.")
+        return account
 
     # ------------------------------------------------------------------
     # Posição (replay do ledger)
