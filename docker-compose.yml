@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: finance-os-db
+    env_file:
+      - .env
+    environment:
+      # P0 (segredos): sem credencial hardcoded — configure no .env (veja .env.example).
+      POSTGRES_USER: ${POSTGRES_USER:?Configure POSTGRES_USER no .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Configure POSTGRES_PASSWORD no .env}
+      POSTGRES_DB: ${POSTGRES_DB:-finance_os}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # redis: mantido apenas como placeholder de staging local.
+  # Hoje nenhum código importa redis (ver CODE_AUDIT A12/M4). Não subir sem uso.
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: finance-os-redis
+  #   ports:
+  #     - "127.0.0.1:6379:6379"
+
+volumes:
+  postgres_data:

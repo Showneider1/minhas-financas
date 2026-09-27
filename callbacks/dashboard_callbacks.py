@@ -9,17 +9,22 @@ import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 from datetime import datetime, date
 from calendar import monthrange
-import traceback
 
 from app import app
 from database.connection import get_db_session
+from middleware.auth_context import resolve_user
 from services.dashboard_service import DashboardService
+from services.finance_service import FinanceService
 from database.models.category import TransactionType
 from config.logging_config import app_logger
+from utils.exceptions import AuthenticationError
 
 
-def _fmt_brl(value: float) -> str:
-    return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+def _fmt_brl(value) -> str:
+    # Borda de exibição: aceita Decimal/int/str (sem aritmética aqui).
+    from decimal import Decimal as _D
+    amount = value if isinstance(value, _D) else _D(str(value))
+    return f"R$ {amount:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
 def _parse_dates(start_date, end_date):
@@ -48,11 +53,14 @@ def _fim_do_mes(d: date) -> date:
     Input("dashboard-periodo",      "end_date"),
     Input("store-reload-dashboard", "data"),
     Input("btn-update-dashboard",   "n_clicks"),
-    State("store-user-id",          "data"),
+    State("auth-store",               "data"),
 )
-def update_kpis(start_date, end_date, _reload, _btn, user_id):
+def update_kpis(start_date, end_date, _reload, _btn, auth_data):
     zero = "R$ 0,00"
-    if not user_id:
+    try:
+        # P0 (IDOR): usuário derivado do JWT.
+        user_id = resolve_user(auth_data)
+    except AuthenticationError:
         return zero, zero, zero, zero, "", f"Pendentes: {zero}", f"Pendentes: {zero}"
 
     ds, de = _parse_dates(start_date, end_date)
@@ -89,9 +97,10 @@ def update_kpis(start_date, end_date, _reload, _btn, user_id):
                 f"Pagas: {_fmt_brl(rec_paga)} | Pend.: {_fmt_brl(rec_pend)}",
                 f"Pagas: {_fmt_brl(desp_paga)} | Pend.: {_fmt_brl(desp_pend)}",
             )
+    except AuthenticationError:
+        return "Erro", "Erro", "Erro", "Erro", "-", "-", "-"
     except Exception as e:
         app_logger.error(f"KPIs: {e}")
-        traceback.print_exc()
         return "Erro", "Erro", "Erro", "Erro", "-", "-", "-"
 
 
@@ -108,9 +117,9 @@ def update_kpis(start_date, end_date, _reload, _btn, user_id):
     Input("dashboard-periodo",            "end_date"),
     Input("store-reload-dashboard",       "data"),
     Input("filtro-tipo-categoria",        "value"),
-    State("store-user-id",                "data"),
+    State("auth-store",                   "data"),
 )
-def update_charts_and_table(start_date, end_date, _reload, tipo_cat, user_id):
+def update_charts_and_table(start_date, end_date, _reload, tipo_cat, auth_data):
     def empty_fig(msg="Nenhum dado no período"):
         f = go.Figure()
         f.update_layout(
@@ -131,7 +140,10 @@ def update_charts_and_table(start_date, end_date, _reload, tipo_cat, user_id):
     tipo_label = "despesas" if tipo_enum == TransactionType.EXPENSE else "receitas"
     blank      = html.Span("R$ 0,00", className="fw-bold small")
 
-    if not user_id:
+    try:
+        # P0 (IDOR): usuário derivado do JWT.
+        user_id = resolve_user(auth_data)
+    except AuthenticationError:
         return (empty_fig(), empty_fig(), html.P("Sem dados"),
                 html.P("Sem dados"), "R$ 0,00", "R$ 0,00", blank)
 
@@ -154,8 +166,9 @@ def update_charts_and_table(start_date, end_date, _reload, tipo_cat, user_id):
             # ── Fluxo mensal ──────────────────────────────────────────────────
             ev = svc.get_monthly_evolution(user_id, months=6)
             months_lbl = [i["month"] for i in ev["receitas"]]
-            rec_vals   = [i["value"]  for i in ev["receitas"]]
-            desp_vals  = [i["value"]  for i in ev["despesas"]]
+            # Borda Plotly/JSON: Decimal não serializa — float só aqui.
+            rec_vals   = [float(i["value"] or 0)  for i in ev["receitas"]]
+            desp_vals  = [float(i["value"] or 0)  for i in ev["despesas"]]
             if any(v > 0 for v in rec_vals + desp_vals):
                 fig1 = go.Figure()
                 fig1.add_trace(go.Bar(x=months_lbl, y=rec_vals,  name="Receitas", marker_color="#2ecc71"))
@@ -173,7 +186,7 @@ def update_charts_and_table(start_date, end_date, _reload, tipo_cat, user_id):
                 fig2 = go.Figure()
                 fig2.add_trace(go.Pie(
                     labels=[f"{c['icon']} {c['name']}" for c in cats],
-                    values=[c["total"] for c in cats],
+                    values=[float(c["total"] or 0) for c in cats],
                     hole=.5,
                     marker_colors=[c["color"] for c in cats],
                     textinfo="percent+label",
@@ -187,12 +200,13 @@ def update_charts_and_table(start_date, end_date, _reload, tipo_cat, user_id):
 
             # ── Top Categorias ────────────────────────────────────────────────
             if cats:
-                total_geral = sum(c["total"] for c in cats)
+                from decimal import Decimal as _D
+                total_geral = sum((c["total"] for c in cats), _D("0.00"))
                 bar_color   = "danger" if tipo_enum == TransactionType.EXPENSE else "success"
                 val_color   = "#e74c3c" if tipo_enum == TransactionType.EXPENSE else "#2ecc71"
                 rows_top = []
                 for c in cats[:8]:
-                    pct = (c["total"] / total_geral * 100) if total_geral > 0 else 0
+                    pct = (float(c["total"]) / float(total_geral) * 100) if total_geral > 0 else 0
                     rows_top.append(
                         html.Div([
                             html.Div([
@@ -240,7 +254,8 @@ def update_charts_and_table(start_date, end_date, _reload, tipo_cat, user_id):
                     )
                     cat_icon = t.category.icon if t.category else "📝"
                     cat_name = t.category.name if t.category else "Geral"
-                    amount   = getattr(t, "base_amount", None) or getattr(t, "amount", 0.0) or 0.0
+                    # P0: valor canônico base_amount (alias falso removido).
+                    amount   = t.base_amount if t.base_amount is not None else 0
 
                     btn_pay = html.Button(
                         html.I(className="bi bi-check-circle-fill text-success fs-5"),
@@ -277,14 +292,15 @@ def update_charts_and_table(start_date, end_date, _reload, tipo_cat, user_id):
                                   borderless=True, hover=True,
                                   responsive=True, className="align-middle mb-0")
 
-            # ── Totalizadores ─────────────────────────────────────────────────
-            sum_rec  = sum(
-                getattr(t, "base_amount", None) or getattr(t, "amount", 0.0) or 0.0
+            # ── Totalizadores (Decimal; TRANSFER fora por construção) ─────
+            from utils.money import money_sum
+            sum_rec  = money_sum(
+                t.base_amount
                 for t in upcoming
                 if t.transaction_type == TransactionType.INCOME and t.due_date is not None
             )
-            sum_desp = sum(
-                getattr(t, "base_amount", None) or getattr(t, "amount", 0.0) or 0.0
+            sum_desp = money_sum(
+                t.base_amount
                 for t in upcoming
                 if t.transaction_type == TransactionType.EXPENSE and t.due_date is not None
             )
@@ -294,9 +310,11 @@ def update_charts_and_table(start_date, end_date, _reload, tipo_cat, user_id):
             saldo_cls  = "text-success" if saldo_prev >= 0 else "text-danger"
             tot_saldo  = html.Span(_fmt_brl(saldo_prev), className=f"fw-bold small {saldo_cls}")
 
+    except AuthenticationError:
+        return (empty_fig(), empty_fig(), html.P("Sessão expirada — faça login novamente."),
+                html.P("Sem dados"), "R$ 0,00", "R$ 0,00", blank)
     except Exception as e:
         app_logger.error(f"Graficos/tabela: {e}")
-        traceback.print_exc()
 
     return fig1, fig2, table, top_cats_div, tot_rec, tot_desp, tot_saldo
 
@@ -361,21 +379,24 @@ def cancelar_exclusao(n):
     Output("toast-dashboard",          "icon"),
     Input("modal-excluir-btn-ok",      "n_clicks"),
     State("store-acao-pendente",       "data"),
-    State("store-user-id",             "data"),
+    State("auth-store",                "data"),
     State("store-reload-aux",          "data"),
     prevent_initial_call=True,
 )
-def confirmar_exclusao(n_clicks, acao, user_id, reload_aux):
-    if not n_clicks or not acao or not user_id:
+def confirmar_exclusao(n_clicks, acao, auth_data, reload_aux):
+    if not n_clicks or not acao or not auth_data:
         return no_update, no_update, no_update, no_update, no_update, no_update
     try:
+        # P0 (IDOR + C2): exclusão via FinanceService com dono do JWT.
+        user_id = resolve_user(auth_data)
         with get_db_session() as db:
-            svc = DashboardService(db)
-            svc.delete_transaction(acao["id"], user_id)
+            FinanceService(db).delete_transaction(acao["id"], user_id)
         return False, (reload_aux or 0) + 1, True, "Lançamento excluído.", "Excluído", "danger"
+    except AuthenticationError:
+        return False, no_update, True, "Sessão expirada — faça login novamente.", "Erro", "warning"
     except Exception as e:
         app_logger.error(f"Excluir: {e}")
-        return False, no_update, True, str(e), "Erro", "warning"
+        return False, no_update, True, "Não foi possível excluir.", "Erro", "warning"
 
 
 # ─── Consolidador de reload ───────────────────────────────────────────────────

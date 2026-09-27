@@ -1,7 +1,7 @@
 """
 Callbacks de autenticação (login, registro, logout).
 """
-from dash import Input, Output, State, callback_context, no_update
+from dash import Input, Output, State, no_update
 import dash_bootstrap_components as dbc
 from pydantic import ValidationError                          # ← ADICIONAR
 from app import app
@@ -12,7 +12,7 @@ from config.logging_config import app_logger
 from utils.exceptions import AppException
 
 
-print("🔐 Registrando callbacks de autenticação...")
+app_logger.info("Registrando callbacks de autenticação...")
 
 
 @app.callback(
@@ -28,10 +28,6 @@ print("🔐 Registrando callbacks de autenticação...")
 )
 def fazer_login(n_clicks, email, password):
     """Processa login do usuário."""
-    print(f"\n🔵 LOGIN CALLBACK EXECUTADO!")
-    print(f"   - n_clicks: {n_clicks}")
-    print(f"   - email: {email}")
-
     try:
         if not n_clicks:
             return no_update, no_update, no_update
@@ -55,9 +51,10 @@ def fazer_login(n_clicks, email, password):
             "token": token_response.access_token,
             "user_id": token_response.user_id,
             "email": token_response.email,
+            "name": token_response.name or token_response.email,
         }
 
-        print(f"   ✅ Login bem-sucedido! User ID: {token_response.user_id}")
+        app_logger.info("Login bem-sucedido (detalhes no audit log).")
 
         return auth_data, dbc.Alert(
             "Login realizado com sucesso!",
@@ -67,7 +64,6 @@ def fazer_login(n_clicks, email, password):
         ), "/dashboard"
 
     except AppException as e:
-        print(f"   ❌ Erro: {e.message}")
         return no_update, dbc.Alert(
             str(e.message),
             color="danger",
@@ -85,11 +81,9 @@ def fazer_login(n_clicks, email, password):
         ), no_update
 
     except Exception as e:
-        print(f"   ❌ Erro inesperado: {e}")
-        import traceback
-        traceback.print_exc()
+        app_logger.error(f"Erro inesperado no login: {e}")
         return no_update, dbc.Alert(
-            f"Erro ao fazer login: {str(e)}",
+            "Não foi possível fazer login. Tente novamente.",
             color="danger",
             duration=4000,
             dismissable=True,
@@ -110,8 +104,6 @@ def fazer_login(n_clicks, email, password):
 )
 def fazer_registro(n_clicks, name, email, password, password_confirm):
     """Processa registro de novo usuário."""
-    print(f"\n🟢 REGISTRO CALLBACK EXECUTADO!")
-
     try:
         if not n_clicks:
             return no_update, no_update
@@ -135,12 +127,9 @@ def fazer_registro(n_clicks, name, email, password, password_confirm):
 
         with get_db_session() as db:
             auth_service = AuthService(db)
-            user = auth_service.register_user(register_data)
-            db.flush()              # ← garante ID gerado antes de fechar
-            user_id = user.id       # ← captura dentro da sessão
-            user_email = user.email # ← captura dentro da sessão
+            auth_service.register_user(register_data)
 
-        print(f"   ✅ Usuário registrado! ID: {user_id}")
+        app_logger.info("Novo usuário registrado (detalhes no audit log).")
 
         return dbc.Alert(
             "Conta criada com sucesso! Faça login para continuar.",
@@ -150,7 +139,6 @@ def fazer_registro(n_clicks, name, email, password, password_confirm):
         ), "/login"
 
     except AppException as e:
-        print(f"   ❌ Erro: {e.message}")
         return dbc.Alert(str(e.message), color="danger", duration=4000, dismissable=True), no_update
 
     except ValidationError as e:
@@ -158,10 +146,8 @@ def fazer_registro(n_clicks, name, email, password, password_confirm):
         return dbc.Alert(f"Dados inválidos: {erros}", color="danger", duration=5000, dismissable=True), no_update
 
     except Exception as e:
-        print(f"   ❌ Erro inesperado: {e}")
-        import traceback
-        traceback.print_exc()
-        return dbc.Alert(f"Erro ao criar conta: {str(e)}", color="danger", duration=4000, dismissable=True), no_update
+        app_logger.error(f"Erro inesperado no registro: {e}")
+        return dbc.Alert("Não foi possível criar a conta. Tente novamente.", color="danger", duration=4000, dismissable=True), no_update
 
 
 @app.callback(
@@ -175,10 +161,8 @@ def fazer_registro(n_clicks, name, email, password, password_confirm):
 )
 def fazer_logout(n_clicks, auth_data):
     """Realiza logout do usuário."""
-    print(f"\n🔴 LOGOUT CALLBACK EXECUTADO!")
     if n_clicks and auth_data:
-        user_id = auth_data.get("user_id")
-        print(f"   ✓ Logout: usuário {user_id}")
+        app_logger.info("Logout realizado (detalhes no audit log).")
         return True, "/login"
 
     return no_update, no_update
@@ -189,12 +173,10 @@ def fazer_logout(n_clicks, auth_data):
     Input("auth-store", "data"),
 )
 def atualizar_user_id(auth_data):
-    """Atualiza store de user_id quando auth muda."""
+    """Espelho legado de user_id (NÃO é autoridade — ver auth_context).
+
+    Mantido temporariamente para compatibilidade; callbacks P0 leem auth-store.
+    """
     if auth_data and "user_id" in auth_data:
-        user_id = auth_data["user_id"]
-        print(f"   ✓ Store user_id atualizado: {user_id}")
-        return user_id
+        return auth_data["user_id"]
     return None
-
-
-print("✅ Callbacks de autenticação registrados!")

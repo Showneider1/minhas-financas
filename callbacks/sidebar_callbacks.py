@@ -6,6 +6,7 @@ garante que nome/email apareçam corretamente ao navegar.
 from dash import Input, Output
 from dash.exceptions import PreventUpdate
 from app import app
+from config.security import verify_token
 
 
 @app.callback(
@@ -16,8 +17,11 @@ from app import app
     prevent_initial_call=False,
 )
 def atualizar_info_usuario(auth_data, _pathname):
-    """Atualiza nome e e-mail do usuário na sidebar."""
+    """Atualiza nome e e-mail do usuário na sidebar (só com sessão válida)."""
     if auth_data and isinstance(auth_data, dict):
+        # P0: não exibe identidade com token expirado/adulterado.
+        if verify_token(auth_data.get("token") or "") is None:
+            raise PreventUpdate
         name  = auth_data.get("name",  "") or "Usuário"
         email = auth_data.get("email", "") or ""
         return name, email

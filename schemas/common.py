@@ -63,6 +63,7 @@ class TokenResponse(BaseModel):
     expires_in: int  # segundos
     user_id: int
     email: str
+    name: str = ""
 
 
 class FilterBase(BaseModel):

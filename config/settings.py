@@ -2,7 +2,6 @@
 Configurações da aplicação carregadas de variáveis de ambiente.
 """
 import os
-from typing import Optional
 from pathlib import Path
 
 # Tenta importar do pydantic v2, senão usa v1
@@ -31,7 +30,8 @@ class Settings(BaseSettings):
     APP_NAME: str = "Sistema Financeiro Pessoal"
     APP_VERSION: str = "1.0.0"
     ENVIRONMENT: str = "development"
-    DEBUG: bool = True
+    # P0 (segredos): DEBUG default False. Ativar só via env explícito em dev.
+    DEBUG: bool = False
     HOST: str = "0.0.0.0"
     PORT: int = 8050
     
@@ -48,6 +48,8 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    # P0 (Fase 8): reset curto e de uso único (padrão fintech 15 min).
+    RESET_TOKEN_EXPIRE_MINUTES: int = 15
     
     # ===============================
     # LOGS
@@ -105,6 +107,23 @@ class Settings(BaseSettings):
             env_file_encoding = "utf-8"
             case_sensitive = True
             extra = "ignore"
+
+    if PYDANTIC_V2:
+        @field_validator("SECRET_KEY", "JWT_SECRET_KEY")
+        @classmethod
+        def _no_default_secrets_in_prod(cls, v: str) -> str:
+            """Fail-fast: segredo default de dev nunca sobe em produção."""
+            env = os.getenv("ENVIRONMENT", "development")
+            defaults = (
+                "dev-secret-key-change-in-production",
+                "dev-jwt-secret-key-change-in-production",
+            )
+            if env == "production" and (v in defaults or len(v) < 32):
+                raise ValueError(
+                    "SECRET_KEY/JWT_SECRET_KEY inseguros para ENVIRONMENT=production. "
+                    "Defina valores longos e aleatórios via variáveis de ambiente."
+                )
+            return v
 
 
 # Cria diretórios necessários automaticamente

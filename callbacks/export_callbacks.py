@@ -1,42 +1,42 @@
 """
 Callbacks para exportação de dados.
 """
-from dash import Input, Output, State, dcc, callback_context
-import dash_bootstrap_components as dbc
+from dash import Input, Output, State, dcc
 from datetime import datetime, date
 from app import app
 from database.connection import get_db_session
+from middleware.auth_context import resolve_user
 from config.logging_config import app_logger
+from utils.exceptions import AuthenticationError
 import io
-from reportlab.lib.pagesizes import letter, A4
+from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+from reportlab.lib.enums import TA_CENTER
 from sqlalchemy import func
 
 
 @app.callback(
     Output("download-extrato", "data"),
     Input("btn-export-pdf", "n_clicks"),
-    State("store-user-id", "data"),
+    State("auth-store", "data"),
     State("extrato-periodo", "start_date"),
     State("extrato-periodo", "end_date"),
     State("extrato-tipo", "value"),
     State("extrato-status", "value"),
     prevent_initial_call=True,
 )
-def exportar_extrato(n_clicks, user_id, start_date, end_date, tipos, status_list):
+def exportar_extrato(n_clicks, auth_data, start_date, end_date, tipos, status_list):
     """
     Exporta extrato em PDF.
     """
-    print(f"\n📄 EXPORTANDO EXTRATO")
-    print(f"   user_id: {user_id}")
-    
     try:
-        if not n_clicks or not user_id:
+        if not n_clicks or not auth_data:
             return None
+        # P0 (IDOR): usuário derivado do JWT.
+        user_id = resolve_user(auth_data)
         
         # Converte datas
         if start_date:
@@ -49,22 +49,28 @@ def exportar_extrato(n_clicks, user_id, start_date, end_date, tipos, status_list
         else:
             data_fim = date.today()
         
-        print(f"   📅 Período: {data_inicio} até {data_fim}")
-        
         with get_db_session() as db:
-            from database.models.transaction import Transaction
+            from database.models.transaction import Transaction, TransactionStatus
             from database.models.category import TransactionType
             
-            # Query
+            # Query (CANCELLED fora; tipos convertidos de string p/ enum)
             query = db.query(Transaction).filter(
                 Transaction.user_id == user_id,
+                Transaction.status != TransactionStatus.CANCELLED,
                 Transaction.due_date >= data_inicio,
                 Transaction.due_date <= data_fim
             )
             
             # Filtros
             if tipos:
-                query = query.filter(Transaction.transaction_type.in_(tipos))
+                wanted = []
+                for raw in tipos:
+                    try:
+                        wanted.append(TransactionType(raw))
+                    except ValueError:
+                        continue
+                if wanted:
+                    query = query.filter(Transaction.transaction_type.in_(wanted))
             
             if status_list:
                 if "PAID" in status_list and "PENDING" not in status_list:
@@ -74,8 +80,6 @@ def exportar_extrato(n_clicks, user_id, start_date, end_date, tipos, status_list
             
             query = query.order_by(Transaction.due_date.desc())
             transactions = query.all()
-            
-            print(f"   📊 Total de transações: {len(transactions)}")
             
             # Gera PDF
             buffer = io.BytesIO()
@@ -103,15 +107,21 @@ def exportar_extrato(n_clicks, user_id, start_date, end_date, tipos, status_list
             data = [["Data", "Descrição", "Categoria", "Tipo", "Valor", "Status"]]
             
             for t in transactions:
-                tipo_str = "Receita" if t.transaction_type == TransactionType.INCOME else "Despesa"
+                if t.transaction_type == TransactionType.INCOME:
+                    tipo_str = "Receita"
+                elif t.transaction_type == TransactionType.EXPENSE:
+                    tipo_str = "Despesa"
+                else:
+                    tipo_str = "Transferência"
                 status_str = "Pago" if t.paid_date else "Pendente"
-                valor_str = f"R$ {t.base_amount:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                valor_str = _fmt_brl(t.base_amount)
                 data_str = t.due_date.strftime("%d/%m/%Y")
+                cat_name = t.category.name if t.category else "Sem categoria"
                 
                 data.append([
                     data_str,
                     t.description[:30],
-                    t.category.name[:20],
+                    cat_name[:20],
                     tipo_str,
                     valor_str,
                     status_str
@@ -135,33 +145,41 @@ def exportar_extrato(n_clicks, user_id, start_date, end_date, tipos, status_list
             buffer.seek(0)
             filename = f"extrato_{data_inicio}_{data_fim}.pdf"
             
-            print(f"   ✅ PDF gerado: {filename}")
-            
             return dcc.send_bytes(buffer.getvalue(), filename=filename)
     
+    except AuthenticationError:
+        return None
     except Exception as e:
         app_logger.error(f"Erro ao exportar: {e}")
-        import traceback
-        traceback.print_exc()
         return None
+
+
+
+def _fmt_brl(value) -> str:
+    # Borda de exibição (sem aritmética aqui).
+    from decimal import Decimal as _D
+    amount = value if isinstance(value, _D) else _D(str(value or 0))
+    return f"R$ {amount:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
 
 @app.callback(
     Output("download-dashboard", "data"),
     Input("btn-export-dashboard", "n_clicks"),
-    State("store-user-id", "data"),
+    State("auth-store", "data"),
     State("dashboard-periodo", "start_date"),
     State("dashboard-periodo", "end_date"),
     prevent_initial_call=True,
 )
-def exportar_dashboard(n_clicks, user_id, start_date, end_date):
+def exportar_dashboard(n_clicks, auth_data, start_date, end_date):
     """
     Exporta relatório do dashboard em PDF.
     """
     try:
-        if not n_clicks or not user_id:
+        if not n_clicks or not auth_data:
             return None
+        # P0 (IDOR): usuário derivado do JWT.
+        user_id = resolve_user(auth_data)
         
         # Converte datas
         if start_date:
@@ -175,15 +193,16 @@ def exportar_dashboard(n_clicks, user_id, start_date, end_date):
             data_fim = date.today()
         
         with get_db_session() as db:
-            from database.models.transaction import Transaction
+            from database.models.transaction import Transaction, TransactionStatus
             from database.models.category import TransactionType
             
-            # Calcula totais
+            # Totais PAID (canônico: base_amount + status sincronizado)
             receitas = db.query(
                 func.sum(Transaction.base_amount)
             ).filter(
                 Transaction.user_id == user_id,
                 Transaction.transaction_type == TransactionType.INCOME,
+                Transaction.status == TransactionStatus.PAID,
                 Transaction.paid_date.isnot(None),
                 Transaction.paid_date >= data_inicio,
                 Transaction.paid_date <= data_fim
@@ -194,6 +213,7 @@ def exportar_dashboard(n_clicks, user_id, start_date, end_date):
             ).filter(
                 Transaction.user_id == user_id,
                 Transaction.transaction_type == TransactionType.EXPENSE,
+                Transaction.status == TransactionStatus.PAID,
                 Transaction.paid_date.isnot(None),
                 Transaction.paid_date >= data_inicio,
                 Transaction.paid_date <= data_fim
@@ -226,9 +246,9 @@ def exportar_dashboard(n_clicks, user_id, start_date, end_date):
             # Resumo
             data = [
                 ["Métrica", "Valor"],
-                ["Receitas", f"R$ {receitas:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")],
-                ["Despesas", f"R$ {despesas:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")],
-                ["Saldo", f"R$ {saldo:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")],
+                ["Receitas", _fmt_brl(receitas)],
+                ["Despesas", _fmt_brl(despesas)],
+                ["Saldo", _fmt_brl(saldo)],
             ]
             
             table = Table(data, colWidths=[3*inch, 3*inch])
@@ -251,8 +271,8 @@ def exportar_dashboard(n_clicks, user_id, start_date, end_date):
             
             return dcc.send_bytes(buffer.getvalue(), filename=filename)
     
+    except AuthenticationError:
+        return None
     except Exception as e:
         app_logger.error(f"Erro ao exportar dashboard: {e}")
-        import traceback
-        traceback.print_exc()
         return None

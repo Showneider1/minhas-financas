@@ -3,7 +3,7 @@ Repository base com operações CRUD genéricas.
 """
 from typing import TypeVar, Generic, Type, Optional, List, Dict, Any
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, desc, asc
+from sqlalchemy import desc, asc
 from database.base import Base
 import logging
 
@@ -37,8 +37,21 @@ class BaseRepository(Generic[ModelType]):
         return instance
     
     def get_by_id(self, id: int) -> Optional[ModelType]:
-        """Busca por ID."""
+        """Busca por ID (sem filtro de dono — NÃO usar para entidades owned)."""
         return self.db.query(self.model).filter(self.model.id == id).first()
+
+    def get_owned(self, id: int, user_id: int) -> Optional[ModelType]:
+        """Busca por ID + dono. OBRIGATÓRIO para entidades com user_id (anti-IDOR).
+
+        Retorna None se inexistente OU de outro usuário (não distinguir).
+        """
+        if not hasattr(self.model, "user_id"):
+            raise TypeError(f"{self.model.__name__} não possui user_id — use get_by_id.")
+        return (
+            self.db.query(self.model)
+            .filter(self.model.id == id, self.model.user_id == user_id)
+            .first()
+        )
     
     def get_all(
         self,
@@ -88,6 +101,23 @@ class BaseRepository(Generic[ModelType]):
             self.db.refresh(instance)
             
         return instance
+
+    def update_owned(self, id: int, user_id: int, **kwargs) -> Optional[ModelType]:
+        """Atualiza registro apenas se pertencer ao usuário (anti-IDOR)."""
+        instance = self.get_owned(id, user_id)
+        if not instance:
+            return None
+        kwargs.pop("id", None)
+        kwargs.pop("user_id", None)
+        has_changes = False
+        for key, value in kwargs.items():
+            if hasattr(instance, key) and getattr(instance, key) != value:
+                setattr(instance, key, value)
+                has_changes = True
+        if has_changes:
+            self.db.flush()
+            self.db.refresh(instance)
+        return instance
     
     def delete(self, id: int) -> bool:
         """Deleta registro permanentemente."""
@@ -95,6 +125,15 @@ class BaseRepository(Generic[ModelType]):
         if not instance:
             return False
         
+        self.db.delete(instance)
+        self.db.flush()
+        return True
+
+    def delete_owned(self, id: int, user_id: int) -> bool:
+        """Deleta apenas se pertencer ao usuário (anti-IDOR)."""
+        instance = self.get_owned(id, user_id)
+        if not instance:
+            return False
         self.db.delete(instance)
         self.db.flush()
         return True

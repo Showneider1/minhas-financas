@@ -11,8 +11,25 @@ import logging
 # Configuração de logger específico para o módulo de banco de dados
 logger = logging.getLogger("database.connection")
 
+
+def _mask_db_url(url: str) -> str:
+    """Masca senha da URL para logs (nunca expor credencial)."""
+    try:
+        from urllib.parse import urlsplit, urlunsplit
+        parts = urlsplit(url)
+        if parts.password:
+            netloc = parts.hostname or ""
+            if parts.username:
+                netloc = f"{parts.username}:***@{netloc}"
+            if parts.port:
+                netloc = f"{netloc}:{parts.port}"
+            return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+    except Exception:
+        pass
+    return url.split("@")[-1] if "@" in url else url
+
 # Cria engine
-logger.info(f"🗄️  Inicializando conexão com DB: {settings.DATABASE_URL}")
+logger.info(f"🗄️  Inicializando conexão com DB: {_mask_db_url(settings.DATABASE_URL)}")
 
 engine = create_engine(
     settings.DATABASE_URL,
@@ -54,17 +71,25 @@ def get_db_session() -> Generator[Session, None, None]:
 def init_db():
     """
     Inicializa o banco de dados criando todas as tabelas.
-    Importações locais para evitar ciclos, mas com tratamento de erro.
+
+    SEGURO: apenas `create_all` (cria o que falta, nunca apaga/alterada nada).
+    Nunca chamar `drop_all` aqui. Importações locais para evitar ciclos.
     """
     try:
         # Importar modelos aqui para garantir que o SQLAlchemy os conheça antes do create_all
         from database.base import Base
         # Imports explícitos para garantir o registro no Metadata
+        # (todos os models — goals/scheduled_bills/investment ficavam de fora e
+        #  nunca tinham tabela física criada; aditivo, não apaga nada)
         import database.models.user
         import database.models.account
         import database.models.category
         import database.models.transaction
         import database.models.budget
+        import database.models.goal
+        import database.models.scheduled_bill
+        import database.models.investment
+        import database.models.password_reset_token  # noqa: F401 — registro no metadata
         
         logger.info("Recriando/Verificando tabelas do banco de dados...")
         Base.metadata.create_all(bind=engine)

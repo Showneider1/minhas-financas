@@ -1,7 +1,10 @@
 """Model de Contas a Pagar e a Receber (ScheduledBill)."""
 import enum
 from datetime import datetime, timezone, date
-from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, Date, ForeignKey, Enum, Text, SmallInteger
+from sqlalchemy import (
+    Column, Integer, String, Boolean, DateTime, Date, ForeignKey, Enum, Text,
+    SmallInteger, Numeric, Index, CheckConstraint,
+)
 from sqlalchemy.orm import relationship
 from database.base import Base
 
@@ -48,18 +51,18 @@ class ScheduledBill(Base):
     # Dados da conta
     name        = Column(String(200), nullable=False)
     description = Column(Text, nullable=True)
-    bill_type   = Column(Enum(BillType), nullable=False, index=True)
+    bill_type   = Column(Enum(BillType, native_enum=False), nullable=False, index=True)
 
-    # Valores
-    amount      = Column(Float, nullable=False)
-    paid_amount = Column(Float, nullable=True)
+    # Valores (Numeric — nunca Float; ADR-002)
+    amount      = Column(Numeric(12, 2), nullable=False)
+    paid_amount = Column(Numeric(12, 2), nullable=True)
 
     # Datas
     due_date  = Column(Date, nullable=False, index=True)
     paid_date = Column(Date, nullable=True)
 
     # Status
-    status     = Column(Enum(BillStatus), default=BillStatus.PENDING, nullable=False, index=True)
+    status     = Column(Enum(BillStatus, native_enum=False), default=BillStatus.PENDING, nullable=False, index=True)
     is_deleted = Column(Boolean, default=False)
 
     # Alertas
@@ -67,7 +70,7 @@ class ScheduledBill(Base):
     reminded_at          = Column(DateTime(timezone=True), nullable=True)
 
     # Recorrencia
-    recurrence     = Column(Enum(BillRecurrence), default=BillRecurrence.NONE, nullable=False)
+    recurrence     = Column(Enum(BillRecurrence, native_enum=False), default=BillRecurrence.NONE, nullable=False)
     parent_bill_id = Column(Integer, ForeignKey("scheduled_bills.id", ondelete="SET NULL"), nullable=True)
 
     # Observacoes
@@ -96,6 +99,14 @@ class ScheduledBill(Base):
         foreign_keys=[parent_bill_id],
         back_populates="child_bills",
         remote_side=[id],               # resolve o erro de direção
+    )
+
+    # Lançamentos gerados ao pagar a conta (rastreabilidade — Fase 6).
+    transactions = relationship("Transaction", back_populates="scheduled_bill")
+
+    __table_args__ = (
+        Index("ix_bills_user_due_status", "user_id", "due_date", "status"),
+        CheckConstraint("amount > 0", name="ck_bill_amount_positive"),
     )
 
     # ─── Properties ───────────────────────────────────────────────────────────

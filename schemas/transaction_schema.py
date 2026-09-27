@@ -1,9 +1,14 @@
 """
 Schemas Pydantic para Validação e Serialização de Transações.
+
+Contrato canônico (P0 — ADR-002):
+- `base_amount: Decimal` é o ÚNICO valor financeiro. Sem amount/interest/discount.
+- Transferências: `transaction_type=TRANSFER` exige `destination_account_id`.
 """
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, validator, model_validator
 from typing import Optional
 from datetime import date, datetime
+from decimal import Decimal
 import enum
 
 # ──────────────────────────────────────────────────────────────────
@@ -46,14 +51,19 @@ class TransactionBase(BaseModel):
         max_length=255,
         description="Descrição curta da transação (ex: Mercado, Salário)",
     )
-    base_amount: float = Field(
+    base_amount: Decimal = Field(
         ...,
         gt=0,
-        description="Valor absoluto da transação. Deve ser positivo.",
+        description="Valor liquidado canônico (Decimal, positivo).",
     )
     transaction_type: TransactionType = Field(
         ...,
         description="Tipo: INCOME (Receita), EXPENSE (Despesa) ou TRANSFER (Transferência)",
+    )
+
+    # Transferência: conta destino (obrigatória quando type=TRANSFER).
+    destination_account_id: Optional[int] = Field(
+        None, description="Conta destino (apenas TRANSFER)",
     )
 
     # Chaves Estrangeiras
@@ -84,6 +94,15 @@ class TransactionBase(BaseModel):
             raise ValueError(f"Parcela atual ({v}) não pode ser maior que o total ({total})")
         return v
 
+    @model_validator(mode="after")
+    def validate_transfer_destination(self):
+        """TRANSFER exige destino diferente da origem (origem validada no service)."""
+        if self.transaction_type == TransactionType.TRANSFER and not self.destination_account_id:
+            raise ValueError("TRANSFER exige destination_account_id")
+        if self.transaction_type != TransactionType.TRANSFER and self.destination_account_id:
+            raise ValueError("destination_account_id só é permitido para TRANSFER")
+        return self
+
 
 # ==========================================
 # 2. CREATE: Para criar novas
@@ -102,10 +121,11 @@ class TransactionUpdate(BaseModel):
     atualizações parciais sem re-enviar todos os campos.
     """
     description:        Optional[str]             = Field(None, min_length=3, max_length=255)
-    base_amount:        Optional[float]            = Field(None, gt=0)
+    base_amount:        Optional[Decimal]         = Field(None, gt=0)
     transaction_type:   Optional[TransactionType] = None
     category_id:        Optional[int]             = None
     account_id:         Optional[int]             = None
+    destination_account_id: Optional[int]         = None
 
     purchase_date: Optional[date] = None
     due_date:      Optional[date] = None

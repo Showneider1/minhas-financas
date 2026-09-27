@@ -1,9 +1,13 @@
 """
-Repository para operações com contas.
+Repository de contas — P0 (ADR-002).
+
+- `Account.balance` é cache do BalanceService (único escritor). Este repo
+  NÃO atribui saldo à mão; `recalculate_balance`/`get_total_balance` delegam.
+- Acesso com dono: get_by_user_and_id / toggle_active_owned (anti-IDOR).
 """
+from decimal import Decimal
 from typing import List, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 from database.models.account import Account
 from database.repositories.base_repo import BaseRepository
 
@@ -67,7 +71,7 @@ class AccountRepository(BaseRepository[Account]):
         user_id: int,
         name: str,
         account_type: str,
-        initial_balance: float = 0.0,
+        initial_balance=0,
         currency: str = "BRL",
     ) -> Account:
         """
@@ -77,110 +81,43 @@ class AccountRepository(BaseRepository[Account]):
             user_id: ID do usuário
             name: Nome da conta
             account_type: Tipo da conta
-            initial_balance: Saldo inicial
+            initial_balance: Saldo inicial (Decimal/str/int — nunca float)
             currency: Moeda
         
         Returns:
             Account criada
         """
+        from utils.money import to_money2
+
+        initial = to_money2(initial_balance, where="account_repo.create")
         return self.create(
             user_id=user_id,
             name=name,
             account_type=account_type,
-            balance=initial_balance,
-            initial_balance=initial_balance,
+            balance=initial,
+            initial_balance=initial,
             currency=currency,
             is_active=True,
         )
     
-    def update_balance(self, account_id: int, amount: float) -> bool:
-        """
-        Atualiza saldo da conta.
-        
-        Args:
-            account_id: ID da conta
-            amount: Valor a adicionar (negativo para subtrair)
-        
-        Returns:
-            True se atualizado
-        """
-        account = self.get_by_id(account_id)
-        if not account:
-            return False
-        
-        account.update_balance(amount)
-        self.db.flush()
-        return True
-    
-    def recalculate_balance(self, account_id: int) -> Optional[float]:
-        """
-        Recalcula saldo da conta baseado nas transações.
-        
-        Args:
-            account_id: ID da conta
-        
-        Returns:
-            Novo saldo ou None se conta não existe
-        """
-        from database.models.transaction import Transaction, TransactionStatus
-        from database.models.category import TransactionType
-        
-        account = self.get_by_id(account_id)
-        if not account:
+    def recalculate_balance(self, account_id: int, user_id: int) -> Optional[Decimal]:
+        """Recalcula e persiste via BalanceService (único caminho)."""
+        from services.balance_service import BalanceService
+
+        try:
+            return BalanceService(self.db).recalculate_and_persist(account_id, user_id)
+        except LookupError:
             return None
-        
-        # Soma receitas pagas
-        income = self.db.query(func.sum(Transaction.amount)).filter(
-            Transaction.account_id == account_id,
-            Transaction.transaction_type == TransactionType.INCOME,
-            Transaction.status == TransactionStatus.PAID,
-            Transaction.is_deleted == False,
-        ).scalar() or 0.0
-        
-        # Soma despesas pagas
-        expense = self.db.query(func.sum(Transaction.amount)).filter(
-            Transaction.account_id == account_id,
-            Transaction.transaction_type == TransactionType.EXPENSE,
-            Transaction.status == TransactionStatus.PAID,
-            Transaction.is_deleted == False,
-        ).scalar() or 0.0
-        
-        # Calcula novo saldo
-        new_balance = account.initial_balance + income - expense
-        account.balance = new_balance
-        self.db.flush()
-        
-        return new_balance
     
-    def get_total_balance(self, user_id: int) -> float:
-        """
-        Calcula saldo total de todas as contas do usuário.
-        
-        Args:
-            user_id: ID do usuário
-        
-        Returns:
-            Saldo total
-        """
-        result = self.db.query(func.sum(Account.balance)).filter(
-            Account.user_id == user_id,
-            Account.is_active == True,
-            Account.is_deleted == False,
-        ).scalar()
-        
-        return result or 0.0
+    def get_total_balance(self, user_id: int) -> Decimal:
+        """Patrimônio em contas — delega ao BalanceService (regra única)."""
+        from services.balance_service import BalanceService
+
+        return BalanceService(self.db).get_total_balance(user_id)
     
-    def toggle_active(self, account_id: int) -> bool:
-        """
-        Alterna status ativo/inativo da conta.
-        
-        Args:
-            account_id: ID da conta
-        
-        Returns:
-            True se alterado
-        """
-        account = self.get_by_id(account_id)
+    def toggle_active(self, account_id: int, user_id: int) -> bool:
+        """Alterna ativo/inativo apenas se a conta for do usuário (anti-IDOR)."""
+        account = self.get_owned(account_id, user_id)
         if not account:
             return False
         

@@ -19,9 +19,6 @@ Uso típico:
     # Checagem automática: quais recorrências do usuário precisam ser geradas?
     pendentes = service.get_pending_recurrences(user_id, target_month, target_year)
 """
-from __future__ import annotations
-
-import math
 from datetime import date
 from dateutil.relativedelta import relativedelta
 from typing import List, Optional
@@ -32,6 +29,7 @@ from sqlalchemy import extract, and_
 from database.models.transaction import Transaction, TransactionStatus
 from database.models.category import TransactionType
 from config.logging_config import app_logger
+from utils.money import split_money
 
 
 class RecurrenceService:
@@ -58,6 +56,10 @@ class RecurrenceService:
         As demais são criadas com due_date avançando um mês por parcela.
         Todas iniciam com status PENDING e paid_date=None.
 
+        Rateio exato (P0 — ADR-002): sum(parcelas) == valor original, com o
+        resto de centavos nas PRIMEIRAS parcelas. Ex.: 100,00/3 ->
+        [33.34, 33.33, 33.33]. TRANSFER não pode ser parcelado.
+
         Args:
             base_transaction: Transação já persistida que serve de template.
             total: Número total de parcelas (deve ser >= 2).
@@ -67,8 +69,21 @@ class RecurrenceService:
         """
         if total < 2:
             raise ValueError("total de parcelas deve ser >= 2")
+        if base_transaction.transaction_type == TransactionType.TRANSFER:
+            raise ValueError("TRANSFER não pode ser parcelado")
+        # P0: base paga não pode ser parcelada (corromperia o realizado).
+        if base_transaction.status == TransactionStatus.PAID:
+            raise ValueError("transação-base já paga não pode ser parcelada")
 
-        # Atualiza a base como parcela 1/N
+        # Guarda contra duplo-clique / retry: base já parcelada não gera de novo.
+        if (base_transaction.total_installments or 1) > 1:
+            raise ValueError("transação-base já possui parcelamento gerado")
+
+        # Rateio centralizado (Decimal, sem float): resto nas primeiras.
+        parts = split_money(base_transaction.base_amount, total)
+
+        # Atualiza a base como parcela 1/N (com o valor rateado)
+        base_transaction.base_amount = parts[0]
         base_transaction.installment_number = 1
         base_transaction.total_installments = total
         base_transaction.is_recurring = False  # parcelado ≠ recorrente
@@ -83,7 +98,7 @@ class RecurrenceService:
             installment = Transaction(
                 user_id=base_transaction.user_id,
                 description=base_transaction.description,
-                base_amount=base_transaction.base_amount,
+                base_amount=parts[i - 1],
                 transaction_type=base_transaction.transaction_type,
                 category_id=base_transaction.category_id,
                 account_id=base_transaction.account_id,
@@ -102,6 +117,7 @@ class RecurrenceService:
         self.db.commit()
         for t in generated:
             self.db.refresh(t)
+        self.db.refresh(base_transaction)
 
         app_logger.info(
             f"Parcelamento gerado: transação {base_transaction.id} "

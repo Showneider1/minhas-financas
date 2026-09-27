@@ -1,16 +1,21 @@
 """
-Repository robusto para operações com transações.
-Correção: filtro de data híbrido no modo ALL (status=None) agora retorna
-          transações PAGAS com paid_date no período E PENDENTES com due_date
-          no período — evitando o sumiço de pendentes no extrato.
+Repository de transações — contrato canônico (P0 — ADR-002).
+
+- Valor: APENAS `base_amount` (Numeric/Decimal). `amount/interest/discount/
+  cashback` foram removidos (nunca existiram no model — CODE_AUDIT C1).
+- "Pago" ≡ status==PAID AND paid_date IS NOT NULL (sincronizados em escrita).
+- TRANSFER excluído das agregações de receita/despesa.
+- Acesso com dono: get_owned / mark_as_paid_owned (anti-IDOR).
 """
-from typing import List, Optional, Tuple
 from datetime import date
+from decimal import Decimal
+from typing import List, Optional, Tuple
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, and_, or_, desc, asc
 from database.models.transaction import Transaction, TransactionStatus
 from database.models.category import TransactionType, Category
 from database.repositories.base_repo import BaseRepository
+from utils.money import to_money2
 
 
 class TransactionRepository(BaseRepository[Transaction]):
@@ -22,62 +27,34 @@ class TransactionRepository(BaseRepository[Transaction]):
     def __init__(self, db: Session):
         super().__init__(Transaction, db)
 
-    def create_transaction(
-        self,
-        user_id: int,
-        account_id: int,
-        category_id: int,
-        base_amount: float,
-        transaction_type: TransactionType,
-        due_date: date,
-        description: Optional[str] = None,
-        notes: Optional[str] = None,
-        interest: float = 0.0,
-        discount: float = 0.0,
-        cashback: float = 0.0,
-        paid_date: Optional[date] = None,
-        is_recurring: bool = False,
-    ) -> Transaction:
-        """
-        Cria uma transação calculando o valor final (amount) automaticamente.
-        """
-        amount = base_amount + interest - discount - cashback
-
-        return self.create(
-            user_id=user_id,
-            account_id=account_id,
-            category_id=category_id,
-            description=description,
-            notes=notes,
-            base_amount=base_amount,
-            amount=amount,
-            interest=interest,
-            discount=discount,
-            cashback=cashback,
-            transaction_type=transaction_type,
-            due_date=due_date,
-            paid_date=paid_date,
-            is_recurring=is_recurring,
-        )
-
-    def get_with_relations(self, transaction_id: int) -> Optional[Transaction]:
-        """Busca transação com Account e Category já carregados (Eager Loading)."""
+    def get_with_relations(self, transaction_id: int, user_id: int) -> Optional[Transaction]:
+        """Busca com Account/Category Eager + filtro de dono (anti-IDOR)."""
         return self.db.query(Transaction).options(
             joinedload(Transaction.category),
             joinedload(Transaction.account),
         ).filter(
-            Transaction.id == transaction_id
+            Transaction.id == transaction_id,
+            Transaction.user_id == user_id,
         ).first()
 
-    def mark_as_paid(self, transaction_id: int, paid_date: Optional[date] = None) -> bool:
+    def mark_as_paid(
+        self,
+        transaction_id: int,
+        user_id: int,
+        paid_date: Optional[date] = None,
+    ) -> bool:
+        """Marca como paga sincronizando status + paid_date (idempotente).
+
+        P0: antes só setava paid_date (sem status, sem dono, sem commit).
+        Saldos são recalculados pelo chamador (FinanceService/BalanceService).
         """
-        Marca uma transação como paga. Se nenhuma data for fornecida, usa hoje.
-        """
-        transaction = self.get_by_id(transaction_id)
+        transaction = self.get_owned(transaction_id, user_id)
         if not transaction:
             return False
-
+        if transaction.status == TransactionStatus.PAID and transaction.paid_date is not None:
+            return True
         transaction.paid_date = paid_date or date.today()
+        transaction.status = TransactionStatus.PAID
         self.db.flush()
         return True
 
@@ -90,8 +67,8 @@ class TransactionRepository(BaseRepository[Transaction]):
         status: Optional[str] = None,   # 'PAID', 'PENDING' ou None (ALL)
         category_ids: Optional[List[int]] = None,
         account_ids: Optional[List[int]] = None,
-        min_amount: Optional[float] = None,
-        max_amount: Optional[float] = None,
+        min_amount=None,
+        max_amount=None,
         search: Optional[str] = None,
         is_recurring: Optional[bool] = None,
         page: int = 1,
@@ -100,6 +77,9 @@ class TransactionRepository(BaseRepository[Transaction]):
         """
         Motor de busca principal para listagens (Extrato, Relatórios).
         """
+        # P0: normaliza enum do schema (classe distinta) para o enum do model.
+        if transaction_type is not None and not isinstance(transaction_type, TransactionType):
+            transaction_type = TransactionType(getattr(transaction_type, "value", transaction_type))
         query = self.db.query(Transaction).options(
             joinedload(Transaction.category),
             joinedload(Transaction.account),
@@ -153,11 +133,15 @@ class TransactionRepository(BaseRepository[Transaction]):
         if account_ids:
             query = query.filter(Transaction.account_id.in_(account_ids))
 
-        # ── 3. Filtros de Valor ──────────────────────────────────────────────
+        # ── 3. Filtros de Valor (canônico: base_amount) ───────────────────
         if min_amount is not None:
-            query = query.filter(Transaction.amount >= min_amount)
+            query = query.filter(
+                Transaction.base_amount >= to_money2(min_amount, where="tx_repo.filter")
+            )
         if max_amount is not None:
-            query = query.filter(Transaction.amount <= max_amount)
+            query = query.filter(
+                Transaction.base_amount <= to_money2(max_amount, where="tx_repo.filter")
+            )
 
         # ── 4. Filtro de Recorrência ─────────────────────────────────────────
         if is_recurring is not None:
@@ -173,9 +157,9 @@ class TransactionRepository(BaseRepository[Transaction]):
             elif s_val == "PENDING":
                 query = query.filter(Transaction.paid_date.is_(None))
 
-        # ── 6. Busca Textual ─────────────────────────────────────────────────
+        # ── 6. Busca Textual (limitada — anti-DoS) ─────────────────────────
         if search:
-            term = f"%{search}%"
+            term = f"%{search[:100]}%"
             query = query.filter(
                 or_(
                     Transaction.description.ilike(term),
@@ -215,7 +199,10 @@ class TransactionRepository(BaseRepository[Transaction]):
             category_ids=cat_ids,
             status=status,
             transaction_type=type_,
-            page_size=1000,
+            # NOTA: paginação em memória no chamador (P3: LIMIT/OFFSET SQL).
+            # Teto 10000 alinha com relatórios; acima disso os totais do
+            # extrato ficam parciais (documentado — ver CODE_AUDIT A12).
+            page_size=10000,
         )
         return txs
 
@@ -226,9 +213,9 @@ class TransactionRepository(BaseRepository[Transaction]):
         start_date: date,
         end_date: date,
         status: str,
-    ) -> float:
-        """Calcula totais para KPIs."""
-        query = self.db.query(func.sum(Transaction.amount)).filter(
+    ) -> Decimal:
+        """Totais para KPIs (canônico: base_amount; TRANSFER excluído por tipo)."""
+        query = self.db.query(func.sum(Transaction.base_amount)).filter(
             Transaction.user_id == user_id,
             Transaction.transaction_type == transaction_type,
         )
@@ -237,24 +224,27 @@ class TransactionRepository(BaseRepository[Transaction]):
 
         if is_paid:
             query = query.filter(
+                Transaction.status == TransactionStatus.PAID,
                 Transaction.paid_date.isnot(None),
                 Transaction.paid_date >= start_date,
                 Transaction.paid_date <= end_date,
             )
         else:
             query = query.filter(
+                Transaction.status == TransactionStatus.PENDING,
                 Transaction.paid_date.is_(None),
                 Transaction.due_date >= start_date,
                 Transaction.due_date <= end_date,
             )
 
-        return query.scalar() or 0.0
+        return to_money2(query.scalar() or 0, where="tx_repo.sum")
 
     def get_overdue(self, user_id: int) -> List[Transaction]:
-        """Retorna transações vencidas e não pagas."""
+        """Vencidas e não pagas (exclui CANCELLED)."""
         today = date.today()
         return self.db.query(Transaction).filter(
             Transaction.user_id == user_id,
+            Transaction.status == TransactionStatus.PENDING,
             Transaction.paid_date.is_(None),
             Transaction.due_date < today,
         ).order_by(asc(Transaction.due_date)).all()
@@ -266,18 +256,19 @@ class TransactionRepository(BaseRepository[Transaction]):
         start_date: date,
         end_date: date,
     ):
-        """Agregação para gráficos de pizza."""
+        """Agregação para gráficos (canônico: base_amount; só pagas)."""
         return self.db.query(
             Transaction.category_id,
             Category.name,
             Category.icon,
             Category.color,
-            func.sum(Transaction.amount).label("total"),
+            func.sum(Transaction.base_amount).label("total"),
         ).join(
             Category, Transaction.category_id == Category.id
         ).filter(
             Transaction.user_id == user_id,
             Transaction.transaction_type == transaction_type,
+            Transaction.status == TransactionStatus.PAID,
             Transaction.paid_date.isnot(None),
             Transaction.paid_date >= start_date,
             Transaction.paid_date <= end_date,

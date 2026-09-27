@@ -4,7 +4,6 @@ Tratamento centralizado de erros.
 from typing import Dict, Any, Optional
 from config.logging_config import app_logger
 from utils.exceptions import AppException
-from schemas.common import ErrorResponse
 from datetime import datetime
 
 
@@ -76,13 +75,6 @@ def error_response(
     Returns:
         Dict formatado
     """
-    response = ErrorResponse(
-        success=False,
-        error=error,
-        details=details or {},
-        timestamp=datetime.utcnow(),
-    )
-    
     return {
         "success": False,
         "error": error,

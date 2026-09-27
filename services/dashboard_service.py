@@ -1,70 +1,67 @@
 """
-Serviço para agregações e métricas do dashboard.
-"""
-from typing import Dict, Any, List
-from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func, desc, asc, case
-from datetime import date, datetime, timedelta
-from dateutil.relativedelta import relativedelta
+Serviço de agregações do dashboard — P0 (ADR-002, Fase 6).
 
-from database.models.transaction import Transaction, TransactionType
-from database.models.account import Account
-from database.models.category import Category
-from config.logging_config import app_logger
+REGRA ÚNICA: todos os saldos/resumos vêm do BalanceService.
+Este serviço mantém a API legada (mesmos nomes/retornos estruturais) como
+thin layer, com valores Decimal. TRANSFER excluído de receita/despesa.
+"""
+from datetime import date, timedelta
+from decimal import Decimal
+from typing import Dict, Any, List
+
+from dateutil.relativedelta import relativedelta
+from sqlalchemy import asc, desc, func
+from sqlalchemy.orm import Session, joinedload
+
+from database.models.category import Category, TransactionType
+from database.models.transaction import Transaction, TransactionStatus
+from services.balance_service import BalanceService
+from utils.money import to_money2
+
+ZERO = Decimal("0.00")
 
 
 class DashboardService:
     def __init__(self, db: Session):
         self.db = db
+        self.balances = BalanceService(db)
 
     def _get_sum(self, user_id: int, type_: TransactionType,
-                 start_date: date, end_date: date, paid: bool = True) -> float:
+                 start_date: date, end_date: date, paid: bool = True) -> Decimal:
         query = self.db.query(func.sum(Transaction.base_amount)).filter(
             Transaction.user_id == user_id,
             Transaction.transaction_type == type_
         )
         if paid:
             query = query.filter(
+                Transaction.status == TransactionStatus.PAID,
                 Transaction.paid_date.isnot(None),
                 Transaction.paid_date >= start_date,
                 Transaction.paid_date <= end_date
             )
         else:
             query = query.filter(
+                Transaction.status == TransactionStatus.PENDING,
                 Transaction.paid_date.is_(None),
                 Transaction.due_date >= start_date,
                 Transaction.due_date <= end_date
             )
-        return query.scalar() or 0.0
+        return to_money2(query.scalar() or 0, where="dashboard.sum")
 
-    def get_saldo_calculado(self, user_id: int) -> float:
+    def get_saldo_calculado(self, user_id: int) -> Decimal:
+        """Patrimônio em contas — delega ao BalanceService (regra única).
+
+        P0: antes somava só transações (sem initial_balance, sem TRANSFER).
         """
-        Recalcula saldo real somando todas as transações pagas:
-        receitas pagas - despesas pagas (independe de período).
-        Usado porque Account.balance pode não ser atualizado automaticamente.
-        """
-        resultado = self.db.query(
-            func.sum(
-                case(
-                    (Transaction.transaction_type == TransactionType.INCOME,   Transaction.base_amount),
-                    (Transaction.transaction_type == TransactionType.EXPENSE, -Transaction.base_amount),
-                    else_=0
-                )
-            )
-        ).filter(
-            Transaction.user_id == user_id,
-            Transaction.paid_date.isnot(None),
-        ).scalar() or 0.0
-        return resultado
+        return self.balances.get_total_balance(user_id)
 
     def get_overview(self, user_id: int, start_date: date, end_date: date) -> Dict[str, Any]:
-        receitas_pagas     = self._get_sum(user_id, TransactionType.INCOME,  start_date, end_date, paid=True)
-        receitas_pendentes = self._get_sum(user_id, TransactionType.INCOME,  start_date, end_date, paid=False)
-        despesas_pagas     = self._get_sum(user_id, TransactionType.EXPENSE, start_date, end_date, paid=True)
-        despesas_pendentes = self._get_sum(user_id, TransactionType.EXPENSE, start_date, end_date, paid=False)
-        saldo_contas = self.db.query(func.sum(Account.balance)).filter(
-            Account.user_id == user_id, Account.is_active == True
-        ).scalar() or 0.0
+        summary = self.balances.get_period_summary(user_id, start_date, end_date)
+        receitas_pagas = summary["income_paid"]
+        receitas_pendentes = summary["income_pending"]
+        despesas_pagas = summary["expense_paid"]
+        despesas_pendentes = summary["expense_pending"]
+        saldo_contas = self.balances.get_total_balance(user_id)
         return {
             "receitas": {"pagas": receitas_pagas,  "pendentes": receitas_pendentes,
                          "total": receitas_pagas + receitas_pendentes},
@@ -74,13 +71,14 @@ class DashboardService:
                          "periodo": receitas_pagas - despesas_pagas},
         }
 
-    def get_forecast_balance(self, user_id: int, start_date: date, end_date: date) -> Dict[str, float]:
-        rec_pago  = self._get_sum(user_id, TransactionType.INCOME,  start_date, end_date, paid=True)
-        rec_pend  = self._get_sum(user_id, TransactionType.INCOME,  start_date, end_date, paid=False)
-        desp_pago = self._get_sum(user_id, TransactionType.EXPENSE, start_date, end_date, paid=True)
-        desp_pend = self._get_sum(user_id, TransactionType.EXPENSE, start_date, end_date, paid=False)
+    def get_forecast_balance(self, user_id: int, start_date: date, end_date: date) -> Dict[str, Decimal]:
+        summary = self.balances.get_period_summary(user_id, start_date, end_date)
+        rec_pago = summary["income_paid"]
+        rec_pend = summary["income_pending"]
+        desp_pago = summary["expense_paid"]
+        desp_pend = summary["expense_pending"]
         efetivado = rec_pago - desp_pago
-        previsto  = (rec_pago + rec_pend) - (desp_pago + desp_pend)
+        previsto = (rec_pago + rec_pend) - (desp_pago + desp_pend)
         return {
             "efetivado":     efetivado,
             "previsto":      previsto,
@@ -130,6 +128,7 @@ class DashboardService:
         ).join(Transaction, Transaction.category_id == Category.id).filter(
             Transaction.user_id == user_id,
             Transaction.transaction_type == transaction_type,
+            Transaction.status == TransactionStatus.PAID,
             Transaction.paid_date.isnot(None),
             Transaction.paid_date >= start_date,
             Transaction.paid_date <= end_date
@@ -145,6 +144,7 @@ class DashboardService:
         ).join(Transaction, Transaction.category_id == Category.id).filter(
             Transaction.user_id == user_id,
             Transaction.transaction_type == transaction_type,
+            Transaction.status == TransactionStatus.PENDING,
             Transaction.paid_date.is_(None),
             Transaction.due_date >= start_date,
             Transaction.due_date <= end_date,
@@ -160,6 +160,7 @@ class DashboardService:
         ).join(Transaction, Transaction.category_id == Category.id).filter(
             Transaction.user_id == user_id,
             Transaction.transaction_type == transaction_type,
+            Transaction.status != TransactionStatus.CANCELLED,
             # due_date OU paid_date dentro do período
             func.coalesce(Transaction.paid_date, Transaction.due_date) >= start_date,
             func.coalesce(Transaction.paid_date, Transaction.due_date) <= end_date,
@@ -175,18 +176,22 @@ class DashboardService:
         ).filter(
             Transaction.user_id == user_id,
             Transaction.transaction_type == TransactionType.EXPENSE,
+            Transaction.status == TransactionStatus.PENDING,
             Transaction.paid_date.is_(None),
             Transaction.due_date <= horizon,
         ).order_by(asc(Transaction.due_date)).limit(limit).all()
 
     def get_pending_sum(self, user_id: int, transaction_type: TransactionType,
-                        start_date: date, end_date: date) -> float:
+                        start_date: date, end_date: date) -> Decimal:
         """Soma das transações pendentes (sem paid_date) no período."""
         return self._get_sum(user_id, transaction_type, start_date, end_date, paid=False)
 
     def get_upcoming_transactions(self, user_id: int, days_ahead: int = 30,
-                                  limit: int = 10) -> List[Transaction]:
-        """Transações pendentes (receitas e despesas) — inclui atrasadas dos últimos 30 dias."""
+                                   limit: int = 10) -> List[Transaction]:
+        """Vencimentos a pagar/receber (INCOME/EXPENSE pendentes).
+
+        TRANSFER fora (não é vencimento de resultado — tem fluxo próprio).
+        """
         today   = date.today()
         horizon = today + timedelta(days=days_ahead)
         return (
@@ -194,6 +199,10 @@ class DashboardService:
             .options(joinedload(Transaction.category))
             .filter(
                 Transaction.user_id == user_id,
+                Transaction.transaction_type.in_(
+                    [TransactionType.INCOME, TransactionType.EXPENSE]
+                ),
+                Transaction.status == TransactionStatus.PENDING,
                 Transaction.paid_date.is_(None),
                 Transaction.due_date >= today - timedelta(days=30),
                 Transaction.due_date <= horizon,
@@ -206,12 +215,17 @@ class DashboardService:
     def get_financial_health_score(self, user_id: int) -> Dict[str, Any]:
         import math
 
+        # Borda analítica (não-ledger): converte Decimal→float UMA vez aqui.
+        # Heurística de score — precisão de centavos irrelevante.
+        def _f(v) -> float:
+            return float(v or 0)
+
         today            = date.today()
         start_this_month = today.replace(day=1)
         end_this_month   = today
 
-        receita_mes = self._get_sum(user_id, TransactionType.INCOME,  start_this_month, end_this_month, paid=True)
-        despesa_mes = self._get_sum(user_id, TransactionType.EXPENSE, start_this_month, end_this_month, paid=True)
+        receita_mes = _f(self._get_sum(user_id, TransactionType.INCOME,  start_this_month, end_this_month, paid=True))
+        despesa_mes = _f(self._get_sum(user_id, TransactionType.EXPENSE, start_this_month, end_this_month, paid=True))
 
         poupanca          = max(receita_mes - despesa_mes, 0)
         taxa_poupanca_pct = (poupanca / receita_mes * 100) if receita_mes > 0 else 0
@@ -229,7 +243,7 @@ class DashboardService:
         for i in range(3):
             m_start = (today.replace(day=1) - relativedelta(months=i+1)).replace(day=1)
             m_end   = m_start + relativedelta(months=1) - timedelta(days=1)
-            val = self._get_sum(user_id, TransactionType.INCOME, m_start, m_end, paid=True)
+            val = _f(self._get_sum(user_id, TransactionType.INCOME, m_start, m_end, paid=True))
             monthly_incomes.append(val)
 
         if len(monthly_incomes) >= 2 and sum(monthly_incomes) > 0:
@@ -242,17 +256,17 @@ class DashboardService:
         else:
             score_regularidade = 10.0
 
-        saldo_contas = self.get_saldo_calculado(user_id)
+        saldo_contas = _f(self.get_saldo_calculado(user_id))
 
         media_despesa_mensal = (
             sum(
-                self._get_sum(
+                _f(self._get_sum(
                     user_id, TransactionType.EXPENSE,
                     (today.replace(day=1) - relativedelta(months=i+1)).replace(day=1),
                     ((today.replace(day=1) - relativedelta(months=i+1)).replace(day=1)
                      + relativedelta(months=1) - timedelta(days=1)),
                     paid=True,
-                )
+                ))
                 for i in range(3)
             ) / 3
         )

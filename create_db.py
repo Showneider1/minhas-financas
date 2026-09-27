@@ -12,7 +12,8 @@ import database.models  # Registra todos os models no metadata
 from database.models.category import Category, TransactionType
 from database.models.account import Account, AccountType
 from database.models.user import User
-from werkzeug.security import generate_password_hash
+from config.settings import settings
+from config.security import hash_password
 
 
 # ──────────────────────────────────────────────────────────────
@@ -23,8 +24,18 @@ from werkzeug.security import generate_password_hash
 def reset_and_seed_db():
     """
     Recria o banco do zero e insere dados de demonstração.
-    EXCLUSIVO PARA DESENVOLVIMENTO / TESTES.
+    EXCLUSIVO PARA DESENVOLVIMENTO / TESTES LOCAIS (SQLite).
+
+    Travas: aborta em ENVIRONMENT=production e contra banco remoto
+    (Supabase/Postgres) — nunca destruir dados reais.
     """
+    if settings.ENVIRONMENT == "production":
+        raise RuntimeError("reset_and_seed_db() bloqueado em ENVIRONMENT=production.")
+    if "sqlite" not in settings.DATABASE_URL:
+        raise RuntimeError(
+            "reset_and_seed_db() permitido apenas em SQLite local. "
+            "Banco atual não é SQLite — abortando para proteger dados."
+        )
     print("⏳ Iniciando RESET completo do Banco de Dados...")
 
     # 1. DROP + CREATE de todas as tabelas
@@ -40,14 +51,19 @@ def reset_and_seed_db():
         # BUG 9 CORRIGIDO: senha lida de variável de ambiente.
         # Defina DEMO_USER_PASSWORD no .env para alterar o padrão.
         # ──────────────────────────────────────────────────────
-        demo_password = os.environ.get("DEMO_USER_PASSWORD", "Demo@2024!")
+        demo_password = os.environ.get("DEMO_USER_PASSWORD")
         demo_email    = os.environ.get("DEMO_USER_EMAIL",    "demo@minhasfinancas.local")
+        if not demo_password:
+            raise RuntimeError(
+                "DEMO_USER_PASSWORD não definido. Defina no .env local "
+                "(nunca commite) antes de popular o banco demo."
+            )
 
         print(f"👤 Criando usuário demo: {demo_email}")
         user = User(
             name="Usuário Demo",
             email=demo_email,
-            password_hash=generate_password_hash(demo_password),
+            password_hash=hash_password(demo_password),
         )
         db.add(user)
         db.commit()
@@ -95,9 +111,8 @@ def reset_and_seed_db():
 
         db.commit()
         print("✅ Banco de dados populado com sucesso!")
-        print(f"\n🔑 Credenciais demo:")
-        print(f"   Email: {demo_email}")
-        print(f"   Senha: {demo_password}")
+        print(f"\n🔑 Usuário demo criado: {demo_email}")
+        print("   (senha definida via DEMO_USER_PASSWORD — nunca exibida aqui)")
 
     except Exception as e:
         print(f"❌ Erro ao popular banco: {e}")

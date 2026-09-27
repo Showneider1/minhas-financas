@@ -2,7 +2,6 @@
 Sistema de auditoria de ações do usuário.
 """
 import logging
-from datetime import datetime
 from typing import Optional, Dict, Any
 from config.settings import settings
 

@@ -9,7 +9,7 @@ Executa tarefas automaticas em background:
 Uso: importado e iniciado pelo app.py na inicializacao da aplicacao.
 O scheduler roda em modo daemon (nao bloqueia o processo principal).
 """
-from datetime import date, datetime, timezone, timedelta
+from datetime import date, timedelta
 from typing import Optional
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -59,13 +59,17 @@ def _job_process_recurrences() -> None:
         from services.recurrence_service import RecurrenceService
 
         with get_db_session() as db:
+            from datetime import date as _date
+
             users = db.query(User).filter(User.is_active == True, User.is_deleted == False).all()
             total_processed = 0
+            today = _date.today()
             for user in users:
                 svc = RecurrenceService(db)
-                if hasattr(svc, "process_due_recurrences"):
-                    count = svc.process_due_recurrences(user.id)
-                    total_processed += count
+                # P0: método real (antes: hasattr silenciava chamada inexistente
+                # process_due_recurrences e o job nunca gerava nada).
+                count = svc.process_all_pending_recurrences(user.id, today.month, today.year)
+                total_processed += count
 
         app_logger.info(f"[Scheduler] process_recurrences concluido: {total_processed} recorrencias processadas")
     except Exception as exc:
@@ -79,7 +83,7 @@ def _job_check_goals() -> None:
     app_logger.info("[Scheduler] Iniciando job: check_goals")
     try:
         from database.models.user import User
-        from database.models.goal import Goal, GoalStatus
+        from database.models.goal import GoalStatus
         from services.goal_service import GoalService
 
         with get_db_session() as db:
@@ -89,7 +93,7 @@ def _job_check_goals() -> None:
                 svc = GoalService(db)
                 active_goals = svc.list_goals(user.id, status=GoalStatus.ACTIVE)
                 for goal in active_goals:
-                    if goal.current_amount >= goal.target_amount:
+                    if (goal.current_amount or 0) >= (goal.target_amount or 0):
                         svc._check_completion(goal)
                         if goal.status == GoalStatus.COMPLETED:
                             goals_completed += 1

@@ -12,6 +12,7 @@ import re
 from typing import Optional
 
 from rapidfuzz import process, fuzz
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from config.logging_config import app_logger
@@ -47,14 +48,16 @@ def auto_categorize(
         < 75:  Retorna None (usuario categoriza manualmente)
     """
     result = db.execute(
-        """
-        SELECT t.description, t.category_id, COUNT(*) as freq
-        FROM transactions t
-        WHERE t.user_id = :user_id
-          AND t.category_id IS NOT NULL
-        GROUP BY UPPER(TRIM(t.description)), t.category_id
-        ORDER BY freq DESC
-        """,
+        text(
+            """
+            SELECT t.description, t.category_id, COUNT(*) as freq
+            FROM transactions t
+            WHERE t.user_id = :user_id
+              AND t.category_id IS NOT NULL
+            GROUP BY UPPER(TRIM(t.description)), t.category_id
+            ORDER BY freq DESC
+            """
+        ),
         {"user_id": user_id},
     ).fetchall()
 

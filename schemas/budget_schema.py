@@ -1,19 +1,20 @@
 from pydantic import BaseModel
 from typing import Optional
+from decimal import Decimal
 
 class BudgetCreate(BaseModel):
     category_id: int
-    amount: float
+    amount: Decimal
 
 class BudgetUpdate(BaseModel):
-    amount: float
+    amount: Decimal
 
 class BudgetResponse(BaseModel):
     id: int
     category_name: str
     category_icon: Optional[str]
-    amount: float
-    spent: float  # Quanto já gastou
+    amount: Decimal
+    spent: Decimal  # Quanto já gastou
     percentage: float  # % usado
 
     class Config:

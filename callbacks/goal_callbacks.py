@@ -2,15 +2,18 @@
 Callbacks da página de Metas Financeiras.
 Arquivo: callbacks/goal_callbacks.py
 """
-from dash import Input, Output, State, html, no_update, ctx
+from dash import Input, Output, State, html, no_update, ctx, ALL
 import dash_bootstrap_components as dbc
 from datetime import datetime, timezone
 
 from app import app
 from database.connection import get_db_session
+from middleware.auth_context import resolve_user
 from services.goal_service import GoalService
 from services.account_service import AccountService
 from database.models.goal import GoalCategory, GoalStatus
+from config.logging_config import app_logger
+from utils.exceptions import AuthenticationError
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -33,8 +36,11 @@ STATUS_BADGE = {
 }
 
 
-def _fmt_brl(value: float) -> str:
-    return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+def _fmt_brl(value) -> str:
+    # Borda de exibição (sem aritmética aqui).
+    from decimal import Decimal as _D
+    amount = value if isinstance(value, _D) else _D(str(value or 0))
+    return f"R$ {amount:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
 def _progress_color(pct: float) -> str:
@@ -160,13 +166,16 @@ def _build_goal_card(g) -> dbc.Col:
     Input("goals-reload-trigger",  "data"),
     Input("goals-filter-status",   "value"),
     Input("goals-filter-category", "value"),
-    State("store-user-id", "data"),
+    State("auth-store", "data"),
     prevent_initial_call=False,
 )
-def load_goals(_, filter_status, filter_category, user_id):
-    if not user_id:
+def load_goals(_, filter_status, filter_category, auth_data):
+    try:
+        # P0 (IDOR): usuário derivado do JWT.
+        user_id = resolve_user(auth_data)
+    except AuthenticationError:
         return (
-            dbc.Alert("Faça login para ver suas metas.", color="warning"),
+            dbc.Alert("Sessão expirada — faça login novamente.", color="warning"),
             "–", "–", "–", "–",
         )
 
@@ -216,12 +225,12 @@ def load_goals(_, filter_status, filter_category, user_id):
     Output("goal-modal-feedback",    "children"),
     Input("goal-btn-new",          "n_clicks"),
     Input("goal-btn-cancel-modal", "n_clicks"),
-    Input({"type": "goal-btn-edit", "index": "__all__"}, "n_clicks"),
-    State("store-user-id", "data"),
+    Input({"type": "goal-btn-edit", "index": ALL}, "n_clicks"),
+    State("auth-store", "data"),
     State("goal-modal",    "is_open"),
     prevent_initial_call=True,
 )
-def toggle_goal_modal(n_new, n_cancel, n_edits, user_id, is_open):
+def toggle_goal_modal(n_new, n_cancel, n_edits, auth_data, is_open):
     triggered = ctx.triggered_id
     _blank = (False, no_update, None, "", "other", None, 0, None,
               [{"label": "Nenhuma", "value": ""}], "", "", "")
@@ -229,15 +238,20 @@ def toggle_goal_modal(n_new, n_cancel, n_edits, user_id, is_open):
     if triggered == "goal-btn-cancel-modal":
         return _blank
 
+    try:
+        # P0 (IDOR): contas e meta só do dono do JWT.
+        user_id = resolve_user(auth_data)
+    except AuthenticationError:
+        return _blank
+
     # Buscar contas do usuário
     account_options = [{"label": "Nenhuma", "value": ""}]
-    if user_id:
-        with get_db_session() as db:
-            accounts = AccountService(db).get_accounts_by_user(user_id)
-            account_options += [
-                {"label": a.name, "value": str(a.id)}
-                for a in accounts if a.is_active
-            ]
+    with get_db_session() as db:
+        accounts = AccountService(db).get_user_accounts(user_id)
+        account_options += [
+            {"label": a.name, "value": str(a.id)}
+            for a in accounts if a.is_active
+        ]
 
     # Nova meta
     if triggered == "goal-btn-new":
@@ -247,25 +261,25 @@ def toggle_goal_modal(n_new, n_cancel, n_edits, user_id, is_open):
     # Editar meta existente
     if isinstance(triggered, dict) and triggered.get("type") == "goal-btn-edit":
         goal_id = triggered["index"]
-        if user_id:
-            with get_db_session() as db:
-                goal = GoalService(db).get_goal(goal_id, user_id)
-                if goal:
-                    dl = goal.deadline.date().isoformat() if goal.deadline else None
-                    return (
-                        True,
-                        f"Editar Meta — {goal.name}",
-                        goal.id,
-                        goal.name,
-                        goal.category.value,
-                        goal.target_amount,
-                        goal.current_amount,
-                        dl,
-                        account_options,
-                        str(goal.account_id) if goal.account_id else "",
-                        goal.description or "",
-                        "",
-                    )
+        with get_db_session() as db:
+            goal = GoalService(db).get_goal(goal_id, user_id)
+            if goal:
+                dl = goal.deadline.date().isoformat() if goal.deadline else None
+                return (
+                    True,
+                    f"Editar Meta — {goal.name}",
+                    goal.id,
+                    goal.name,
+                    goal.category.value,
+                    # Borda JSON: Decimal não serializa — float só aqui.
+                    float(goal.target_amount or 0),
+                    float(goal.current_amount or 0),
+                    dl,
+                    account_options,
+                    str(goal.account_id) if goal.account_id else "",
+                    goal.description or "",
+                    "",
+                )
 
     return (no_update,) * 12
 
@@ -285,29 +299,41 @@ def toggle_goal_modal(n_new, n_cancel, n_edits, user_id, is_open):
     State("goal-input-deadline",    "date"),
     State("goal-input-account",     "value"),
     State("goal-input-description", "value"),
-    State("store-user-id",          "data"),
+    State("auth-store",               "data"),
     State("goals-reload-trigger",   "data"),
     prevent_initial_call=True,
 )
 def save_goal(n_clicks, edit_id, name, category, target, current,
-              deadline, account_id, description, user_id, reload_counter):
+              deadline, account_id, description, auth_data, reload_counter):
     if not n_clicks:
         return no_update, no_update, no_update
 
-    # Validações
+    try:
+        # P0 (IDOR): escrita só com dono do JWT.
+        user_id = resolve_user(auth_data)
+    except AuthenticationError:
+        return no_update, dbc.Alert(
+            "⚠️ Sessão expirada — faça login novamente.",
+            color="danger", className="mb-0"), no_update
+
+    # Validações (Decimal — sem float no caminho monetário)
+    from decimal import Decimal, InvalidOperation
     if not name or not name.strip():
         return no_update, dbc.Alert("⚠️ Informe o nome da meta.", color="danger", className="mb-0"), no_update
-    if not target or float(target) <= 0:
+    try:
+        target_val = Decimal(str(target))
+    except (InvalidOperation, TypeError, ValueError):
+        return no_update, dbc.Alert("⚠️ Valor alvo inválido.", color="danger", className="mb-0"), no_update
+    if target_val <= 0:
         return no_update, dbc.Alert("⚠️ O valor alvo deve ser maior que zero.", color="danger", className="mb-0"), no_update
 
     try:
-        target_val  = float(target)
-        current_val = float(current or 0)
+        current_val = Decimal(str(current or 0))
         deadline_dt = datetime.fromisoformat(deadline).replace(tzinfo=timezone.utc) if deadline else None
         acc_id      = int(account_id) if account_id else None
         cat_enum    = GoalCategory(category)
-    except Exception as e:
-        return no_update, dbc.Alert(f"Erro nos dados informados: {e}", color="danger", className="mb-0"), no_update
+    except Exception:
+        return no_update, dbc.Alert("Erro nos dados informados.", color="danger", className="mb-0"), no_update
 
     try:
         with get_db_session() as db:
@@ -332,7 +358,8 @@ def save_goal(n_clicks, edit_id, name, category, target, current,
     except ValueError as e:
         return no_update, dbc.Alert(str(e), color="danger", className="mb-0"), no_update
     except Exception as e:
-        return no_update, dbc.Alert(f"Erro inesperado: {e}", color="danger", className="mb-0"), no_update
+        app_logger.error(f"Salvar meta: {e}")
+        return no_update, dbc.Alert("Erro inesperado ao salvar meta.", color="danger", className="mb-0"), no_update
 
 
 # ─── 4. ABRIR MODAL DE APORTE ────────────────────────────────────────────────
@@ -343,32 +370,37 @@ def save_goal(n_clicks, edit_id, name, category, target, current,
     Output("goal-contribution-info",     "children"),
     Output("goal-contribution-amount",   "value"),
     Output("goal-contribution-feedback", "children"),
-    Input({"type": "goal-btn-contribute", "index": "__all__"}, "n_clicks"),
+    Input({"type": "goal-btn-contribute", "index": ALL}, "n_clicks"),
     Input("goal-contribution-btn-cancel", "n_clicks"),
-    State("store-user-id", "data"),
+    State("auth-store", "data"),
     prevent_initial_call=True,
 )
-def toggle_contribution_modal(n_contribute, n_cancel, user_id):
+def toggle_contribution_modal(n_contribute, n_cancel, auth_data):
     triggered = ctx.triggered_id
 
     if triggered == "goal-contribution-btn-cancel":
         return False, None, "", None, ""
 
+    try:
+        # P0 (IDOR): meta só do dono do JWT.
+        user_id = resolve_user(auth_data)
+    except AuthenticationError:
+        return no_update, no_update, no_update, no_update, ""
+
     if isinstance(triggered, dict) and triggered.get("type") == "goal-btn-contribute":
         goal_id = triggered["index"]
-        if user_id:
-            with get_db_session() as db:
-                goal = GoalService(db).get_goal(goal_id, user_id)
-                if goal:
-                    info = dbc.Alert([
-                        html.Strong(goal.name), html.Br(),
-                        html.Small([
-                            f"Acumulado: {_fmt_brl(goal.current_amount)}  |  ",
-                            f"Meta: {_fmt_brl(goal.target_amount)}  |  ",
-                            f"Progresso: {goal.progress_percent:.1f}%",
-                        ]),
-                    ], color="info", className="py-2 mb-0")
-                    return True, goal_id, info, None, ""
+        with get_db_session() as db:
+            goal = GoalService(db).get_goal(goal_id, user_id)
+            if goal:
+                info = dbc.Alert([
+                    html.Strong(goal.name), html.Br(),
+                    html.Small([
+                        f"Acumulado: {_fmt_brl(goal.current_amount)}  |  ",
+                        f"Meta: {_fmt_brl(goal.target_amount)}  |  ",
+                        f"Progresso: {goal.progress_percent:.1f}%",
+                    ]),
+                ], color="info", className="py-2 mb-0")
+                return True, goal_id, info, None, ""
 
     return no_update, no_update, no_update, no_update, ""
 
@@ -383,15 +415,34 @@ def toggle_contribution_modal(n_contribute, n_cancel, user_id):
     State("goal-contribution-id",     "data"),
     State("goal-contribution-amount", "value"),
     State("goal-contribution-type",   "value"),
-    State("store-user-id",            "data"),
+    State("auth-store",                 "data"),
     State("goals-reload-trigger",     "data"),
     prevent_initial_call=True,
 )
-def save_contribution(n_clicks, goal_id, amount, contrib_type, user_id, reload_counter):
+def save_contribution(n_clicks, goal_id, amount, contrib_type, auth_data, reload_counter):
     if not n_clicks:
         return no_update, no_update, no_update
 
-    if not amount or float(amount) <= 0:
+    try:
+        # P0 (IDOR): aporte só com dono do JWT.
+        user_id = resolve_user(auth_data)
+    except AuthenticationError:
+        return (
+            no_update,
+            dbc.Alert("⚠️ Sessão expirada — faça login novamente.", color="danger", className="mb-0"),
+            no_update,
+        )
+
+    from decimal import Decimal, InvalidOperation
+    try:
+        value = Decimal(str(amount))
+    except (InvalidOperation, TypeError, ValueError):
+        return (
+            no_update,
+            dbc.Alert("⚠️ Informe um valor válido.", color="danger", className="mb-0"),
+            no_update,
+        )
+    if value <= 0:
         return (
             no_update,
             dbc.Alert("⚠️ Informe um valor maior que zero.", color="danger", className="mb-0"),
@@ -399,31 +450,36 @@ def save_contribution(n_clicks, goal_id, amount, contrib_type, user_id, reload_c
         )
 
     try:
-        value = float(amount) * (-1 if contrib_type == "withdrawal" else 1)
+        delta = -value if contrib_type == "withdrawal" else value
         with get_db_session() as db:
-            GoalService(db).add_contribution(goal_id, user_id, value)
+            GoalService(db).add_contribution(goal_id, user_id, delta)
         return False, "", (reload_counter or 0) + 1
 
     except ValueError as e:
         return no_update, dbc.Alert(str(e), color="danger", className="mb-0"), no_update
     except Exception as e:
-        return no_update, dbc.Alert(f"Erro inesperado: {e}", color="danger", className="mb-0"), no_update
+        app_logger.error(f"Salvar aporte: {e}")
+        return no_update, dbc.Alert("Erro inesperado ao salvar aporte.", color="danger", className="mb-0"), no_update
 
 
 # ─── 6. EXCLUIR META ─────────────────────────────────────────────────────────
 
 @app.callback(
     Output("goals-reload-trigger", "data", allow_duplicate=True),
-    Input({"type": "goal-btn-delete", "index": "__all__"}, "n_clicks"),
-    State("store-user-id",        "data"),
+    Input({"type": "goal-btn-delete", "index": ALL}, "n_clicks"),
+    State("auth-store",             "data"),
     State("goals-reload-trigger", "data"),
     prevent_initial_call=True,
 )
-def delete_goal(n_clicks, user_id, reload_counter):
+def delete_goal(n_clicks, auth_data, reload_counter):
     triggered = ctx.triggered_id
     if not isinstance(triggered, dict) or triggered.get("type") != "goal-btn-delete":
         return no_update
-    if user_id:
-        with get_db_session() as db:
-            GoalService(db).delete_goal(triggered["index"], user_id)
+    try:
+        # P0 (IDOR): exclusão só com dono do JWT.
+        user_id = resolve_user(auth_data)
+    except AuthenticationError:
+        return no_update
+    with get_db_session() as db:
+        GoalService(db).delete_goal(triggered["index"], user_id)
     return (reload_counter or 0) + 1

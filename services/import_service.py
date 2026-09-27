@@ -21,7 +21,6 @@ from typing import Optional
 import pandas as pd
 from sqlalchemy.orm import Session
 
-from database.connection import get_db_session
 from services.import_categorizer import auto_categorize
 from config.logging_config import app_logger
 
@@ -90,13 +89,19 @@ def _detect_column_schema(df: pd.DataFrame) -> dict:
     return col_map
 
 
-def _parse_valor(raw: str) -> float:
+def _parse_valor(raw: str):
+    """Parse BR ("1.234,56") ou ISO ("1234.56") para Decimal (nunca float)."""
+    from decimal import Decimal, InvalidOperation
+
     clean = re.sub(r"[^\d,.\-]", "", str(raw)).strip()
     if re.search(r"\d\.\d{3},\d{2}$", clean):
         clean = clean.replace(".", "").replace(",", ".")
     else:
         clean = clean.replace(",", ".")
-    return float(clean)
+    try:
+        return Decimal(clean)
+    except InvalidOperation:
+        raise ValueError(f"Valor monetário inválido: '{raw}'")
 
 
 def _parse_date(raw: str) -> date:
@@ -109,16 +114,21 @@ def _parse_date(raw: str) -> date:
     raise ValueError(f"Formato de data nao reconhecido: '{raw}'")
 
 
-def _make_duplicate_hash(transaction_date: date, valor: float, descricao: str, user_id: int) -> str:
-    key = f"{transaction_date.isoformat()}|{round(valor, 2)}|{descricao.upper().strip()}|{user_id}"
+def _make_duplicate_hash(transaction_date: date, valor, descricao: str, user_id: int) -> str:
+    from decimal import Decimal as _D
+
+    amount = valor if isinstance(valor, _D) else _D(str(valor))
+    key = f"{transaction_date.isoformat()}|{amount:.2f}|{descricao.upper().strip()}|{user_id}"
     return hashlib.sha256(key.encode()).hexdigest()
 
 
-def _is_duplicate(db: Session, transaction_date: date, valor: float, descricao: str, user_id: int) -> bool:
+def _is_duplicate(db: Session, transaction_date: date, valor, descricao: str, user_id: int) -> bool:
+    from sqlalchemy import text as _text
+
     try:
         hash_key = _make_duplicate_hash(transaction_date, valor, descricao, user_id)
         result = db.execute(
-            "SELECT 1 FROM transactions WHERE import_hash = :h AND user_id = :u LIMIT 1",
+            _text("SELECT 1 FROM transactions WHERE import_hash = :h AND user_id = :u LIMIT 1"),
             {"h": hash_key, "u": user_id},
         ).fetchone()
         return result is not None
@@ -130,36 +140,67 @@ def _insert_transaction(
     db: Session,
     row: pd.Series,
     tipo: str,
-    valor: float,
+    valor,
     category_id: Optional[int],
     account_id: int,
     user_id: int,
     transaction_date: date,
 ) -> None:
-    hash_key   = _make_duplicate_hash(transaction_date, valor, str(row.get("descricao", "")), user_id)
+    """Insere via FinanceService (contrato canônico + saldo + status).
+
+    P0: o SQL cru anterior inseria na coluna inexistente `amount` e omitia
+    colunas obrigatórias — a importação quebrava em 100% das linhas.
+    """
+    from schemas.transaction_schema import TransactionCreate as _TxCreate
+    from services.finance_service import FinanceService as _FinanceService
+
+    hash_key = _make_duplicate_hash(transaction_date, valor, str(row.get("descricao", "")), user_id)
     cat_source = "auto" if category_id else "import"
 
-    db.execute(
-        """
-        INSERT INTO transactions
-            (user_id, account_id, category_id, description, amount,
-             transaction_type, status, due_date, import_hash, categorization_source)
-        VALUES
-            (:user_id, :account_id, :category_id, :description, :amount,
-             :transaction_type, 'PENDING', :due_date, :import_hash, :cat_source)
-        """,
-        {
-            "user_id":          user_id,
-            "account_id":       account_id,
-            "category_id":      category_id,
-            "description":      str(row.get("descricao", ""))[:255],
-            "amount":           valor,
-            "transaction_type": tipo.upper(),
-            "due_date":         transaction_date.isoformat(),
-            "import_hash":      hash_key,
-            "cat_source":       cat_source,
-        },
+    payload = _TxCreate(
+        description=str(row.get("descricao", ""))[:255] or "Importado",
+        base_amount=valor,
+        transaction_type=tipo.upper(),
+        category_id=category_id,
+        account_id=account_id,
+        purchase_date=transaction_date,
+        due_date=transaction_date,
+        paid_date=None,
+        notes=f"import_hash:{hash_key} fonte:{cat_source}",
     )
+    tx = _FinanceService(db).create_transaction(user_id, payload)
+    # Idempotência persistida: import_hash único (legado do schema).
+    tx.import_hash = hash_key
+    tx.categorization_source = cat_source
+    db.flush()
+    db.commit()
+
+
+def _ensure_fallback_category(db: Session, user_id: int, tipo: str) -> int:
+    """Categoria de fallback para importação (nunca None — P0)."""
+    from database.models.category import Category, TransactionType as _ModelTT
+
+    tx_type = _ModelTT[tipo.upper()]
+    cat = (
+        db.query(Category)
+        .filter(
+            Category.transaction_type == tx_type,
+            ((Category.user_id == user_id) | (Category.is_system.is_(True))),
+        )
+        .order_by(Category.user_id.desc())
+        .first()
+    )
+    if cat:
+        return cat.id
+    # Nome por tipo: UNIQUE(name, user_id) impede homônimos entre tipos.
+    label = "receitas" if tx_type.value == "INCOME" else "despesas"
+    cat = Category(
+        user_id=user_id, name=f"Importados ({label})",
+        transaction_type=tx_type, icon="📥", color="#95a5a6", is_system=False,
+    )
+    db.add(cat)
+    db.flush()
+    return cat.id
 
 
 # ------------------------------------------------------------------ #
@@ -203,6 +244,8 @@ def import_from_csv(
                 continue
 
             category_id = auto_categorize(descricao, user_id, db)
+            if category_id is None:
+                category_id = _ensure_fallback_category(db, user_id, tipo)
 
             _insert_transaction(
                 db=db, row=row, tipo=tipo, valor=valor,

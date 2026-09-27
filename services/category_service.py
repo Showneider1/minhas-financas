@@ -32,18 +32,67 @@ class CategoryService:
 
     def create_user_category(self, user_id: int, data: CategoryCreate) -> Category:
         """Cria nova categoria personalizada do usuário."""
+        tx_type = getattr(data, "transaction_type", None) or getattr(data, "type", None)
+        if tx_type is None:
+            raise ValueError("Tipo da categoria é obrigatório.")
         category = Category(
             name=data.name,
-            transaction_type=data.transaction_type,
+            transaction_type=tx_type,
             icon=data.icon or "📁",
             color=data.color or "#3498db",
             user_id=user_id,
+            parent_id=getattr(data, "parent_id", None),
             is_system=False,
         )
         self.db.add(category)
-        self.db.flush()
+        try:
+            self.db.commit()
+            self.db.refresh(category)
+        except Exception:
+            self.db.rollback()
+            raise
         app_logger.info(f"Categoria criada: {category.id} - {category.name}")
         return category
+
+    def create_category(self, user_id: int, data: CategoryCreate) -> Category:
+        """Alias de create_user_category (compat com callbacks)."""
+        return self.create_user_category(user_id, data)
+
+    def delete_category(self, category_id: int, user_id: int) -> bool:
+        """Exclui categoria própria do usuário (nunca do sistema).
+
+        Bloqueia se houver transações ou contas agendadas vinculadas.
+        """
+        category = (
+            self.db.query(Category)
+            .filter(Category.id == category_id, Category.user_id == user_id)
+            .first()
+        )
+        if not category:
+            raise ValueError("Categoria não encontrada para este usuário.")
+        if category.is_system:
+            raise ValueError("Categorias padrão não podem ser excluídas.")
+        from database.models.transaction import Transaction
+        from database.models.scheduled_bill import ScheduledBill
+
+        in_use = (
+            self.db.query(Transaction.id)
+            .filter(Transaction.category_id == category_id)
+            .first()
+            or self.db.query(ScheduledBill.id)
+            .filter(ScheduledBill.category_id == category_id)
+            .first()
+        )
+        if in_use:
+            raise ValueError("Categoria em uso — não pode ser excluída.")
+        try:
+            self.db.delete(category)
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
+        app_logger.info(f"Categoria excluída: {category_id} (usuário {user_id})")
+        return True
 
     def seed_default_categories(self, user_id: Optional[int] = None):
         """

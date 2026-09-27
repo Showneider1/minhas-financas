@@ -65,7 +65,12 @@ app.layout = html.Div([
 def display_page(pathname, auth_data):
     public_pages = ["/", "/login", "/register"]
 
-    if pathname not in public_pages and not auth_data:
+    # P0 (IDOR): presença do store não autentica — valida assinatura/expiração.
+    from config.security import verify_token
+    token = (auth_data or {}).get("token") if isinstance(auth_data, dict) else None
+    authenticated = verify_token(token) is not None if token else False
+
+    if pathname not in public_pages and not authenticated:
         app_logger.warning(f"Acesso não autorizado: {pathname}")
         return login_page.layout
 

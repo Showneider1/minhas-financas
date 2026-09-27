@@ -1,7 +1,7 @@
 """
 Modelo de Categoria com suporte a subcategorias.
 """
-from sqlalchemy import Column, Integer, String, Enum, Boolean, ForeignKey
+from sqlalchemy import Column, Integer, String, Enum, Boolean, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 from database.base import Base
 import enum
@@ -18,8 +18,9 @@ class Category(Base):
 
     id               = Column(Integer, primary_key=True, index=True)
     name             = Column(String(100), nullable=False)
-    transaction_type = Column(Enum(TransactionType), nullable=True)
-    icon             = Column(String(10),  default="📁")
+    transaction_type = Column(Enum(TransactionType, native_enum=False), nullable=True)
+    # 40 chars: emoji + modificadores/ZWJ estouram VARCHAR(10) no Postgres.
+    icon             = Column(String(40),  default="📁")
     color            = Column(String(20),  default="#3498db")
 
     is_system = Column(Boolean, default=False)
@@ -31,3 +32,7 @@ class Category(Base):
     scheduled_bills = relationship("ScheduledBill", back_populates="category")
 
     parent = relationship("Category", remote_side=[id], backref="subcategories")
+
+    __table_args__ = (
+        UniqueConstraint("name", "user_id", name="uq_category_name_user"),
+    )

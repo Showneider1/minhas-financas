@@ -1,7 +1,8 @@
 """Model de Metas Financeiras."""
 import enum
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Enum, Text
+from decimal import Decimal
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Enum, Text, Numeric
 from sqlalchemy.orm import relationship
 from database.base import Base
 
@@ -47,18 +48,18 @@ class Goal(Base):
     # Dados da meta
     name = Column(String(200), nullable=False)
     description = Column(Text, nullable=True)
-    category = Column(Enum(GoalCategory), default=GoalCategory.OTHER, nullable=False)
+    category = Column(Enum(GoalCategory, native_enum=False), default=GoalCategory.OTHER, nullable=False)
 
-    # Valores
-    target_amount = Column(Float, nullable=False)   # Valor alvo
-    current_amount = Column(Float, default=0.0)     # Valor acumulado atual
-    monthly_contribution = Column(Float, nullable=True)  # Contribuicao mensal sugerida
+    # Valores (Numeric — nunca Float; ADR-002)
+    target_amount = Column(Numeric(12, 2), nullable=False)   # Valor alvo
+    current_amount = Column(Numeric(12, 2), default=0)     # Valor acumulado atual
+    monthly_contribution = Column(Numeric(12, 2), nullable=True)  # Contribuicao mensal sugerida
 
     # Prazo
     deadline = Column(DateTime(timezone=True), nullable=True)
 
     # Status
-    status = Column(Enum(GoalStatus), default=GoalStatus.ACTIVE, nullable=False, index=True)
+    status = Column(Enum(GoalStatus, native_enum=False), default=GoalStatus.ACTIVE, nullable=False, index=True)
     is_deleted = Column(Boolean, default=False)
 
     # Timestamps
@@ -73,14 +74,18 @@ class Goal(Base):
     @property
     def progress_percent(self) -> float:
         """Retorna o percentual de progresso da meta (0-100)."""
-        if self.target_amount <= 0:
+        target = Decimal(str(self.target_amount or 0))
+        if target <= 0:
             return 0.0
-        return min(round((self.current_amount / self.target_amount) * 100, 2), 100.0)
+        current = Decimal(str(self.current_amount or 0))
+        return min(float((current / target) * 100), 100.0)
 
     @property
-    def remaining_amount(self) -> float:
-        """Retorna o valor restante para atingir a meta."""
-        return max(self.target_amount - self.current_amount, 0.0)
+    def remaining_amount(self) -> Decimal:
+        """Retorna o valor restante para atingir a meta (Decimal, nunca negativo)."""
+        target = Decimal(str(self.target_amount or 0))
+        current = Decimal(str(self.current_amount or 0))
+        return max(target - current, Decimal("0.00"))
 
     @property
     def months_to_deadline(self) -> int | None:
@@ -96,12 +101,23 @@ class Goal(Base):
         return max(int(diff_days / 30), 0)
 
     @property
-    def suggested_monthly_contribution(self) -> float | None:
-        """Calcula a contribuicao mensal necessaria para atingir a meta no prazo."""
-        months = self.months_to_deadline
-        if not months or months <= 0:
+    def suggested_monthly_contribution(self) -> Decimal | None:
+        """Contribuicao mensal necessaria (Decimal). None se prazo <= 0 dias.
+
+        P0: <1 mês não retorna mais None indevidamente — usa teto de 1 mês
+        quando há dias restantes (antes: 29 dias -> 0 meses -> None).
+        """
+        if not self.deadline:
             return None
-        return round(self.remaining_amount / months, 2)
+        now = datetime.now(timezone.utc)
+        deadline = self.deadline
+        if deadline.tzinfo is None:
+            deadline = deadline.replace(tzinfo=timezone.utc)
+        diff_days = (deadline - now).days
+        if diff_days < 0:
+            return None
+        months = max(int(diff_days / 30), 1)
+        return (self.remaining_amount / months).quantize(Decimal("0.01"))
 
     def __repr__(self) -> str:
         return f"<Goal id={self.id} name='{self.name}' progress={self.progress_percent}%>"

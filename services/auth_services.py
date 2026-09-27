@@ -1,8 +1,6 @@
 """
 Serviço de autenticação e autorização.
 """
-from typing import Optional
-from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from config.security import (
     hash_password,
@@ -18,7 +16,6 @@ from schemas.common import TokenResponse
 from utils.exceptions import (
     InvalidCredentialsError,
     EmailAlreadyExistsError,
-    UserNotFoundError,
     AuthenticationError,
     InvalidPasswordError,
 )
@@ -123,4 +120,5 @@ class AuthService:
             expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
             user_id=user.id,
             email=user.email,
+            name=user.name or "",
         )

@@ -24,10 +24,9 @@ from datetime import date
 from typing import Dict, List, Optional
 
 from sqlalchemy.orm import Session
-from sqlalchemy import func, extract, and_
+from sqlalchemy import extract
 
-from database.models.investment import Asset, InvestmentOperation, AssetType, OperationType
-from config.logging_config import app_logger
+from database.models.investment import Asset, InvestmentOperation, OperationType
 
 
 # ---------------------------------------------------------------------------

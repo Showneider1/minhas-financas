@@ -5,13 +5,13 @@ from datetime import date, datetime
 from typing import Optional
 import locale
 
-# Tenta configurar locale brasileiro
+# Tenta configurar locale brasileiro (melhor esforço; nunca quebra import).
 try:
     locale.setlocale(locale.LC_ALL, 'pt_BR.UTF-8')
-except:
+except locale.Error:
     try:
         locale.setlocale(locale.LC_ALL, 'Portuguese_Brazil.1252')
-    except:
+    except locale.Error:
         pass  # Mantém locale padrão
 
 

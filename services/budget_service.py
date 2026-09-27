@@ -1,9 +1,9 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, func, extract
+from sqlalchemy import func, extract
 from database.models.budget import Budget
+from database.models.category import Category, TransactionType
 from database.models.transaction import Transaction, TransactionStatus
-from database.models.category import TransactionType
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict
 from dataclasses import dataclass
 
 
@@ -33,11 +33,23 @@ class BudgetService:
     # Métodos originais inalterados
     # ------------------------------------------------------------------
 
-    def save_budget(self, user_id: int, category_id: int, amount: float, month: int, year: int) -> Budget:
+    def save_budget(self, user_id: int, category_id: int, amount, month: int, year: int) -> Budget:
         """
         Cria ou Atualiza (Upsert) uma meta.
         Se já existe meta para aquela categoria naquele mês, apenas atualiza o valor.
         """
+        from utils.money import to_money2
+
+        value = to_money2(amount, where="budget.save")
+        if value <= 0:
+            raise ValueError("Valor do orçamento deve ser maior que zero.")
+        if not 1 <= month <= 12:
+            raise ValueError("Mês deve estar entre 1 e 12.")
+        # P0 (IDOR): categoria deve ser do usuário (ou do sistema).
+        cat = self.db.query(Category).filter(Category.id == category_id).first()
+        if not cat or (cat.user_id is not None and cat.user_id != user_id):
+            raise ValueError("Categoria não pertence a este usuário.")
+
         existing_budget = self.db.query(Budget).filter(
             Budget.user_id == user_id,
             Budget.category_id == category_id,
@@ -45,22 +57,26 @@ class BudgetService:
             Budget.year == year
         ).first()
 
-        if existing_budget:
-            existing_budget.amount = amount
-            result = existing_budget
-        else:
-            new_budget = Budget(
-                user_id=user_id,
-                category_id=category_id,
-                amount=amount,
-                month=month,
-                year=year
-            )
-            self.db.add(new_budget)
-            result = new_budget
+        try:
+            if existing_budget:
+                existing_budget.amount = value
+                result = existing_budget
+            else:
+                new_budget = Budget(
+                    user_id=user_id,
+                    category_id=category_id,
+                    amount=value,
+                    month=month,
+                    year=year
+                )
+                self.db.add(new_budget)
+                result = new_budget
 
-        self.db.commit()
-        self.db.refresh(result)
+            self.db.commit()
+            self.db.refresh(result)
+        except Exception:
+            self.db.rollback()
+            raise
         return result
 
     def get_budgets_by_period(self, user_id: int, month: int, year: int) -> List[Budget]:
@@ -163,7 +179,9 @@ class BudgetService:
         alerts: List[BudgetAlert] = []
 
         for budget in budgets:
-            spent = spent_by_category.get(budget.category_id, 0.0)
+            from decimal import Decimal as _D
+
+            spent = spent_by_category.get(budget.category_id, _D("0.00"))
             pct   = (spent / budget.amount * 100) if budget.amount > 0 else 0.0
 
             if pct >= 100:
@@ -220,8 +238,6 @@ class BudgetService:
         Usa uma única query agregada para performance.
         Considera apenas transações do tipo EXPENSE com status PAID.
         """
-        from database.models.category import TransactionType
-
         rows = (
             self.db.query(
                 Transaction.category_id,
@@ -231,11 +247,18 @@ class BudgetService:
                 Transaction.user_id == user_id,
                 Transaction.transaction_type == TransactionType.EXPENSE,
                 Transaction.status == TransactionStatus.PAID,
+                Transaction.paid_date.isnot(None),
                 extract("month", Transaction.paid_date) == month,
-                extract("year",  Transaction.paid_date) == year,
+                extract("year", Transaction.paid_date) == year,
             )
             .group_by(Transaction.category_id)
             .all()
         )
 
-        return {row.category_id: float(row.total or 0.0) for row in rows}
+        from decimal import Decimal as _D
+
+        # Borda de leitura: Decimal (nunca float).
+        return {
+            row.category_id: (row.total if isinstance(row.total, _D) else _D(str(row.total or 0)))
+            for row in rows
+        }

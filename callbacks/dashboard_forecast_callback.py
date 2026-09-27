@@ -8,24 +8,40 @@ from datetime import datetime, date
 
 from app import app
 from database.connection import get_db_session
+from middleware.auth_context import resolve_user
 from services.dashboard_service import DashboardService
 from config.logging_config import app_logger
+from utils.exceptions import AuthenticationError
 
-def _fmt(v: float) -> str:
-    cor = "text-success" if v >= 0 else "text-danger"
-    txt = f"R$ {abs(v):,.2f}".replace(",","X").replace(".",",").replace("X",".")
-    sinal = "+" if v >= 0 else "-"
+def _fmt(v) -> tuple:
+    # Borda de exibição (sem aritmética aqui).
+    from decimal import Decimal as _D
+    amount = v if isinstance(v, _D) else _D(str(v or 0))
+    cor = "text-success" if amount >= 0 else "text-danger"
+    txt = f"R$ {abs(amount):,.2f}".replace(",","X").replace(".",",").replace("X",".")
+    sinal = "+" if amount >= 0 else "-"
     return cor, f"{sinal} {txt}"
+
+
+def _fmt_brl(v, *, positive: bool) -> str:
+    # Borda de exibição com sinal explícito (sem aritmética aqui).
+    from decimal import Decimal as _D
+    amount = v if isinstance(v, _D) else _D(str(v or 0))
+    txt = f"R$ {abs(amount):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    return f"+ {txt}" if positive else f"- {txt}"
 
 @app.callback(
     Output("dashboard-card-projecao", "children"),
     Input("dashboard-periodo",        "start_date"),
     Input("dashboard-periodo",        "end_date"),
     Input("store-reload-dashboard",   "data"),
-    State("store-user-id",            "data"),
+    State("auth-store",               "data"),
 )
-def update_forecast(start_date, end_date, _reload, user_id):
-    if not user_id:
+def update_forecast(start_date, end_date, _reload, auth_data):
+    try:
+        # P0 (IDOR): usuário derivado do JWT.
+        user_id = resolve_user(auth_data)
+    except AuthenticationError:
         return html.Div()
 
     try:
@@ -77,13 +93,13 @@ def update_forecast(start_date, end_date, _reload, user_id):
                 dbc.Col([
                     html.Small("Receitas pendentes", className="text-muted"),
                     html.Div(
-                        f"+ R$ {data['rec_pendente']:,.2f}".replace(",","X").replace(".",",").replace("X","."),
+                        _fmt_brl(data['rec_pendente'], positive=True),
                         className="text-success small fw-semibold"),
                 ], width=6),
                 dbc.Col([
                     html.Small("Despesas pendentes", className="text-muted"),
                     html.Div(
-                        f"- R$ {data['desp_pendente']:,.2f}".replace(",","X").replace(".",",").replace("X","."),
+                        _fmt_brl(data['desp_pendente'], positive=False),
                         className="text-danger small fw-semibold"),
                 ], width=6),
             ], className="mb-2"),
@@ -104,14 +120,17 @@ def update_forecast(start_date, end_date, _reload, user_id):
     return card
 
 
-def _build_progress(ef: float, prev: float):
+def _build_progress(ef, prev):
     """Barra verde/cinza: quanto do previsto já foi efetivado."""
-    if prev <= 0:
+    from decimal import Decimal as _D
+    ef_d = ef if isinstance(ef, _D) else _D(str(ef or 0))
+    prev_d = prev if isinstance(prev, _D) else _D(str(prev or 0))
+    if prev_d <= 0:
         pct = 100
-    elif ef <= 0:
+    elif ef_d <= 0:
         pct = 0
     else:
-        pct = min(100, round(ef / prev * 100))
+        pct = min(100, int(ef_d / prev_d * 100))
 
     label = f"{pct}% efetivado"
     color = "success" if pct >= 70 else ("warning" if pct >= 40 else "danger")

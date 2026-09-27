@@ -6,12 +6,11 @@ from io import BytesIO
 from typing import List, Dict, Any
 from datetime import datetime
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4, letter
+from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib.enums import TA_CENTER, TA_RIGHT
-from config.settings import settings
+from reportlab.lib.enums import TA_CENTER
 from config.logging_config import app_logger
 
 
@@ -66,8 +65,8 @@ class ExportService:
                 'align': 'center',
             })
             
-            money_format = workbook.add_format({'num_format': 'R$ #,##0.00'})
-            date_format = workbook.add_format({'num_format': 'dd/mm/yyyy'})
+            # NOTA P3: formatação monetária/data por coluna pendente
+            # (engine xlsxwriter ausente no requirements — ver CODE_AUDIT M4).
             
             # Título
             worksheet.merge_range('A1:' + chr(65 + len(df.columns) - 1) + '1', title, title_format)

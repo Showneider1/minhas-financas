@@ -1,11 +1,15 @@
-"""Servico de Metas Financeiras (Goal)."""
-from datetime import datetime, timezone, date
+"""Servico de Metas Financeiras (Goal) — P0 (ADR-002).
+
+Valores Decimal (Numeric). Isolamento por user_id em todos os métodos.
+"""
+from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 
 from database.models.goal import Goal, GoalStatus, GoalCategory
 from config.logging_config import app_logger
+from utils.money import to_money2
 
 
 class GoalService:
@@ -29,19 +33,19 @@ class GoalService:
         self,
         user_id: int,
         name: str,
-        target_amount: float,
+        target_amount,
         category: GoalCategory = GoalCategory.OTHER,
         description: Optional[str] = None,
         deadline: Optional[datetime] = None,
         account_id: Optional[int] = None,
-        current_amount: float = 0.0,
+        current_amount=0,
     ) -> Goal:
         """Cria uma nova meta financeira.
 
         Args:
             user_id: ID do usuario dono da meta
             name: Nome da meta (ex: 'Viagem para Europa')
-            target_amount: Valor alvo em R$
+            target_amount: Valor alvo em R$ (Decimal/str/int — nunca float)
             category: Categoria da meta
             description: Descricao opcional
             deadline: Data limite para atingir a meta
@@ -54,18 +58,31 @@ class GoalService:
         Raises:
             ValueError: Se target_amount <= 0 ou current_amount < 0
         """
-        if target_amount <= 0:
+        target = to_money2(target_amount, where="goal.create.target")
+        current = to_money2(current_amount, where="goal.create.current")
+        if target <= 0:
             raise ValueError("O valor alvo da meta deve ser maior que zero.")
-        if current_amount < 0:
+        if current < 0:
             raise ValueError("O valor atual nao pode ser negativo.")
+        # P0 (IDOR): conta vinculada deve ser do usuário.
+        if account_id is not None:
+            from database.models.account import Account
+
+            owned = (
+                self.db.query(Account.id)
+                .filter(Account.id == account_id, Account.user_id == user_id)
+                .first()
+            )
+            if not owned:
+                raise ValueError("Conta vinculada não pertence a este usuário.")
         if deadline and deadline <= datetime.now(timezone.utc):
             raise ValueError("O prazo da meta deve ser uma data futura.")
 
         goal = Goal(
             user_id=user_id,
             name=name,
-            target_amount=target_amount,
-            current_amount=current_amount,
+            target_amount=target,
+            current_amount=current,
             category=category,
             description=description,
             deadline=deadline,
@@ -123,12 +140,29 @@ class GoalService:
         if not goal:
             return None
 
+        if "account_id" in kwargs and kwargs["account_id"] is not None:
+            from database.models.account import Account as _Account
+
+            owned = (
+                self.db.query(_Account.id)
+                .filter(
+                    _Account.id == kwargs["account_id"],
+                    _Account.user_id == user_id,
+                )
+                .first()
+            )
+            if not owned:
+                raise ValueError("Conta vinculada não pertence a este usuário.")
+
         allowed_fields = {
             "name", "description", "target_amount",
             "current_amount", "deadline", "account_id", "category",
         }
+        money_fields = {"target_amount", "current_amount"}
         for key, value in kwargs.items():
             if key in allowed_fields:
+                if key in money_fields and value is not None:
+                    value = to_money2(value, where="goal.update")
                 setattr(goal, key, value)
 
         # Verifica se meta foi atingida apos atualizacao
@@ -143,15 +177,15 @@ class GoalService:
         self,
         goal_id: int,
         user_id: int,
-        amount: float,
+        amount,
     ) -> Optional[Goal]:
         """Adiciona uma contribuicao ao valor acumulado da meta.
 
         Args:
             goal_id: ID da meta
             user_id: ID do usuario
-            amount: Valor a adicionar (positivo para deposito,
-                    negativo para retirada)
+            amount: Valor (Decimal/str/int — nunca float; positivo deposita,
+                    negativo retira)
 
         Returns:
             Meta atualizada ou None se nao encontrada
@@ -162,7 +196,9 @@ class GoalService:
         if goal.status == GoalStatus.CANCELLED:
             raise ValueError("Nao e possivel contribuir para uma meta cancelada.")
 
-        new_amount = goal.current_amount + amount
+        delta = to_money2(amount, where="goal.contribution")
+        current = to_money2(goal.current_amount or 0, where="goal.contribution")
+        new_amount = current + delta
         if new_amount < 0:
             raise ValueError("O valor acumulado nao pode ficar negativo.")
 
@@ -172,8 +208,8 @@ class GoalService:
         self.db.commit()
         self.db.refresh(goal)
         app_logger.info(
-            f"Contribuicao registrada: goal_id={goal_id} valor={amount:+.2f} "
-            f"total={goal.current_amount:.2f} progresso={goal.progress_percent}%"
+            f"Contribuicao registrada: goal_id={goal_id} valor={delta:+.2f} "
+            f"total={new_amount:.2f} progresso={goal.progress_percent}%"
         )
         return goal
 

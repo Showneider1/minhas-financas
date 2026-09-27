@@ -1,24 +1,28 @@
 """
 Callbacks do Extrato v4 — corrige salvar edição e comportamento de despesas pendentes.
 """
-from dash import Input, Output, State, html, ctx, ALL, no_update, dcc
+from dash import Input, Output, State, html, ctx, ALL, no_update
 import dash_bootstrap_components as dbc
 from datetime import datetime, date
 
 from app import app
 from database.connection import get_db_session
 from database.repositories.transaction_repo import TransactionRepository
-from database.models.category import TransactionType
-from schemas.transaction_schema import TransactionCreate
+from middleware.auth_context import resolve_user
 from services.account_service import AccountService
 from services.category_service import CategoryService
 from services.finance_service import FinanceService
 from config.logging_config import app_logger
+from utils.exceptions import AuthenticationError
+from utils.money import money_sum
 
 PAGE_SIZE = 30
 
-def _fmt(v: float) -> str:
-    return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+def _fmt(v) -> str:
+    # Borda de exibição: aceita Decimal/int/str (nunca faz aritmética aqui).
+    from decimal import Decimal as _D
+    amount = v if isinstance(v, _D) else _D(str(v))
+    return f"R$ {amount:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 def _tx_to_dict(t) -> dict:
     """Serializa ORM → dict DENTRO da sessão para evitar DetachedInstanceError."""
@@ -51,12 +55,14 @@ def _tx_to_dict(t) -> dict:
     Output("extrato-filter-account",  "options"),
     Output("extrato-filter-category", "options"),
     Input("url", "pathname"),
-    State("store-user-id", "data"),
+    State("auth-store", "data"),
 )
-def load_filter_options(pathname, user_id):
-    if not user_id or pathname != "/extrato":
+def load_filter_options(pathname, auth_data):
+    if not auth_data or pathname != "/extrato":
         return no_update, no_update
     try:
+        # P0 (IDOR): usuário derivado do JWT.
+        user_id = resolve_user(auth_data)
         with get_db_session() as db:
             accs = AccountService(db).get_user_accounts(user_id)
             cats = CategoryService(db).get_user_categories(user_id)
@@ -65,6 +71,8 @@ def load_filter_options(pathname, user_id):
             cat_opts = [{"label": "Todas", "value": ""}] + [
                 {"label": f"{c.icon or ''} {c.name}", "value": c.id} for c in cats]
         return acc_opts, cat_opts
+    except AuthenticationError:
+        return [], []
     except Exception as e:
         app_logger.error(f"Filtros extrato: {e}")
         return [], []
@@ -120,12 +128,15 @@ def reset_page(*_):
     Input("extrato-reload-trigger",   "data"),
     Input("extrato-page-current",     "data"),
 
-    State("store-user-id", "data"),
+    State("auth-store", "data"),
 )
 def update_extrato(start_date, end_date, search, acc_id, cat_id,
-                   type_, status, _reload, page, user_id):
-    if not user_id:
-        return html.Div("Usuário não identificado"), [], "", ""
+                   type_, status, _reload, page, auth_data):
+    try:
+        # P0 (IDOR): usuário derivado do JWT; sessão inválida bloqueia leitura.
+        user_id = resolve_user(auth_data)
+    except AuthenticationError:
+        return html.Div("Sessão expirada — faça login novamente."), [], "", ""
 
     try:
         dt_start  = datetime.fromisoformat(start_date).date() if start_date else None
@@ -157,11 +168,11 @@ def update_extrato(start_date, end_date, search, acc_id, cat_id,
         if status == "OVERDUE":
             txs = [t for t in txs if t["is_overdue"]]
 
-        # Totais
-        total_rec  = sum(t["base_amount"] for t in txs if t["type"] == "INCOME")
-        total_desp = sum(t["base_amount"] for t in txs if t["type"] == "EXPENSE")
-        total_pend = sum(t["base_amount"] for t in txs
-                         if not t["is_paid"] and t["type"] == "EXPENSE")
+        # Totais (Decimal; TRANSFER fora de receita/despesa por construção)
+        total_rec  = money_sum(t["base_amount"] for t in txs if t["type"] == "INCOME")
+        total_desp = money_sum(t["base_amount"] for t in txs if t["type"] == "EXPENSE")
+        total_pend = money_sum(t["base_amount"] for t in txs
+                               if not t["is_paid"] and t["type"] == "EXPENSE")
         saldo = total_rec - total_desp
 
         cards       = _build_summary_cards(total_rec, total_desp, saldo, total_pend)
@@ -243,10 +254,11 @@ def update_extrato(start_date, end_date, search, acc_id, cat_id,
         pagination = _build_pagination(page, total_p) if total_p > 1 else ""
         return table, cards, count_label, pagination
 
+    except AuthenticationError:
+        return html.Div("Sessão expirada — faça login novamente."), [], "", ""
     except Exception as e:
         app_logger.error(f"Extrato erro: {e}")
-        import traceback; traceback.print_exc()
-        return html.Div(f"Erro: {e}", className="text-danger"), [], "", ""
+        return html.Div("Erro ao carregar extrato. Tente novamente.", className="text-danger"), [], "", ""
 
 
 def _build_summary_cards(rec, desp, saldo, pend):
@@ -311,118 +323,29 @@ def go_to_page(clicks):
     Output("store-transacao-id-editar", "data",      allow_duplicate=True),
     Output("store-transacao-editar",    "data",      allow_duplicate=True),   # ← NOVO
     Input({"type": "extrato-btn-edit",  "index": ALL}, "n_clicks"),
-    State("store-user-id", "data"),
+    State("auth-store", "data"),
     prevent_initial_call=True,
 )
-def editar_lancamento(clicks, user_id):
+def editar_lancamento(clicks, auth_data):
     triggered = ctx.triggered_id
     if not triggered or not any(c for c in clicks if c):
         return no_update, no_update, no_update
     tx_id = triggered["index"]
     try:
+        # P0 (IDOR): leitura com dono derivado do JWT.
+        user_id = resolve_user(auth_data)
         with get_db_session() as db:
             repo = TransactionRepository(db)
-            t    = repo.get_with_relations(tx_id)
-            if not t or t.user_id != user_id:
+            t    = repo.get_with_relations(tx_id, user_id)
+            if not t:
                 return no_update, no_update, no_update
             dados = _tx_to_dict(t)   # serializa dentro da sessão
         return True, tx_id, dados
+    except AuthenticationError:
+        return no_update, no_update, no_update
     except Exception as e:
         app_logger.error(f"Editar extrato: {e}")
         return no_update, no_update, no_update
-
-
-# ─── Salvar edição ────────────────────────────────────────────────────────────
-# CORREÇÃO PRINCIPAL: usa update_transaction com todos os campos corretos
-@app.callback(
-    Output("extrato-reload-trigger",    "data",   allow_duplicate=True),
-    Output("store-reload-dashboard",    "data",   allow_duplicate=True),
-    Output("extrato-toast",             "is_open"),
-    Output("extrato-toast",             "children"),
-    Output("extrato-toast",             "header"),
-    Output("extrato-toast",             "icon"),
-    Output("modal-novo-lancamento",     "is_open", allow_duplicate=True),
-    Input("btn-salvar-lancamento",      "n_clicks"),
-    State("store-transacao-id-editar",  "data"),
-    State("input-descricao",            "value"),
-    State("input-valor",                "value"),
-    State("select-tipo",                "value"),
-    State("select-categoria",           "value"),
-    State("select-conta",               "value"),
-    State("input-data-competencia",     "value"),
-    State("input-data-vencimento",      "value"),
-    State("input-data-pagamento",       "value"),
-    State("input-parcela-atual",        "value"),
-    State("input-total-parcelas",       "value"),
-    State("check-recorrente",           "value"),
-    State("input-notas",                "value"),
-    State("store-user-id",              "data"),
-    State("extrato-reload-trigger",     "data"),
-    State("store-reload-dashboard",     "data"),
-    prevent_initial_call=True,
-)
-def salvar_edicao(n_clicks, tx_id,
-                  descricao, valor, tipo, categoria, conta,
-                  dt_competencia, dt_vencimento, dt_pagamento,
-                  parcela_atual, total_parcelas, recorrente, notas,
-                  user_id, trigger_extrato, trigger_dash):
-
-    if not n_clicks or not tx_id or not user_id:
-        return no_update, no_update, no_update, no_update, no_update, no_update, no_update
-
-    # Validações básicas
-    if not descricao or not valor or not tipo or not categoria or not conta:
-        return (no_update, no_update, True,
-                "Preencha todos os campos obrigatórios.", "Atenção", "warning", no_update)
-
-    try:
-        def parse_date(d):
-            if not d:
-                return None
-            for fmt in ("%Y-%m-%d", "%d/%m/%Y"):
-                try:
-                    return datetime.strptime(d, fmt).date()
-                except ValueError:
-                    pass
-            return None
-
-        purchase_date = parse_date(dt_competencia) or date.today()
-        due_date      = parse_date(dt_vencimento)  or purchase_date
-        paid_date     = parse_date(dt_pagamento)
-
-        from database.models.category import TransactionType as TxType
-        tx_type = TxType(tipo)
-
-        tx_data = TransactionCreate(
-            description=        descricao,
-            base_amount=        float(str(valor).replace(",", ".")),
-            transaction_type=   tx_type,
-            category_id=        int(categoria),
-            account_id=         int(conta),
-            purchase_date=      purchase_date,
-            due_date=           due_date,
-            paid_date=          paid_date,
-            is_recurring=       bool(recorrente),
-            installment_number= int(parcela_atual  or 1),
-            total_installments= int(total_parcelas or 1),
-            notes=              notas,
-        )
-
-        with get_db_session() as db:
-            service = FinanceService(db)
-            service.update_transaction(tx_id, user_id, tx_data)
-
-        return (
-            (trigger_extrato or 0) + 1,
-            (trigger_dash    or 0) + 1,
-            True, "Lançamento atualizado com sucesso!", "Salvo", "success",
-            False,  # fecha o modal
-        )
-
-    except Exception as e:
-        app_logger.error(f"Salvar edição: {e}")
-        import traceback; traceback.print_exc()
-        return (no_update, no_update, True, f"Erro ao salvar: {e}", "Erro", "danger", no_update)
 
 
 # ─── Excluir: abre modal de confirmação ──────────────────────────────────────
@@ -457,20 +380,24 @@ def cancelar_del(n):
     Output("extrato-toast",          "icon",     allow_duplicate=True),
     Input("extrato-btn-confirm-del", "n_clicks"),
     State("extrato-del-id",          "data"),
-    State("store-user-id",           "data"),
+    State("auth-store",              "data"),
     State("extrato-reload-trigger",  "data"),
     prevent_initial_call=True,
 )
-def confirmar_del(n, del_id, user_id, trigger):
-    if not n or not del_id or not user_id:
+def confirmar_del(n, del_id, auth_data, trigger):
+    if not n or not del_id or not auth_data:
         return no_update, no_update, no_update, no_update, no_update, no_update
     try:
+        # P0 (IDOR): exclusão com dono derivado do JWT.
+        user_id = resolve_user(auth_data)
         with get_db_session() as db:
             FinanceService(db).delete_transaction(del_id, user_id)
         return False, (trigger or 0) + 1, True, "Lançamento excluído.", "Excluído", "danger"
+    except AuthenticationError:
+        return False, no_update, True, "Sessão expirada — faça login novamente.", "Erro", "warning"
     except Exception as e:
         app_logger.error(f"Del extrato: {e}")
-        return False, no_update, True, str(e), "Erro", "warning"
+        return False, no_update, True, "Não foi possível excluir.", "Erro", "warning"
 
 
 # ─── Sincronizar com dashboard ────────────────────────────────────────────────

@@ -1,10 +1,10 @@
 """Configuracao de fixtures compartilhadas para os testes pytest.
 
-Esta abordagem usa SQLite em memoria (:memory:) para garantir:
-- Isolamento total entre testes (cada teste tem seu proprio banco)
-- Velocidade maxima (sem I/O de disco)
-- Sem efeito colateral no banco de producao
+SQLite :memory: — isolamento total, sem efeito no banco de desenvolvimento.
+Valores Decimal em campos monetários (nunca float — ADR-002).
 """
+from decimal import Decimal
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
@@ -12,12 +12,16 @@ from sqlalchemy.orm import sessionmaker, Session
 from database.base import Base
 
 # Importa todos os models para que o Base.metadata os reconheca
+# (imports aparentemente não usados registram as tabelas — noqa F401)
 from database.models.user import User
 from database.models.account import Account
 from database.models.category import Category, TransactionType
-from database.models.transaction import Transaction
-from database.models.goal import Goal, GoalStatus, GoalCategory
-from database.models.scheduled_bill import ScheduledBill, BillType, BillStatus, BillRecurrence
+from database.models.transaction import Transaction  # noqa: F401
+from database.models.goal import Goal, GoalStatus, GoalCategory  # noqa: F401
+from database.models.scheduled_bill import (  # noqa: F401
+    ScheduledBill, BillType, BillStatus, BillRecurrence,
+)
+from database.models.password_reset_token import PasswordResetToken  # noqa: F401
 
 
 @pytest.fixture(scope="function")
@@ -65,7 +69,8 @@ def sample_account(db: Session, sample_user: User) -> Account:
     account = Account(
         user_id=sample_user.id,
         name="Conta Corrente",
-        balance=5000.0,
+        balance=Decimal("5000.00"),
+        initial_balance=Decimal("5000.00"),
         is_active=True,
     )
     db.add(account)

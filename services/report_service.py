@@ -1,72 +1,78 @@
 """
-Serviço para geração de relatórios financeiros.
+Serviço de relatórios — P0 (ADR-002).
+
+- Valor canônico: `base_amount` (Decimal). Sem `t.amount`.
+- Nomes de categoria/conta com fallback (None-safe).
+- TRANSFER excluído de receitas/despesas/saldos.
+- Totais PAID consistentes com BalanceService (paid_date no período).
 """
 from datetime import date
-from typing import List, Dict, Any
+from decimal import Decimal
+from typing import Dict, Any
 from sqlalchemy.orm import Session
+
+from database.models.category import TransactionType
+from database.models.transaction import TransactionStatus
 from database.repositories.transaction_repo import TransactionRepository
-from database.repositories.account_repo import AccountRepository
 from schemas.transaction_schema import TransactionFilter
+from services.balance_service import BalanceService
 from utils.date_helpers import get_month_range, get_year_range
-from config.logging_config import app_logger
+from utils.money import money_sum
 
 
 class ReportService:
-    """
-    Serviço de geração de relatórios.
-    """
-    
+    """Geração de relatórios (somente leitura, com isolamento por usuário)."""
+
     def __init__(self, db: Session):
         self.db = db
         self.transaction_repo = TransactionRepository(db)
-        self.account_repo = AccountRepository(db)
-    
-    def generate_monthly_report(
-        self,
-        user_id: int,
-        year: int,
-        month: int,
-    ) -> Dict[str, Any]:
-        """
-        Gera relatório mensal completo.
-        
-        Args:
-            user_id: ID do usuário
-            year: Ano
-            month: Mês
-        
-        Returns:
-            Dict com dados do relatório
-        """
+        self.balances = BalanceService(db)
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _row(t) -> Dict[str, Any]:
+        category = t.category.name if t.category else "Sem categoria"
+        account = t.account.name if t.account else "Sem conta"
+        return {
+            "id": t.id,
+            "data": t.due_date.isoformat(),
+            "descricao": t.description,
+            "categoria": category,
+            "conta": account,
+            "valor": str(t.base_amount),
+            "tipo": t.transaction_type.value,
+            "status": t.status.value,
+        }
+
+    def _totals(self, user_id: int, start_date: date, end_date: date):
+        summary = self.balances.get_period_summary(user_id, start_date, end_date)
+        return summary
+
+    # ------------------------------------------------------------------
+    # Relatórios
+    # ------------------------------------------------------------------
+    def generate_monthly_report(self, user_id: int, year: int, month: int) -> Dict[str, Any]:
+        """Relatório mensal (totais PAID + categorias + lançamentos)."""
         start_date, end_date = get_month_range(year, month)
-        
-        # Busca todas as transações do mês
+
         transactions, total = self.transaction_repo.filter_transactions(
             user_id=user_id,
             start_date=start_date,
             end_date=end_date,
             page=1,
-            page_size=10000,  # Sem paginação para relatório
+            page_size=10000,
         )
-        
-        # Agrupa por categoria
-        from database.models.category import TransactionType
+
         categories_income = self.transaction_repo.get_category_totals(
             user_id, TransactionType.INCOME, start_date, end_date
         )
         categories_expense = self.transaction_repo.get_category_totals(
             user_id, TransactionType.EXPENSE, start_date, end_date
         )
-        
-        # Calcula totais
-        from database.models.transaction import TransactionStatus
-        total_income = self.transaction_repo.sum_by_type(
-            user_id, TransactionType.INCOME, start_date, end_date, TransactionStatus.PAID
-        )
-        total_expense = self.transaction_repo.sum_by_type(
-            user_id, TransactionType.EXPENSE, start_date, end_date, TransactionStatus.PAID
-        )
-        
+        summary = self._totals(user_id, start_date, end_date)
+
         return {
             "periodo": {
                 "mes": month,
@@ -75,95 +81,52 @@ class ReportService:
                 "fim": end_date.isoformat(),
             },
             "resumo": {
-                "total_receitas": round(total_income, 2),
-                "total_despesas": round(total_expense, 2),
-                "saldo": round(total_income - total_expense, 2),
+                "total_receitas": str(summary["income_paid"]),
+                "total_despesas": str(summary["expense_paid"]),
+                "saldo": str(summary["balance_paid"]),
                 "total_transacoes": total,
             },
             "categorias": {
                 "receitas": categories_income,
                 "despesas": categories_expense,
             },
-            "transacoes": [
-                {
-                    "id": t.id,
-                    "data": t.due_date.isoformat(),
-                    "descricao": t.description,
-                    "categoria": t.category.name,
-                    "valor": t.amount,
-                    "tipo": t.transaction_type.value,
-                    "status": t.status.value,
-                }
-                for t in transactions
-            ],
+            "transacoes": [self._row(t) for t in transactions],
         }
-    
-    def generate_annual_report(
-        self,
-        user_id: int,
-        year: int,
-    ) -> Dict[str, Any]:
-        """
-        Gera relatório anual completo.
-        
-        Args:
-            user_id: ID do usuário
-            year: Ano
-        
-        Returns:
-            Dict com dados do relatório
-        """
+
+    def generate_annual_report(self, user_id: int, year: int) -> Dict[str, Any]:
+        """Relatório anual (totais + evolução mensal + categorias)."""
         start_date, end_date = get_year_range(year)
-        
-        # Totais por mês
+
         monthly_data = []
         for month in range(1, 13):
             month_start, month_end = get_month_range(year, month)
-            
-            from database.models.category import TransactionType
-            from database.models.transaction import TransactionStatus
-            
-            income = self.transaction_repo.sum_by_type(
-                user_id, TransactionType.INCOME, month_start, month_end, TransactionStatus.PAID
-            )
-            expense = self.transaction_repo.sum_by_type(
-                user_id, TransactionType.EXPENSE, month_start, month_end, TransactionStatus.PAID
-            )
-            
+            summary = self._totals(user_id, month_start, month_end)
             monthly_data.append({
                 "mes": month,
-                "receitas": round(income, 2),
-                "despesas": round(expense, 2),
-                "saldo": round(income - expense, 2),
+                "receitas": str(summary["income_paid"]),
+                "despesas": str(summary["expense_paid"]),
+                "saldo": str(summary["balance_paid"]),
             })
-        
-        # Totais anuais
-        from database.models.category import TransactionType
-        from database.models.transaction import TransactionStatus
-        
-        total_income = self.transaction_repo.sum_by_type(
-            user_id, TransactionType.INCOME, start_date, end_date, TransactionStatus.PAID
-        )
-        total_expense = self.transaction_repo.sum_by_type(
-            user_id, TransactionType.EXPENSE, start_date, end_date, TransactionStatus.PAID
-        )
-        
-        # Categorias do ano
+
+        annual = self._totals(user_id, start_date, end_date)
         categories_income = self.transaction_repo.get_category_totals(
             user_id, TransactionType.INCOME, start_date, end_date
         )
         categories_expense = self.transaction_repo.get_category_totals(
             user_id, TransactionType.EXPENSE, start_date, end_date
         )
-        
+
+        def _monthly_avg(total: Decimal) -> Decimal:
+            return (total / 12).quantize(Decimal("0.01"))
+
         return {
             "ano": year,
             "resumo": {
-                "total_receitas": round(total_income, 2),
-                "total_despesas": round(total_expense, 2),
-                "saldo": round(total_income - total_expense, 2),
-                "media_mensal_receitas": round(total_income / 12, 2),
-                "media_mensal_despesas": round(total_expense / 12, 2),
+                "total_receitas": str(annual["income_paid"]),
+                "total_despesas": str(annual["expense_paid"]),
+                "saldo": str(annual["balance_paid"]),
+                "media_mensal_receitas": str(_monthly_avg(annual["income_paid"])),
+                "media_mensal_despesas": str(_monthly_avg(annual["expense_paid"])),
             },
             "evolucao_mensal": monthly_data,
             "categorias": {
@@ -171,64 +134,43 @@ class ReportService:
                 "despesas": categories_expense,
             },
         }
-    
+
     def generate_custom_report(
-        self,
-        user_id: int,
-        filters: TransactionFilter,
+        self, user_id: int, filters: TransactionFilter
     ) -> Dict[str, Any]:
-        """
-        Gera relatório customizado com filtros.
-        
-        Args:
-            user_id: ID do usuário
-            filters: Filtros aplicados
-        
-        Returns:
-            Dict com dados do relatório
-        """
-        # Busca transações
+        """Relatório com filtros (usa apenas campos existentes do schema)."""
         transactions, total = self.transaction_repo.filter_transactions(
             user_id=user_id,
             start_date=filters.start_date,
             end_date=filters.end_date,
             transaction_type=filters.transaction_type,
             status=filters.status,
-            category_ids=filters.category_ids,
-            account_ids=filters.account_ids,
-            min_amount=filters.min_amount,
-            max_amount=filters.max_amount,
-            search=filters.search,
-            is_recurring=filters.is_recurring,
+            category_ids=[filters.category_id] if filters.category_id else None,
+            account_ids=[filters.account_id] if filters.account_id else None,
             page=1,
             page_size=10000,
         )
-        
-        # Calcula totais
-        from database.models.category import TransactionType
-        
-        total_income = sum(t.amount for t in transactions if t.transaction_type == TransactionType.INCOME)
-        total_expense = sum(t.amount for t in transactions if t.transaction_type == TransactionType.EXPENSE)
-        
+
+        # Totais SOMENTE do realizado PAID no conjunto (TRANSFER excluído).
+        paid = [t for t in transactions if t.status == TransactionStatus.PAID]
+        total_income = money_sum(
+            t.base_amount for t in paid
+            if t.transaction_type == TransactionType.INCOME
+        )
+        total_expense = money_sum(
+            t.base_amount for t in paid
+            if t.transaction_type == TransactionType.EXPENSE
+        )
+
         return {
             "filtros": filters.model_dump(exclude_none=True),
             "resumo": {
                 "total_transacoes": total,
-                "total_receitas": round(total_income, 2),
-                "total_despesas": round(total_expense, 2),
-                "saldo": round(total_income - total_expense, 2),
+                "total_receitas": str(total_income),
+                "total_despesas": str(total_expense),
+                "saldo": str(total_income - total_expense),
+                # A lista inclui TRANSFER (visibilidade); totais só INCOME/EXPENSE.
+                "inclui_transferencias": True,
             },
-            "transacoes": [
-                {
-                    "id": t.id,
-                    "data": t.due_date.isoformat(),
-                    "descricao": t.description,
-                    "categoria": t.category.name,
-                    "conta": t.account.name,
-                    "valor": t.amount,
-                    "tipo": t.transaction_type.value,
-                    "status": t.status.value,
-                }
-                for t in transactions
-            ],
+            "transacoes": [self._row(t) for t in transactions],
         }

@@ -3,18 +3,28 @@ Callbacks da página de configurações.
 Arquitetura correta: botões de ação ficam no layout estático (configuracoes_page.py),
 eliminando o bug de modal abrindo sozinho ao trocar de aba.
 """
-from dash import Input, Output, State, no_update, ctx, html
+from dash import Input, Output, State, no_update, ctx, html, ALL
 import dash_bootstrap_components as dbc
+from decimal import Decimal, InvalidOperation
 from app import app
 from database.connection import get_db_session
+from middleware.auth_context import resolve_user
 from services.account_service import AccountService
 from services.category_service import CategoryService
 from schemas.account_schema import AccountCreate, AccountType
 from schemas.category_schema import CategoryCreate
 from config.logging_config import app_logger
+from utils.exceptions import AuthenticationError
 
 
 # ─── Helper de Toast ────────────────────────────────────────────────────────
+
+def _fmt_brl(value) -> str:
+    # Borda de exibição pt-BR (sem aritmética aqui).
+    from decimal import Decimal as _D
+    amount = value if isinstance(value, _D) else _D(str(value or 0))
+    return f"R$ {amount:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
 
 def _toast(msg, color="success", icon="check-circle-fill"):
     return dbc.Toast(
@@ -60,11 +70,14 @@ def render_action_button(active_tab):
     Output("content-configuracoes", "children"),
     Input("tabs-configuracoes",    "active_tab"),
     Input("trigger-update-config", "data"),
-    State("store-user-id",         "data"),
+    State("auth-store",              "data"),
 )
-def render_tab_content(active_tab, _, user_id):
-    if not user_id:
-        return dbc.Alert("Usuário não autenticado.", color="warning")
+def render_tab_content(active_tab, _, auth_data):
+    try:
+        # P0 (IDOR): usuário derivado do JWT.
+        user_id = resolve_user(auth_data)
+    except AuthenticationError:
+        return dbc.Alert("Sessão expirada — faça login novamente.", color="warning")
     with get_db_session() as db:
         if active_tab == "tab-categorias":
             return _render_categorias(db, user_id)
@@ -166,7 +179,7 @@ def _render_contas(db, user_id, tipo="bank"):
                 dbc.Row([
                     dbc.Col([
                         html.Small("Limite", className="text-muted d-block"),
-                        html.Strong(f"R$ {acc.credit_limit:,.2f}"),
+                        html.Strong(_fmt_brl(acc.credit_limit)),
                     ]),
                     dbc.Col([
                         dbc.Badge(f"Fecha {acc.closing_day}", color="info", className="me-1"),
@@ -176,11 +189,11 @@ def _render_contas(db, user_id, tipo="bank"):
             ]
             icon = "bi-credit-card-fill text-warning"
         else:
-            saldo_cls = "text-success" if acc.balance >= 0 else "text-danger"
+            saldo_cls = "text-success" if (acc.balance or 0) >= 0 else "text-danger"
             details = [
                 html.Hr(className="my-2"),
                 html.Small("Saldo Atual", className="text-muted d-block"),
-                html.Strong(f"R$ {acc.balance:,.2f}", className=saldo_cls),
+                html.Strong(_fmt_brl(acc.balance), className=saldo_cls),
             ]
             icon = "bi-bank2 text-success"
 
@@ -222,19 +235,23 @@ def _render_contas(db, user_id, tipo="bank"):
     Input("btn-open-cat-modal", "n_clicks"),
     Input("btn-cancel-cat",     "n_clicks"),
     Input("btn-save-cat",       "n_clicks"),
-    State("store-user-id", "data"),
+    State("auth-store", "data"),
     prevent_initial_call=True,
 )
-def toggle_modal_categoria(n_open, n_cancel, n_save, user_id):
+def toggle_modal_categoria(n_open, n_cancel, n_save, auth_data):
     triggered = ctx.triggered_id
 
     if triggered == "btn-open-cat-modal" and n_open and n_open > 0:
         options = []
-        if user_id:
-            with get_db_session() as db:
-                cats    = CategoryService(db).get_user_categories(user_id)
-                options = [{"label": c.name, "value": c.id}
-                           for c in cats if not c.parent_id]
+        try:
+            # P0 (IDOR): opções só do dono do JWT.
+            user_id = resolve_user(auth_data)
+        except AuthenticationError:
+            return no_update, no_update, no_update, no_update, no_update, no_update
+        with get_db_session() as db:
+            cats    = CategoryService(db).get_user_categories(user_id)
+            options = [{"label": c.name, "value": c.id}
+                       for c in cats if not c.parent_id]
         return True, options, "", "EXPENSE", "#3498db", ""
 
     if triggered in ("btn-cancel-cat", "btn-save-cat"):
@@ -296,7 +313,7 @@ def toggle_modal_cartao(n_open, n_cancel, n_save):
     State("acc-nome",  "value"), State("acc-tipo",  "value"), State("acc-saldo","value"),
     State("card-nome", "value"), State("card-limite","value"),
     State("card-fechamento","value"), State("card-vencimento","value"),
-    State("store-user-id",          "data"),
+    State("auth-store",               "data"),
     State("trigger-update-config",  "data"),
     prevent_initial_call=True,
 )
@@ -305,15 +322,14 @@ def save_data(
     cat_name, cat_type, cat_color, cat_parent,
     acc_name, acc_type, acc_balance,
     card_name, card_limit, card_close, card_due,
-    user_id, trigger_val,
+    auth_data, trigger_val,
 ):
     triggered = ctx.triggered_id
-    if not user_id:
-        return no_update, no_update, no_update, no_update, no_update
-
-    inline_err = dbc.Alert(
-        "", color="danger", className="mb-0 py-2 mt-2 small", is_open=False
-    )
+    try:
+        # P0 (IDOR): escrita só com dono do JWT.
+        user_id = resolve_user(auth_data)
+    except AuthenticationError:
+        return no_update, _toast("Sessão expirada — faça login novamente.", "danger", "exclamation-triangle-fill"), no_update, no_update, no_update
 
     def _inline(msg):
         return dbc.Alert(msg, color="danger", className="mb-0 py-2 mt-2 small")
@@ -323,9 +339,10 @@ def save_data(
             if triggered == "btn-save-cat":
                 if not cat_name or not cat_name.strip():
                     return no_update, no_update, _inline("Informe o nome da categoria."), no_update, no_update
+                from database.models.category import TransactionType as _TT
                 CategoryService(db).create_category(user_id, CategoryCreate(
                     name=cat_name.strip(),
-                    transaction_type=cat_type,
+                    type=_TT(cat_type),
                     color=cat_color,
                     parent_id=int(cat_parent) if cat_parent else None,
                 ))
@@ -334,10 +351,14 @@ def save_data(
             elif triggered == "btn-save-acc":
                 if not acc_name or not acc_name.strip():
                     return no_update, no_update, no_update, _inline("Informe o nome da conta."), no_update
+                try:
+                    initial = Decimal(str(acc_balance or 0))
+                except (InvalidOperation, ValueError):
+                    return no_update, no_update, no_update, _inline("Saldo inicial inválido."), no_update
                 AccountService(db).create_account(user_id, AccountCreate(
                     name=acc_name.strip(),
                     account_type=AccountType(acc_type),
-                    initial_balance=float(acc_balance or 0),
+                    initial_balance=initial,
                     color="#2ecc71",
                 ))
                 return (trigger_val or 0)+1, _toast(f"Conta \"{acc_name.strip()}\" criada!", "success"), no_update, "", no_update
@@ -345,20 +366,26 @@ def save_data(
             elif triggered == "btn-save-card":
                 if not card_name or not card_name.strip():
                     return no_update, no_update, no_update, no_update, _inline("Informe o nome do cartão.")
+                try:
+                    limit = Decimal(str(card_limit or 0))
+                except (InvalidOperation, ValueError):
+                    return no_update, no_update, no_update, no_update, _inline("Limite inválido.")
                 AccountService(db).create_account(user_id, AccountCreate(
                     name=card_name.strip(),
                     account_type=AccountType.CREDIT_CARD,
-                    initial_balance=0,
+                    initial_balance=Decimal("0"),
                     color="#e74c3c",
-                    credit_limit=float(card_limit or 0),
+                    credit_limit=limit,
                     closing_day=int(card_close or 1),
                     due_day=int(card_due or 10),
                 ))
                 return (trigger_val or 0)+1, _toast(f"Cartão \"{card_name.strip()}\" criado!", "warning"), no_update, no_update, ""
 
+    except ValueError as e:
+        return no_update, _toast(str(e), "danger", "exclamation-triangle-fill"), no_update, no_update, no_update
     except Exception as e:
         app_logger.error(f"Erro ao salvar configuração: {e}")
-        return no_update, _toast(f"Erro: {e}", "danger", "exclamation-triangle-fill"), no_update, no_update, no_update
+        return no_update, _toast("Não foi possível salvar. Tente novamente.", "danger", "exclamation-triangle-fill"), no_update, no_update, no_update
 
     return no_update, no_update, no_update, no_update, no_update
 
@@ -368,21 +395,59 @@ def save_data(
 @app.callback(
     Output("trigger-update-config", "data", allow_duplicate=True),
     Output("config-feedback",       "children", allow_duplicate=True),
-    Input({"type": "btn-del-cat", "index": "__all__"}, "n_clicks"),
-    State("store-user-id",         "data"),
+    Input({"type": "btn-del-cat", "index": ALL}, "n_clicks"),
+    State("auth-store",              "data"),
     State("trigger-update-config", "data"),
     prevent_initial_call=True,
 )
-def delete_categoria(n_clicks, user_id, trigger_val):
+def delete_categoria(n_clicks, auth_data, trigger_val):
     triggered = ctx.triggered_id
     if not isinstance(triggered, dict) or triggered.get("type") != "btn-del-cat":
         return no_update, no_update
-    if user_id:
-        cat_id = triggered["index"]
-        try:
-            with get_db_session() as db:
-                CategoryService(db).delete_category(cat_id, user_id)
-            return (trigger_val or 0)+1, _toast("Categoria excluída.", "secondary", "trash-fill")
-        except Exception as e:
-            return no_update, _toast(f"Erro ao excluir: {e}", "danger", "exclamation-triangle-fill")
-    return no_update, no_update
+    try:
+        # P0 (IDOR): exclusão só com dono do JWT.
+        user_id = resolve_user(auth_data)
+    except AuthenticationError:
+        return no_update, _toast("Sessão expirada — faça login novamente.", "danger", "exclamation-triangle-fill")
+    cat_id = triggered["index"]
+    try:
+        with get_db_session() as db:
+            CategoryService(db).delete_category(cat_id, user_id)
+        return (trigger_val or 0)+1, _toast("Categoria excluída.", "secondary", "trash-fill")
+    except ValueError as e:
+        return no_update, _toast(str(e), "danger", "exclamation-triangle-fill")
+    except Exception as e:
+        app_logger.error(f"Erro ao excluir categoria: {e}")
+        return no_update, _toast("Não foi possível excluir.", "danger", "exclamation-triangle-fill")
+
+
+# ─── 6. Excluir conta (soft-delete, com dono) ──────────────────────────────────
+
+@app.callback(
+    Output("trigger-update-config", "data", allow_duplicate=True),
+    Output("config-feedback",       "children", allow_duplicate=True),
+    Input({"type": "btn-del-acc", "index": ALL}, "n_clicks"),
+    State("auth-store",              "data"),
+    State("trigger-update-config", "data"),
+    prevent_initial_call=True,
+)
+def delete_conta(n_clicks, auth_data, trigger_val):
+    """Exclusão de conta (o botão existia sem callback — P0 C2)."""
+    triggered = ctx.triggered_id
+    if not isinstance(triggered, dict) or triggered.get("type") != "btn-del-acc":
+        return no_update, no_update
+    try:
+        user_id = resolve_user(auth_data)
+    except AuthenticationError:
+        return no_update, _toast("Sessão expirada — faça login novamente.", "danger", "exclamation-triangle-fill")
+    try:
+        with get_db_session() as db:
+            ok = AccountService(db).delete_account(triggered["index"], user_id)
+        if not ok:
+            return no_update, _toast("Conta não encontrada.", "danger", "exclamation-triangle-fill")
+        return (trigger_val or 0)+1, _toast("Conta excluída.", "secondary", "trash-fill")
+    except ValueError as e:
+        return no_update, _toast(str(e), "danger", "exclamation-triangle-fill")
+    except Exception as e:
+        app_logger.error(f"Erro ao excluir conta: {e}")
+        return no_update, _toast("Não foi possível excluir.", "danger", "exclamation-triangle-fill")

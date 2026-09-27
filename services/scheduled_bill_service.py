@@ -1,12 +1,19 @@
-"""Servico de Contas a Pagar e a Receber (ScheduledBill)."""
+"""Servico de Contas a Pagar e a Receber (ScheduledBill) — P0 (ADR-002).
+
+- Valores Decimal (Numeric).
+- Pagar conta GERA o Transaction correspondente (rastreabilidade + fluxo de
+  caixa corretos). Idempotente via `scheduled_bill_id` (sem duplicar em retry).
+- Isolamento por user_id em todos os métodos.
+"""
 from datetime import datetime, timezone, date, timedelta
 from dateutil.relativedelta import relativedelta
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_
+from sqlalchemy import and_
 
 from database.models.scheduled_bill import ScheduledBill, BillType, BillStatus, BillRecurrence
 from config.logging_config import app_logger
+from utils.money import to_money2, money_sum
 
 
 class ScheduledBillService:
@@ -31,7 +38,7 @@ class ScheduledBillService:
         self,
         user_id: int,
         name: str,
-        amount: float,
+        amount,
         bill_type: BillType,
         due_date: date,
         account_id: Optional[int] = None,
@@ -46,7 +53,7 @@ class ScheduledBillService:
         Args:
             user_id: ID do usuario
             name: Nome da conta (ex: 'Aluguel', 'Salario')
-            amount: Valor da conta
+            amount: Valor da conta (Decimal/str/int — nunca float)
             bill_type: PAYABLE ou RECEIVABLE
             due_date: Data de vencimento
             account_id: Conta bancaria vinculada
@@ -62,15 +69,33 @@ class ScheduledBillService:
         Raises:
             ValueError: Se amount <= 0 ou reminder_days_before < 0
         """
-        if amount <= 0:
+        value = to_money2(amount, where="bill.create")
+        if value <= 0:
             raise ValueError("O valor da conta deve ser maior que zero.")
         if reminder_days_before < 0:
             raise ValueError("Os dias de lembrete nao podem ser negativos.")
+        # P0 (IDOR): conta/categoria vinculadas devem ser do usuário.
+        if account_id is not None:
+            from database.models.account import Account
+
+            owned = (
+                self.db.query(Account.id)
+                .filter(Account.id == account_id, Account.user_id == user_id)
+                .first()
+            )
+            if not owned:
+                raise ValueError("Conta vinculada não pertence a este usuário.")
+        if category_id is not None:
+            from database.models.category import Category
+
+            cat = self.db.query(Category).filter(Category.id == category_id).first()
+            if not cat or (cat.user_id is not None and cat.user_id != user_id):
+                raise ValueError("Categoria vinculada não pertence a este usuário.")
 
         bill = ScheduledBill(
             user_id=user_id,
             name=name,
-            amount=amount,
+            amount=value,
             bill_type=bill_type,
             due_date=due_date,
             account_id=account_id,
@@ -133,16 +158,23 @@ class ScheduledBillService:
         self,
         bill_id: int,
         user_id: int,
-        paid_amount: Optional[float] = None,
+        paid_amount=None,
         paid_date: Optional[date] = None,
     ) -> Optional[ScheduledBill]:
-        """Marca uma conta como paga/recebida.
+        """Marca conta como paga/recebida e GERA o Transaction correspondente.
+
+        Geração do lançamento (P0 — rastreabilidade):
+        - PAYABLE -> EXPENSE paga; RECEIVABLE -> INCOME pago.
+        - Vinculado via `scheduled_bill_id`; idempotente (não duplica em retry).
+        - Exige conta e categoria vinculadas (sem elas não há onde lançar).
+        - Move o saldo via FinanceService (mesmo commit).
 
         Args:
             bill_id: ID da conta
             user_id: ID do usuario
-            paid_amount: Valor efetivamente pago (usa valor nominal se None)
-            paid_date: Data do pagamento (usa hoje se None)
+            paid_amount: Valor efetivo (Decimal/str/int; nominal se None;
+                deve ser > 0)
+            paid_date: Data do pagamento (hoje se None)
 
         Returns:
             Conta atualizada; None se nao encontrada
@@ -150,18 +182,35 @@ class ScheduledBillService:
         bill = self.get_bill(bill_id, user_id)
         if not bill:
             return None
+        if bill.status == BillStatus.CANCELLED:
+            raise ValueError("Conta cancelada não pode ser paga.")
         if bill.status == BillStatus.PAID:
+            self._ensure_transaction(bill)
             return bill  # Idempotente
 
+        effective = (
+            to_money2(paid_amount, where="bill.pay")
+            if paid_amount is not None
+            else to_money2(bill.amount, where="bill.pay")
+        )
+        if effective <= 0:
+            raise ValueError("O valor pago deve ser maior que zero.")
+
         bill.status = BillStatus.PAID
-        bill.paid_amount = paid_amount if paid_amount is not None else bill.amount
+        bill.paid_amount = effective
         bill.paid_date = paid_date or date.today()
         bill.updated_at = datetime.now(timezone.utc)
-        self.db.commit()
-        self.db.refresh(bill)
+        try:
+            self.db.flush()
+            self._ensure_transaction(bill)
+            self.db.commit()
+            self.db.refresh(bill)
+        except Exception:
+            self.db.rollback()
+            raise
 
         app_logger.info(
-            f"Conta paga: id={bill_id} valor={bill.paid_amount:.2f} data={bill.paid_date}"
+            f"Conta paga: id={bill_id} valor={effective:.2f} data={bill.paid_date}"
         )
 
         # Se recorrente, gera proxima parcela automaticamente
@@ -170,8 +219,57 @@ class ScheduledBillService:
 
         return bill
 
+    def _ensure_transaction(self, bill: ScheduledBill):
+        """Cria o Transaction do pagamento (se ainda não existir)."""
+        from database.models.transaction import Transaction, TransactionStatus
+        from database.models.category import TransactionType
+
+        existing = (
+            self.db.query(Transaction.id)
+            .filter(Transaction.scheduled_bill_id == bill.id)
+            .first()
+        )
+        if existing:
+            return existing
+
+        if not bill.account_id or not bill.category_id:
+            raise ValueError(
+                "Conta agendada sem conta/categoria vinculada — "
+                "vincule antes de pagar para gerar o lançamento."
+            )
+        tx_type = (
+            TransactionType.EXPENSE
+            if bill.bill_type == BillType.PAYABLE
+            else TransactionType.INCOME
+        )
+        tx = Transaction(
+            user_id=bill.user_id,
+            description=f"{bill.name} (conta agendada)",
+            base_amount=to_money2(bill.paid_amount or bill.amount, where="bill.tx"),
+            transaction_type=tx_type,
+            account_id=bill.account_id,
+            category_id=bill.category_id,
+            purchase_date=bill.paid_date or bill.due_date,
+            due_date=bill.due_date,
+            paid_date=bill.paid_date or date.today(),
+            status=TransactionStatus.PAID,
+            scheduled_bill_id=bill.id,
+            notes=bill.notes,
+        )
+        self.db.add(tx)
+        self.db.flush()
+
+        from services.balance_service import BalanceService
+
+        BalanceService(self.db).recalculate_and_persist(bill.account_id, bill.user_id)
+        return tx
+
     def delete_bill(self, bill_id: int, user_id: int) -> bool:
-        """Soft-delete de uma conta."""
+        """Soft-delete de uma conta.
+
+        NOTA: o Transaction já gerado pelo pagamento é preservado
+        (histórico/auditoria). Estorno é operação separada e explícita.
+        """
         bill = self.get_bill(bill_id, user_id)
         if not bill:
             return False
@@ -259,12 +357,13 @@ class ScheduledBillService:
         due_today = [b for b in upcoming if b.due_date == today]
         due_this_week = [b for b in upcoming if b.due_date <= today + timedelta(days=7)]
 
-        total_payable = sum(
+        total_payable = money_sum(
             b.amount for b in upcoming + overdue
             if b.bill_type == BillType.PAYABLE
         )
-        total_receivable = sum(
-            b.amount for b in upcoming
+        # P0: RECEIVABLE vencido também compõe o a receber (antes era ignorado).
+        total_receivable = money_sum(
+            b.amount for b in upcoming + overdue
             if b.bill_type == BillType.RECEIVABLE
         )
 
@@ -285,9 +384,9 @@ class ScheduledBillService:
             "due_today": [_serialize(b) for b in due_today],
             "due_this_week": [_serialize(b) for b in due_this_week],
             "due_this_month": [_serialize(b) for b in upcoming],
-            "total_payable": round(total_payable, 2),
-            "total_receivable": round(total_receivable, 2),
-            "net_cash_flow": round(total_receivable - total_payable, 2),
+            "total_payable": total_payable,
+            "total_receivable": total_receivable,
+            "net_cash_flow": total_receivable - total_payable,
         }
 
     # ------------------------------------------------------------------ #

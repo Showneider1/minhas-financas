@@ -4,6 +4,7 @@ Schemas para operações com categorias.
 from pydantic import BaseModel, Field, validator
 from typing import Optional
 from datetime import datetime
+from decimal import Decimal
 from database.models.category import TransactionType
 
 
@@ -26,7 +27,7 @@ class CategoryBase(BaseModel):
 
 class CategoryCreate(CategoryBase):
     """Schema para criação de categoria."""
-    pass
+    parent_id: Optional[int] = None
 
 
 class CategoryUpdate(BaseModel):
@@ -57,5 +58,5 @@ class CategoryResponse(CategoryBase):
 class CategoryWithStats(CategoryResponse):
     """Response estendido com estatísticas."""
     total_transactions: int = 0
-    total_amount: float = 0.0
+    total_amount: Decimal = Decimal("0.00")
     percentage: float = 0.0  # Percentual em relação ao total
