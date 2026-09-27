@@ -3,6 +3,12 @@
 **Decisão:** `docs/decisions/ADR-001-supabase-migration.md` (manter SQLAlchemy; não adotar Supabase Auth agora).
 **Núcleo:** `docs/decisions/ADR-002-financial-core.md` (contrato canônico P0).
 **Status P0 (2026-09-27):** sistema preparado; **remoto NÃO configurado, NÃO validado** (sem credenciais — ver §7).
+**Status staging (mesma data):** commit P0 `c0c2b78`; checker `scripts/check_supabase_connection.py`
+(exit 2 = credenciais ausentes); ETL `scripts/migrate_sqlite_to_postgres.py` + reconciliação
+`scripts/reconcile_balances.py` validados fim-a-fim em SQLite→SQLite (28 linhas, diff ZERO);
+DDL Postgres do baseline renderizado offline em `supabase/migrations/0001_baseline_postgres.sql`
+(11 CREATE TABLE, zero FLOAT, NUMERIC/VARCHAR/constraints OK). `upgrade head` + ETL + reconcile
+contra o Supabase real pendem das credenciais (§7).
 **Princípio:** migração segura, reversível, sem destrutivas no remoto sem aprovação humana.
 
 ## 1. Retrato do banco atual (verificado, não assumido)
