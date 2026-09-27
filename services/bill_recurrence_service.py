@@ -111,6 +111,20 @@ class BillRecurrenceService:
             .all()
         )
 
+    def recurrence_bills_for_ui(self, user_id: int) -> list[ScheduledBill]:
+        """Contas recorrentes para gestão visual, incluindo pausadas."""
+        return (
+            self.db.query(ScheduledBill)
+            .filter(
+                ScheduledBill.user_id == user_id,
+                ScheduledBill.recurrence != BillRecurrence.NONE,
+                ScheduledBill.status != BillStatus.CANCELLED,
+                ScheduledBill.is_deleted.is_(False),
+            )
+            .order_by(ScheduledBill.due_date.asc(), ScheduledBill.id.asc())
+            .all()
+        )
+
     def _already_generated(self, bill_id: int, due: date) -> bool:
         """Idempotência exata: já existe lançamento desta conta p/ este vencimento?
 
@@ -221,6 +235,22 @@ class BillRecurrenceService:
     # ------------------------------------------------------------------
     def set_paused(self, bill_id: int, user_id: int, paused: bool) -> ScheduledBill:
         """Pausa/retoma conta recorrente (dono)."""
+        bill = self._owned_bill(bill_id, user_id)
+        bill.is_paused = paused
+        self.db.commit()
+        self.db.refresh(bill)
+        return bill
+
+    def cancel_bill(self, bill_id: int, user_id: int) -> ScheduledBill:
+        """Cancela conta recorrente (dono), impedindo próximas gerações."""
+        bill = self._owned_bill(bill_id, user_id)
+        bill.status = BillStatus.CANCELLED
+        bill.is_paused = True
+        self.db.commit()
+        self.db.refresh(bill)
+        return bill
+
+    def _owned_bill(self, bill_id: int, user_id: int) -> ScheduledBill:
         bill = (
             self.db.query(ScheduledBill)
             .filter(
@@ -232,7 +262,4 @@ class BillRecurrenceService:
         )
         if not bill:
             raise ValueError("Conta não encontrada para este usuário.")
-        bill.is_paused = paused
-        self.db.commit()
-        self.db.refresh(bill)
         return bill

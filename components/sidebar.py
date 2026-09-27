@@ -62,6 +62,18 @@ sidebar = html.Div(
                     className="sidebar-link",
                 ),
                 dbc.NavLink(
+                    [html.I(className="bi bi-graph-up-arrow me-2"), "Investimentos"],
+                    href="/investimentos",
+                    active="exact",
+                    className="sidebar-link",
+                ),
+                dbc.NavLink(
+                    [html.I(className="bi bi-repeat me-2"), "Recorrências"],
+                    href="/recorrencia",
+                    active="exact",
+                    className="sidebar-link",
+                ),
+                dbc.NavLink(
                     [html.I(className="bi bi-file-earmark-bar-graph me-2"), "Relatórios"],
                     href="/relatorios",
                     active="exact",

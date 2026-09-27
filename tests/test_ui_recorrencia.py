@@ -1,12 +1,16 @@
 """Testes unitários dos callbacks da página de Contas Recorrentes."""
 
 from contextlib import contextmanager
+from datetime import date
 
 import dash_bootstrap_components as dbc
 from dash import no_update
 
 import callbacks.recorrencia_callbacks as rec_callbacks
+from database.enums import BillRecurrence, BillType
 from database.models.scheduled_bill import ScheduledBill
+from database.models.user import User
+from services.scheduled_bill_service import ScheduledBillService
 
 
 def _call_save(**overrides):
@@ -100,3 +104,90 @@ def test_save_recurrence_success_returns_success_alert(
     assert len(bills) == 1
     assert bills[0].name == "Internet"
     assert bills[0].recurrence.value == "monthly"
+
+
+def _create_monthly_bill(db, user_id):
+    return ScheduledBillService(db).create_bill(
+        user_id=user_id,
+        name="Assinatura",
+        amount="99.90",
+        bill_type=BillType.PAYABLE,
+        due_date=date(2027, 1, 10),
+        recurrence=BillRecurrence.MONTHLY,
+    )
+
+
+def _patch_trigger(monkeypatch, action_type, bill_id):
+    monkeypatch.setattr(
+        rec_callbacks,
+        "_get_triggered_id",
+        lambda: {"type": action_type, "index": bill_id},
+    )
+
+
+def test_pause_recurrence_updates_status(db, monkeypatch, sample_user):
+    _patch_runtime(monkeypatch, db, user_id=sample_user.id)
+    bill = _create_monthly_bill(db, sample_user.id)
+    _patch_trigger(monkeypatch, "btn-pause-recurrence", bill.id)
+
+    result = rec_callbacks.manage_recurrence_action([1], [], [], {"token": "ok"})
+
+    db.refresh(bill)
+    assert bill.is_paused is True
+    assert result[0].color == "success"
+    assert "pausada" in result[0].children
+    assert result[1] is True
+    assert result[2] is not None
+
+
+def test_resume_recurrence_updates_status(db, monkeypatch, sample_user):
+    _patch_runtime(monkeypatch, db, user_id=sample_user.id)
+    bill = _create_monthly_bill(db, sample_user.id)
+    rec_callbacks.BillRecurrenceService(db).set_paused(bill.id, sample_user.id, True)
+    _patch_trigger(monkeypatch, "btn-resume-recurrence", bill.id)
+
+    result = rec_callbacks.manage_recurrence_action([], [1], [], {"token": "ok"})
+
+    db.refresh(bill)
+    assert bill.is_paused is False
+    assert result[0].color == "success"
+    assert "retomada" in result[0].children
+
+
+def test_cancel_recurrence_updates_status(db, monkeypatch, sample_user):
+    _patch_runtime(monkeypatch, db, user_id=sample_user.id)
+    bill = _create_monthly_bill(db, sample_user.id)
+    _patch_trigger(monkeypatch, "btn-cancel-recurrence", bill.id)
+
+    result = rec_callbacks.manage_recurrence_action([], [], [1], {"token": "ok"})
+
+    db.refresh(bill)
+    assert bill.status.value == "cancelled"
+    assert bill.is_paused is True
+    assert result[0].color == "success"
+    assert "cancelada" in result[0].children
+
+
+def test_recurrence_action_rejects_cross_user(db, monkeypatch, sample_user):
+    other_user = User(
+        name="Outro Usuario",
+        email="outro@email.com",
+        password_hash="hashed_password",
+        is_active=True,
+        is_deleted=False,
+    )
+    db.add(other_user)
+    db.commit()
+    db.refresh(other_user)
+    bill = _create_monthly_bill(db, other_user.id)
+
+    _patch_runtime(monkeypatch, db, user_id=sample_user.id)
+    _patch_trigger(monkeypatch, "btn-pause-recurrence", bill.id)
+
+    result = rec_callbacks.manage_recurrence_action([1], [], [], {"token": "ok"})
+
+    db.refresh(bill)
+    assert bill.is_paused is False
+    assert result[0].color == "danger"
+    assert "não encontrada" in result[0].children
+    assert result[1] is True

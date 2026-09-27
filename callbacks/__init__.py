@@ -82,3 +82,12 @@ try:
     print("✓ Goal callbacks carregados")
 except Exception as _e:
     print(f"⚠ Aviso goal_callbacks: {_e}")
+
+# ── Investimentos / Recorrências (UI P1) ──────────────────────────
+try:
+    import callbacks.investimentos_callbacks  # noqa: F401
+    import callbacks.recorrencia_callbacks  # noqa: F401
+
+    print("✓ Investimentos/Recorrência callbacks carregados")
+except Exception as _e:
+    print(f"⚠ Aviso investimentos/recorrencia_callbacks: {_e}")

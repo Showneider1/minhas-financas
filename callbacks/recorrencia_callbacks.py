@@ -5,16 +5,16 @@ Nunca usar store-user-id como autoridade.
 """
 
 import dash_bootstrap_components as dbc
-from dash import Input, Output, State, ctx, no_update, html
+from dash import ALL, Input, Output, State, ctx, html, no_update
 
 from app import app
 from config.logging_config import app_logger
 from database.connection import get_db_session
+from database.enums import BillRecurrence, BillType
 from middleware.auth_context import resolve_user
 from middleware.rate_limiter import client_ip, hit
 from services.bill_recurrence_service import BillRecurrenceService
 from services.scheduled_bill_service import ScheduledBillService
-from database.enums import BillRecurrence, BillType
 from utils.exceptions import AuthenticationError
 
 
@@ -38,7 +38,7 @@ def load_recurrences(auth_data, _reload):
         user_id = resolve_user(auth_data)
         with get_db_session() as db:
             svc = BillRecurrenceService(db)
-            bills = svc.recurring_bills(user_id)
+            bills = svc.recurrence_bills_for_ui(user_id)
 
         if not bills:
             return html.Div(
@@ -48,6 +48,36 @@ def load_recurrences(auth_data, _reload):
 
         rows = []
         for b in bills:
+            status_label = "Pausada" if b.is_paused else b.status.value
+            pause_button = dbc.Button(
+                html.I(className="bi bi-play-fill"),
+                id={"type": "btn-resume-recurrence", "index": b.id},
+                color="success",
+                outline=True,
+                size="sm",
+                title="Retomar recorrência",
+                className="me-2",
+            )
+            if not b.is_paused:
+                pause_button = dbc.Button(
+                    html.I(className="bi bi-pause-fill"),
+                    id={"type": "btn-pause-recurrence", "index": b.id},
+                    color="warning",
+                    outline=True,
+                    size="sm",
+                    title="Pausar recorrência",
+                    className="me-2",
+                )
+
+            cancel_button = dbc.Button(
+                html.I(className="bi bi-x-circle"),
+                id={"type": "btn-cancel-recurrence", "index": b.id},
+                color="danger",
+                outline=True,
+                size="sm",
+                title="Cancelar recorrência",
+            )
+
             rows.append(
                 html.Tr(
                     [
@@ -56,6 +86,8 @@ def load_recurrences(auth_data, _reload):
                         html.Td(_fmt_brl(b.amount)),
                         html.Td(b.recurrence.value if b.recurrence else "none"),
                         html.Td(b.due_date.strftime("%d/%m/%Y") if b.due_date else ""),
+                        html.Td(status_label),
+                        html.Td([pause_button, cancel_button]),
                     ]
                 )
             )
@@ -70,6 +102,8 @@ def load_recurrences(auth_data, _reload):
                             html.Th("Valor"),
                             html.Th("Recorrência"),
                             html.Th("Vencimento"),
+                            html.Th("Status"),
+                            html.Th("Ações"),
                         ]
                     )
                 ),
@@ -111,7 +145,87 @@ def toggle_recurrence_modal(n_new, n_cancel, n_save, is_open):
     return no_update, no_update
 
 
-# ─── 3. Salvar recorrência ────────────────────────────────────────────────────
+# ─── 3. Pausar / retomar / cancelar recorrência ───────────────────────────────
+
+def _get_triggered_id():
+    return ctx.triggered_id
+
+
+def _apply_recurrence_action(db, user_id: int, action: str, bill_id: int) -> str:
+    svc = BillRecurrenceService(db)
+    if action == "pause":
+        svc.set_paused(bill_id, user_id, True)
+        return "Recorrência pausada com sucesso."
+    if action == "resume":
+        svc.set_paused(bill_id, user_id, False)
+        return "Recorrência retomada com sucesso."
+    if action == "cancel":
+        svc.cancel_bill(bill_id, user_id)
+        return "Recorrência cancelada com sucesso."
+    raise ValueError("Ação de recorrência inválida.")
+
+
+@app.callback(
+    Output("rec-alert", "children", allow_duplicate=True),
+    Output("rec-alert", "is_open", allow_duplicate=True),
+    Output("store-reload-dashboard", "data", allow_duplicate=True),
+    Input({"type": "btn-pause-recurrence", "index": ALL}, "n_clicks"),
+    Input({"type": "btn-resume-recurrence", "index": ALL}, "n_clicks"),
+    Input({"type": "btn-cancel-recurrence", "index": ALL}, "n_clicks"),
+    State("auth-store", "data"),
+    prevent_initial_call=True,
+)
+def manage_recurrence_action(_pause_clicks, _resume_clicks, _cancel_clicks, auth_data):
+    """Executa pausa/retomada/cancelamento validando tenant pelo JWT."""
+    trigger = _get_triggered_id()
+    if not trigger:
+        return no_update, no_update, no_update
+
+    allowed, retry_after = hit("bill.rec.manage", client_ip(), limit=30, window_seconds=60)
+    if not allowed:
+        msg = f"Taxa de requisições excedida. Tente novamente em {retry_after}s."
+        return dbc.Alert(msg, color="warning", dismissable=True), True, no_update
+
+    try:
+        user_id = resolve_user(auth_data)
+        action_map = {
+            "btn-pause-recurrence": "pause",
+            "btn-resume-recurrence": "resume",
+            "btn-cancel-recurrence": "cancel",
+        }
+        action = action_map.get(trigger.get("type"))
+        if action is None:
+            raise ValueError("Ação de recorrência inválida.")
+
+        from datetime import datetime, timezone
+
+        with get_db_session() as db:
+            message = _apply_recurrence_action(db, user_id, action, int(trigger["index"]))
+
+        return (
+            dbc.Alert(message, color="success", dismissable=True),
+            True,
+            datetime.now(timezone.utc).isoformat(),
+        )
+
+    except AuthenticationError as e:
+        return dbc.Alert(str(e), color="warning", dismissable=True), True, no_update
+    except ValueError as e:
+        return dbc.Alert(str(e), color="danger", dismissable=True), True, no_update
+    except Exception as e:
+        app_logger.error(f"Erro ao atualizar recorrência: {e}")
+        return (
+            dbc.Alert(
+                "Erro inesperado ao atualizar recorrência.",
+                color="danger",
+                dismissable=True,
+            ),
+            True,
+            no_update,
+        )
+
+
+# ─── 4. Salvar recorrência ────────────────────────────────────────────────────
 
 @app.callback(
     Output("rec-modal-alert", "children"),

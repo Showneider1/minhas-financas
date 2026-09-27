@@ -6,21 +6,24 @@ Gerencia roteamento e layout principal.
 import dash_bootstrap_components as dbc
 from dash import Input, Output, dcc, html
 
+import callbacks  # noqa: F401
 from app import app, server
-from middleware.http_rate_limit import init_http_rate_limit
-
-# P1 segurança: rajadas no endpoint de escrita retornam HTTP 429 por IP.
-init_http_rate_limit(server)
 from components.sidebar import modal_novo_lancamento, sidebar
 from config.logging_config import app_logger
+from middleware.http_rate_limit import init_http_rate_limit
 from pages import (
     configuracoes_page,
     dashboard_page,
     extrato_page,
     goals_page,
+    investimentos_page,
     login_page,
+    recorrencia_page,
     relatorios_page,
 )
+
+# P1 segurança: rajadas no endpoint de escrita retornam HTTP 429 por IP.
+init_http_rate_limit(server)
 
 # ===============================
 # LAYOUT PRINCIPAL
@@ -96,6 +99,12 @@ def display_page(pathname, auth_data):
 
     elif pathname == "/metas":
         content = goals_page.layout
+
+    elif pathname == "/investimentos":
+        content = investimentos_page.layout()
+
+    elif pathname == "/recorrencia":
+        content = recorrencia_page.layout()
 
     else:
         try:
