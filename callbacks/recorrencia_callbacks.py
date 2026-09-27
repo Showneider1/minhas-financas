@@ -161,7 +161,10 @@ def save_recurrence(
             raise ValueError("Nome, valor e data de vencimento são obrigatórios.")
 
         from datetime import date
+        from decimal import Decimal
+
         due_obj = date.fromisoformat(due_date)
+        amount_dec = Decimal(str(amount)) if amount is not None else None
 
         rec_enum = BillRecurrence.NONE
         if recurrence and recurrence != "none":
@@ -181,7 +184,7 @@ def save_recurrence(
                 svc.create_bill(
                     user_id=user_id,
                     name=name.strip(),
-                    amount=amount,
+                    amount=amount_dec,
                     bill_type=bill_type_enum,
                     due_date=due_obj,
                     account_id=int(account_id) if account_id else None,

@@ -5,6 +5,8 @@
 - Testes negativos nos 6 sentidos + reuso negado + adulterado negado.
 """
 
+import jwt
+
 from config import security
 from config.security import (
     consume_password_reset_token,
@@ -48,7 +50,13 @@ def test_reset_single_use(db):
 
 def test_tampered_and_wrong_type_denied(db):
     access = create_access_token({"sub": "7"})
-    tampered = access[:-2] + ("aa" if not access.endswith("aa") else "bb")
+    payload = security.decode_token(access)
+
+    # Adulteração determinística: mesma estrutura, assinatura válida com outra chave.
+    tampered = jwt.encode(
+        payload, "x" * 32, algorithm=security.settings.JWT_ALGORITHM
+    )
+
     assert verify_token(tampered) is None
     assert verify_token("") is None
     assert verify_token(None) is None

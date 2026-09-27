@@ -160,7 +160,12 @@ def save_investment_operation(
             raise InvestmentValidationError("Preencha todos os campos obrigatórios.")
 
         from datetime import date
+        from decimal import Decimal
+
         op_date_obj = date.fromisoformat(op_date) if op_date else date.today()
+        qty_dec = Decimal(str(qty)) if qty is not None else None
+        price_dec = Decimal(str(price)) if price is not None else None
+        fees_dec = Decimal(str(fees)) if fees is not None else None
 
         with get_db_session() as db:
             svc = InvestmentService(db)
@@ -170,11 +175,11 @@ def save_investment_operation(
                 svc.buy(
                     asset_id=int(asset_id),
                     user_id=user_id,
-                    quantity=qty,
-                    price_per_unit=price,
+                    quantity=qty_dec,
+                    price_per_unit=price_dec,
                     account_id=int(account_id),
                     operation_date=op_date_obj,
-                    fees=fees or 0,
+                    fees=fees_dec or Decimal("0"),
                     notes=notes,
                 )
                 msg = "Compra registrada com sucesso."
@@ -182,11 +187,11 @@ def save_investment_operation(
                 svc.sell(
                     asset_id=int(asset_id),
                     user_id=user_id,
-                    quantity=qty,
-                    price_per_unit=price,
+                    quantity=qty_dec,
+                    price_per_unit=price_dec,
                     account_id=int(account_id),
                     operation_date=op_date_obj,
-                    fees=fees or 0,
+                    fees=fees_dec or Decimal("0"),
                     notes=notes,
                 )
                 msg = "Venda registrada com sucesso."
@@ -194,7 +199,7 @@ def save_investment_operation(
                 svc.record_dividend(
                     asset_id=int(asset_id),
                     user_id=user_id,
-                    amount=qty,  # no UI, qty usado como valor do provento no esqueleto
+                    amount=qty_dec,  # no UI, qty usado como valor do provento no esqueleto
                     account_id=int(account_id),
                     operation_date=op_date_obj,
                     notes=notes,
@@ -204,7 +209,7 @@ def save_investment_operation(
                 svc.apply_split(
                     asset_id=int(asset_id),
                     user_id=user_id,
-                    factor=qty,
+                    factor=qty_dec,
                     operation_date=op_date_obj,
                     notes=notes,
                 )

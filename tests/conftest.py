@@ -30,6 +30,23 @@ from database.models.transaction import Transaction  # noqa: F401
 from database.models.user import User
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _dispose_global_engine():
+    """Fecha o engine global importado indiretamente pelos módulos da app.
+
+    Evita ResourceWarning de conexões SQLite mantidas pelo pool global até a
+    finalização do interpretador durante a sessão pytest.
+    """
+    yield
+    try:
+        from database.connection import engine as global_engine
+
+        global_engine.dispose()
+    except Exception:
+        # Não derruba a suíte por limpeza de pool/conn global.
+        pass
+
+
 @pytest.fixture(scope="function")
 def db_engine():
     """Cria um engine SQLite in-memory para cada funcao de teste."""
