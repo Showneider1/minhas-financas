@@ -1,13 +1,42 @@
-version: '3.8'
-
 services:
+  app:
+    build: .
+    image: finance-os:latest
+    container_name: finance-os-app
+    env_file:
+      - .env
+    environment:
+      PYTHONUNBUFFERED: "1"
+      PYTHONUTF8: "1"
+    ports:
+      - "8050:8050"
+    volumes:
+      # SQLite persistente fora do contêiner.
+      # Se o contêiner for recriado, o banco continua aqui.
+      - ./data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: [
+        "CMD",
+        "python",
+        "-c",
+        "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8050/')"
+      ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # Postgres opcional para staging/local.
+  # Não sobe por padrão; use: docker compose --profile postgres up -d
   postgres:
+    profiles:
+      - postgres
     image: postgres:15-alpine
     container_name: finance-os-db
     env_file:
       - .env
     environment:
-      # P0 (segredos): sem credencial hardcoded — configure no .env (veja .env.example).
       POSTGRES_USER: ${POSTGRES_USER:?Configure POSTGRES_USER no .env}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Configure POSTGRES_PASSWORD no .env}
       POSTGRES_DB: ${POSTGRES_DB:-finance_os}
@@ -20,14 +49,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-
-  # redis: mantido apenas como placeholder de staging local.
-  # Hoje nenhum código importa redis (ver CODE_AUDIT A12/M4). Não subir sem uso.
-  # redis:
-  #   image: redis:7-alpine
-  #   container_name: finance-os-redis
-  #   ports:
-  #     - "127.0.0.1:6379:6379"
 
 volumes:
   postgres_data:

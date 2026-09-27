@@ -1,0 +1,38 @@
+# Segredos — NUNCA bakear na imagem
+.env
+.env.*
+!.env.example
+
+# Banco local e dados sensíveis
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+logs/
+*.log
+
+# Git / CI
+.git/
+.github/
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+ENV/
+env/
+
+# Ferramentas locais
+.vscode/
+.idea/
+.opencode/
+node_modules/
+dist/
+build/
+*.tmp
+*.bak
