@@ -1,26 +1,20 @@
 """
-Sistema de rate limiting para proteção contra ataques de força bruta.
+Sistema de rate limiting persistido (P0 login por email + P1 buckets por IP).
 
-BUG 5 CORRIGIDO: versão anterior usava Dict em memória — zerado a cada
-restart do processo e ineficaz em ambientes multi-worker (Gunicorn).
-
-Esta versão persiste as tentativas em uma tabela SQLite dedicada
-(login_attempts), mantendo o rate limit consistente entre restarts
-e múltiplos workers, sem precisar de Redis ou dependência externa.
-
-A assinatura pública dos métodos é idêntica à versão anterior:
-    check_login_attempts(email)  → Tuple[bool, int]
-    record_login_attempt(email)  → None
-    clear_login_attempts(email)  → None
-
-auth_services.py não precisa de nenhuma alteração.
+Duas camadas, mesma tabela de filosofia:
+- Legado: `login_attempts` por email (sliding window) — mantido.
+- P1: `rate_limit_hits(scope, key)` genérico thread-safe para buckets por IP
+  (login, registro, reset) e para o hook HTTP do Dash.
+Sem Redis por decisão (stack SQLite síncrona; ver ADR).
 """
+import threading
 from datetime import datetime, timedelta, timezone
 from typing import Tuple
 from sqlalchemy import Column, Integer, String, DateTime
 from sqlalchemy.orm import Session
 from database.base import Base
 from database.connection import engine, SessionLocal
+from database.models.rate_limit import RateLimitHit
 from config.settings import settings
 
 
@@ -166,3 +160,69 @@ class RateLimiter:
 # Instância global — mesma interface pública da versão anterior.
 # auth_services.py não precisa de nenhuma alteração.
 rate_limiter = RateLimiter()
+
+_lock = threading.Lock()
+
+
+def hit(scope: str, key: str, limit: int, window_seconds: int,
+        _session_factory=None) -> Tuple[bool, int]:
+    """Registra tentativa no bucket (scope, key) com lock (P1).
+
+    Atômico na prática para o servidor síncrono: limpa expirados, conta,
+    e só insere se abaixo do limite. Retorna (permitido, retry_after_s).
+    `_session_factory` existe só para testes isolados (produção omite).
+    """
+    key = (key or "unknown")[:200]
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(seconds=window_seconds)
+    make_session = _session_factory or SessionLocal
+    with _lock:
+        db = make_session()
+        try:
+            db.query(RateLimitHit).filter(
+                RateLimitHit.scope == scope,
+                RateLimitHit.key == key,
+                RateLimitHit.attempted_at < cutoff,
+            ).delete(synchronize_session=False)
+            rows = (
+                db.query(RateLimitHit)
+                .filter(
+                    RateLimitHit.scope == scope,
+                    RateLimitHit.key == key,
+                    RateLimitHit.attempted_at >= cutoff,
+                )
+                .order_by(RateLimitHit.attempted_at.asc())
+                .all()
+            )
+            if len(rows) >= limit:
+                oldest = rows[0].attempted_at
+                if oldest.tzinfo is None:
+                    oldest = oldest.replace(tzinfo=timezone.utc)
+                retry = int((oldest + timedelta(seconds=window_seconds) - now).total_seconds())
+                db.commit()
+                return False, max(0, retry)
+            db.add(RateLimitHit(scope=scope, key=key, attempted_at=now))
+            db.commit()
+            return True, 0
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+
+
+def client_ip() -> str:
+    """IP do cliente no contexto Flask/Dash (fallbacks seguros)."""
+    try:
+        from flask import request, has_request_context
+
+        if has_request_context():
+            forwarded = (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+            # X-Forwarded-For só é confiável atrás de proxy próprio; usa o
+            # primeiro IP mas sempre ancora no remote_addr para auditoria.
+            if forwarded and request.remote_addr in ("127.0.0.1", "::1"):
+                return forwarded[:45]
+            return (request.remote_addr or "unknown")[:45]
+    except Exception:
+        pass
+    return "unknown"

@@ -9,6 +9,7 @@ from database.connection import get_db_session
 from services.auth_services import AuthService
 from schemas.user_schema import UserCreate, UserLogin
 from config.logging_config import app_logger
+from middleware.rate_limiter import client_ip
 from utils.exceptions import AppException
 
 
@@ -44,11 +45,13 @@ def fazer_login(n_clicks, email, password):
 
         with get_db_session() as db:
             auth_service = AuthService(db)
-            token_response = auth_service.authenticate_user(login_data)
+            # P1: IP real alimenta o bucket anti-força-bruta.
+            token_response = auth_service.authenticate_user(login_data, client_ip())
 
         auth_data = {
             "authenticated": True,
             "token": token_response.access_token,
+            "refresh_token": token_response.refresh_token,
             "user_id": token_response.user_id,
             "email": token_response.email,
             "name": token_response.name or token_response.email,
@@ -127,7 +130,8 @@ def fazer_registro(n_clicks, name, email, password, password_confirm):
 
         with get_db_session() as db:
             auth_service = AuthService(db)
-            auth_service.register_user(register_data)
+            # P1: IP real alimenta o bucket anti-abuso de registro.
+            auth_service.register_user(register_data, client_ip())
 
         app_logger.info("Novo usuário registrado (detalhes no audit log).")
 
@@ -160,8 +164,15 @@ def fazer_registro(n_clicks, name, email, password, password_confirm):
     prevent_initial_call=True,
 )
 def fazer_logout(n_clicks, auth_data):
-    """Realiza logout do usuário."""
+    """Logout com revogação server-side da árvore de refresh (P1)."""
     if n_clicks and auth_data:
+        try:
+            user_id = auth_data.get("user_id")
+            if user_id:
+                with get_db_session() as db:
+                    AuthService(db).logout(int(user_id))
+        except Exception as e:
+            app_logger.error(f"Erro no logout server-side: {e}")
         app_logger.info("Logout realizado (detalhes no audit log).")
         return True, "/login"
 

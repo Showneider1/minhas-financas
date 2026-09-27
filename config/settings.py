@@ -64,6 +64,11 @@ class Settings(BaseSettings):
     # ===============================
     RATE_LIMIT_LOGIN_ATTEMPTS: int = 5
     RATE_LIMIT_WINDOW_SECONDS: int = 300
+    # P1 segurança: buckets por IP + HTTP global (Dash).
+    RATE_LIMIT_LOGIN_PER_IP: int = 30
+    RATE_LIMIT_REGISTER_PER_HOUR: int = 20
+    RATE_LIMIT_HTTP_PER_MINUTE: int = 300
+    RATE_LIMIT_HTTP_ENABLED: bool = True
     
     # ===============================
     # FEATURES

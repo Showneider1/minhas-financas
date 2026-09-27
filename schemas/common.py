@@ -64,6 +64,8 @@ class TokenResponse(BaseModel):
     user_id: int
     email: str
     name: str = ""
+    # P1: refresh persistido no servidor (rotação/denylist); opcional p/ compat.
+    refresh_token: Optional[str] = None
 
 
 class FilterBase(BaseModel):

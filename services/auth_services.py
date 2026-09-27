@@ -1,10 +1,12 @@
 """
 Serviço de autenticação e autorização.
 """
+from typing import Optional
 from sqlalchemy.orm import Session
 from config.security import (
     hash_password,
     verify_password,
+    verify_token,
     create_access_token,
 )
 from config.settings import settings
@@ -33,10 +35,22 @@ class AuthService:
         self.db = db
         self.user_repo = UserRepository(db)
     
-    def register_user(self, data: UserCreate) -> User:
+    def register_user(self, data: UserCreate, client_ip: Optional[str] = None) -> User:
         """
-        Registra novo usuário.
+        Registra novo usuário (com bucket anti-abuso por IP — P1).
         """
+        from middleware.rate_limiter import hit as _hit
+
+        allowed, retry = _hit(
+            "register", f"ip:{client_ip or 'unknown'}",
+            settings.RATE_LIMIT_REGISTER_PER_HOUR, 3600,
+        )
+        if not allowed:
+            raise AuthenticationError(
+                message="Muitas contas criadas a partir deste endereço. "
+                        f"Tente novamente em {retry} segundos.",
+                code="RATE_LIMIT_REGISTER",
+            )
         # Verifica se email já existe
         if self.user_repo.email_exists(data.email):
             app_logger.warning(f"Tentativa de registro com email existente: {data.email}")
@@ -66,17 +80,31 @@ class AuthService:
         
         return user
     
-    def authenticate_user(self, data: UserLogin) -> TokenResponse:
+    def authenticate_user(self, data: UserLogin, client_ip: Optional[str] = None) -> TokenResponse:
         """
-        Autentica usuário e retorna token JWT.
+        Autentica usuário e retorna par access + refresh (P1: refresh persistido).
+        Buckets: por email (legado) E por IP (anti-força-bruta distribuída).
         """
-        # Verifica rate limit de login
+        from middleware.rate_limiter import hit as _hit
+        from config.security import issue_refresh_token
+
+        # Verifica rate limit de login (email + IP)
         allowed, retry_after = rate_limiter.check_login_attempts(data.email)
         if not allowed:
             app_logger.warning(f"Rate limit de login excedido: {data.email}")
             raise AuthenticationError(
                 message=f"Muitas tentativas de login. Tente novamente em {retry_after} segundos.",
                 code="RATE_LIMIT_LOGIN",
+            )
+        ip_allowed, ip_retry = _hit(
+            "login", f"ip:{client_ip or 'unknown'}",
+            settings.RATE_LIMIT_LOGIN_PER_IP, settings.RATE_LIMIT_WINDOW_SECONDS,
+        )
+        if not ip_allowed:
+            raise AuthenticationError(
+                message="Muitas tentativas a partir deste endereço. "
+                        f"Tente novamente em {ip_retry} segundos.",
+                code="RATE_LIMIT_LOGIN_IP",
             )
         
         # Busca usuário
@@ -108,8 +136,9 @@ class AuthService:
         # Atualiza último login
         self.user_repo.update_last_login(user.id)
         
-        # Gera tokens
+        # Gera tokens (P1: refresh persistido p/ rotação/denylist server-side)
         access_token = create_access_token({"sub": str(user.id)})
+        refresh_token = issue_refresh_token(self.db, user.id)
         
         app_logger.info(f"Login bem-sucedido: {user.id} - {user.email}")
         audit_log.log_login(user.id, user.email, success=True)
@@ -121,4 +150,32 @@ class AuthService:
             user_id=user.id,
             email=user.email,
             name=user.name or "",
+            refresh_token=refresh_token,
         )
+
+    def refresh_session(self, refresh_token: str) -> TokenResponse:
+        """Rotação de sessão: refresh vivo → par novo (P1)."""
+        from config.security import refresh_session as _rotate
+
+        access, new_refresh = _rotate(self.db, refresh_token)
+        payload_user = self.user_repo.get_by_id(verify_token(access))
+        return TokenResponse(
+            access_token=access,
+            token_type="bearer",
+            expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            user_id=payload_user.id if payload_user else 0,
+            email=payload_user.email if payload_user else "",
+            name=(payload_user.name if payload_user else "") or "",
+            refresh_token=new_refresh,
+        )
+
+    def logout(self, user_id: int) -> int:
+        """Logout server-side: revoga a árvore de refresh do usuário (P1)."""
+        from config.security import revoke_all_refresh_tokens
+
+        count = revoke_all_refresh_tokens(self.db, user_id)
+        audit_log.log_action(
+            action="user.logout", user_id=user_id,
+            details={"revoked_refresh": count},
+        )
+        return count

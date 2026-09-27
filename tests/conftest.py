@@ -22,6 +22,8 @@ from database.models.scheduled_bill import (  # noqa: F401
     ScheduledBill, BillType, BillStatus, BillRecurrence,
 )
 from database.models.password_reset_token import PasswordResetToken  # noqa: F401
+from database.models.rate_limit import RateLimitHit  # noqa: F401
+from database.models.refresh_token import RefreshToken  # noqa: F401
 
 
 @pytest.fixture(scope="function")
@@ -45,6 +47,21 @@ def db(db_engine) -> Session:
     yield session
     session.rollback()
     session.close()
+
+
+@pytest.fixture
+def mem_factory(db_engine):
+    """Factory de sessões :memory: p/ subsistemas com engine própria."""
+    return sessionmaker(bind=db_engine, autocommit=False, autoflush=False)
+
+
+@pytest.fixture
+def isolated_limiter(mem_factory, monkeypatch):
+    """Redireciona TODO o I/O do rate limiter p/ :memory: (não toca o dev DB)."""
+    from middleware import rate_limiter as rl
+
+    monkeypatch.setattr(rl, "SessionLocal", mem_factory)
+    return mem_factory
 
 
 @pytest.fixture

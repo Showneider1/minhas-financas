@@ -90,6 +90,8 @@ def init_db():
         import database.models.scheduled_bill
         import database.models.investment
         import database.models.password_reset_token  # noqa: F401 — registro no metadata
+        import database.models.rate_limit  # noqa: F401 — registro no metadata
+        import database.models.refresh_token  # noqa: F401 — registro no metadata
         
         logger.info("Recriando/Verificando tabelas do banco de dados...")
         Base.metadata.create_all(bind=engine)

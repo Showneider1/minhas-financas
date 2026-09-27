@@ -5,6 +5,10 @@ Gerencia roteamento e layout principal.
 from dash import dcc, html, Input, Output
 import dash_bootstrap_components as dbc
 from app import app, server
+from middleware.http_rate_limit import init_http_rate_limit
+
+# P1 segurança: rajadas no endpoint de escrita retornam HTTP 429 por IP.
+init_http_rate_limit(server)
 from components.sidebar import sidebar, modal_novo_lancamento
 from pages import (
     dashboard_page,

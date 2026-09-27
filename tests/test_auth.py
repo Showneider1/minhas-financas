@@ -11,7 +11,7 @@ from utils.exceptions import EmailAlreadyExistsError, InvalidCredentialsError
 import pytest
 
 
-def test_register_and_login_roundtrip(db):
+def test_register_and_login_roundtrip(db, isolated_limiter):
     svc = AuthService(db)
     user = svc.register_user(UserCreate(
         name="Maria Silva", email="maria@ex.com", password="Segura123"))
@@ -23,7 +23,7 @@ def test_register_and_login_roundtrip(db):
     assert verify_token(token.access_token) == user.id
 
 
-def test_login_wrong_password_denied(db):
+def test_login_wrong_password_denied(db, isolated_limiter):
     svc = AuthService(db)
     svc.register_user(UserCreate(
         name="Joao Souza", email="joao@ex.com", password="Segura123"))
@@ -31,13 +31,13 @@ def test_login_wrong_password_denied(db):
         svc.authenticate_user(UserLogin(email="joao@ex.com", password="Errada123"))
 
 
-def test_login_unknown_email_denied(db):
+def test_login_unknown_email_denied(db, isolated_limiter):
     with pytest.raises(InvalidCredentialsError):
         AuthService(db).authenticate_user(
             UserLogin(email="fantasma@ex.com", password="Qualquer123"))
 
 
-def test_register_duplicate_email_denied(db):
+def test_register_duplicate_email_denied(db, isolated_limiter):
     svc = AuthService(db)
     svc.register_user(UserCreate(
         name="Ana Lima", email="ana@ex.com", password="Segura123"))

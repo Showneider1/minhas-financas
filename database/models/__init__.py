@@ -11,6 +11,8 @@ from database.models.investment import Asset, InvestmentOperation, AssetType, Op
 from database.models.goal import Goal, GoalStatus, GoalCategory
 from database.models.scheduled_bill import ScheduledBill, BillType, BillStatus, BillRecurrence
 from database.models.password_reset_token import PasswordResetToken
+from database.models.rate_limit import RateLimitHit
+from database.models.refresh_token import RefreshToken
 
 __all__ = [
     "User",
@@ -22,4 +24,6 @@ __all__ = [
         "Goal", "GoalStatus", "GoalCategory",
     "ScheduledBill", "BillType", "BillStatus", "BillRecurrence",
     "PasswordResetToken",
+    "RateLimitHit",
+    "RefreshToken",
 ]

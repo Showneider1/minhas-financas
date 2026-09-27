@@ -54,8 +54,11 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
 
 
 def create_refresh_token(data: dict) -> str:
-    """Cria JWT refresh token (vida mais longa)."""
+    """Cria JWT refresh token (vida mais longa, com `jti` para denylist)."""
+    import uuid
+
     to_encode = data.copy()
+    to_encode.setdefault("jti", str(uuid.uuid4()))
     expire    = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
     to_encode.update({
         "exp":  expire,
@@ -218,3 +221,113 @@ def verify_refresh_token(token: str) -> Optional[int]:
         except (ValueError, TypeError):
             return None
     return None
+
+
+# ------------------------------------------------------------------
+# Refresh rotation + denylist server-side (P1 — Fase 3)
+# ------------------------------------------------------------------
+
+def _refresh_expires_at(payload: dict):
+    exp = payload.get("exp")
+    if isinstance(exp, datetime):
+        return exp
+    return datetime.fromtimestamp(int(exp), tz=timezone.utc)
+
+
+def issue_refresh_token(db, user_id: int) -> str:
+    """Emite refresh persistindo o `jti` (sessão rastreável/revogável)."""
+    from database.models.refresh_token import RefreshToken
+
+    token = create_refresh_token({"sub": str(user_id)})
+    payload = decode_token(token)
+    db.add(RefreshToken(
+        jti=payload["jti"],
+        user_id=user_id,
+        expires_at=_refresh_expires_at(payload),
+        revoked=False,
+    ))
+    db.commit()
+    return token
+
+
+def verify_live_refresh_token(db, token: str) -> Optional[int]:
+    """Refresh válido se: assinatura+tipo+expiração OK E `jti` vivo no servidor."""
+    from database.models.refresh_token import RefreshToken
+
+    payload = decode_token(token)
+    if not payload or payload.get("type") != "refresh":
+        return None
+    row = db.query(RefreshToken).filter(
+        RefreshToken.jti == payload.get("jti")
+    ).first()
+    if not row or row.revoked:
+        return None
+    try:
+        return int(payload.get("sub"))
+    except (ValueError, TypeError):
+        return None
+
+
+def revoke_all_refresh_tokens(db, user_id: int) -> int:
+    """Revoga a árvore inteira de sessões do usuário (logout / roubo)."""
+    from database.models.refresh_token import RefreshToken
+
+    count = (
+        db.query(RefreshToken)
+        .filter(
+            RefreshToken.user_id == user_id,
+            RefreshToken.revoked.is_(False),
+        )
+        .update({"revoked": True}, synchronize_session=False)
+    )
+    db.commit()
+    return count
+
+
+def refresh_session(db, refresh_token: str):
+    """Rotação: valida o refresh vivo, revoga (replaced_by) e emite par novo.
+
+    Reuso de token revogado/inexistente com assinatura válida = indício de
+    roubo → revoga TODA a árvore do usuário e nega (401 semântico via
+    AuthenticationError do chamador).
+    """
+    from database.models.refresh_token import RefreshToken
+    from utils.exceptions import AuthenticationError
+
+    payload = decode_token(refresh_token)
+    if not payload or payload.get("type") != "refresh":
+        raise AuthenticationError("Refresh token inválido.", code="INVALID_REFRESH")
+    try:
+        user_id = int(payload.get("sub"))
+    except (ValueError, TypeError):
+        raise AuthenticationError("Refresh token inválido.", code="INVALID_REFRESH")
+
+    row = db.query(RefreshToken).filter(
+        RefreshToken.jti == payload.get("jti")
+    ).first()
+    if not row or row.revoked:
+        # Possível roubo: derruba todas as sessões do dono alegado.
+        try:
+            revoke_all_refresh_tokens(db, user_id)
+        except Exception:
+            db.rollback()
+        raise AuthenticationError(
+            "Sessão revogada — faça login novamente.", code="REVOKED_SESSION"
+        )
+
+    new_refresh = create_refresh_token({"sub": str(user_id)})
+    new_payload = decode_token(new_refresh)
+    try:
+        db.add(RefreshToken(
+            jti=new_payload["jti"],
+            user_id=user_id,
+            expires_at=_refresh_expires_at(new_payload),
+            revoked=False,
+        ))
+        row.revoked = True
+        row.replaced_by = new_payload["jti"]
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return create_access_token({"sub": str(user_id)}), new_refresh
