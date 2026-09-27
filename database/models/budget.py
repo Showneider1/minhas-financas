@@ -1,17 +1,26 @@
 """
 Modelo de Metas (Budget).
 """
+
+from datetime import datetime, timezone
+
 from sqlalchemy import (
-    Column, Integer, ForeignKey, DateTime, UniqueConstraint, Numeric,
     CheckConstraint,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
+
 from database.base import Base
-from datetime import datetime, timezone
 
 
 def _utcnow():
     return datetime.now(timezone.utc)
+
 
 class Budget(Base):
     __tablename__ = "budgets"
@@ -20,20 +29,20 @@ class Budget(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     category_id = Column(Integer, ForeignKey("categories.id", ondelete="CASCADE"), nullable=False)
     amount = Column(Numeric(12, 2), nullable=False)  # Valor limite (nunca Float)
-    
+
     # Controle Temporal (Meta Mensal)
-    month = Column(Integer, nullable=False) # 1 a 12
+    month = Column(Integer, nullable=False)  # 1 a 12
     year = Column(Integer, nullable=False)  # Ex: 2026
-    
+
     created_at = Column(DateTime(timezone=True), default=_utcnow)
-    
+
     # Relacionamentos
     user = relationship("User")
     category = relationship("Category")
 
     # Garante que só existe UMA meta para a mesma categoria no mesmo mês
     __table_args__ = (
-        UniqueConstraint('user_id', 'category_id', 'month', 'year', name='unique_budget_per_month'),
-        CheckConstraint('month >= 1 AND month <= 12', name='ck_budget_month'),
-        CheckConstraint('amount > 0', name='ck_budget_amount_positive'),
+        UniqueConstraint("user_id", "category_id", "month", "year", name="unique_budget_per_month"),
+        CheckConstraint("month >= 1 AND month <= 12", name="ck_budget_month"),
+        CheckConstraint("amount > 0", name="ck_budget_amount_positive"),
     )

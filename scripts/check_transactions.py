@@ -12,7 +12,9 @@ conn = sqlite3.connect(str(db_path))
 cursor = conn.cursor()
 
 # Verifica transações
-cursor.execute('SELECT id, description, base_amount, transaction_type, due_date, paid_date, user_id FROM transactions')
+cursor.execute(
+    "SELECT id, description, base_amount, transaction_type, due_date, paid_date, user_id FROM transactions"
+)
 transactions = cursor.fetchall()
 
 print(f"\n📂 Banco: {db_path.absolute()}")
@@ -20,7 +22,9 @@ print(f"📊 Total de transações: {len(transactions)}\n")
 
 if transactions:
     for t in transactions:
-        print(f"ID: {t[0]} | {t[1]} | R$ {t[2]} | Tipo: {t[3]} | Vencimento: {t[4]} | Pago: {t[5]} | User: {t[6]}")
+        print(
+            f"ID: {t[0]} | {t[1]} | R$ {t[2]} | Tipo: {t[3]} | Vencimento: {t[4]} | Pago: {t[5]} | User: {t[6]}"
+        )
 else:
     print("❌ Nenhuma transação encontrada!")
 

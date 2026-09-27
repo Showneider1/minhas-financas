@@ -5,6 +5,7 @@
 - render_as_batch=True (ALTERs seguros no SQLite dev).
 - compare_type/compare_server_default=True (autogenerate fiel p/ Postgres).
 """
+
 from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config, pool
@@ -24,8 +25,8 @@ from config.settings import settings  # noqa: E402
 
 config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
 
-from database.base import Base  # noqa: E402
 import database.models  # noqa: E402,F401 — registra todos os models
+from database.base import Base  # noqa: E402
 
 target_metadata = Base.metadata
 

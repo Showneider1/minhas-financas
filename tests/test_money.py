@@ -3,11 +3,12 @@
 Regras: sem float, sem arredondamento intermediário, escala explícita,
 soma/subtração/multiplicação/divisão e rateio exatos.
 """
+
 from decimal import Decimal
 
 import pytest
 
-from utils.money import to_money2, to_qty4, split_money, money_sum, avg_price
+from utils.money import avg_price, money_sum, split_money, to_money2, to_qty4
 
 
 def test_to_money2_quantizes_half_up():

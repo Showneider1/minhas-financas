@@ -4,6 +4,7 @@
 - Login/register via AuthService com IP: bloqueio após o limite.
 - Hook HTTP real: rajada no /_dash-update-component → 429 + Retry-After.
 """
+
 import pytest
 
 from config.settings import settings
@@ -37,40 +38,39 @@ def test_login_ip_bucket_blocks_burst(db, isolated_limiter, monkeypatch):
     for i in range(3):
         with pytest.raises(Exception):
             svc.authenticate_user(
-                UserLogin(email=f"nope{i}@ex.com", password="Errada123"),
-                client_ip=ip)
+                UserLogin(email=f"nope{i}@ex.com", password="Errada123"), client_ip=ip
+            )
     with pytest.raises(AuthenticationError) as exc:
-        svc.authenticate_user(
-            UserLogin(email="nope9@ex.com", password="Errada123"), client_ip=ip)
+        svc.authenticate_user(UserLogin(email="nope9@ex.com", password="Errada123"), client_ip=ip)
     assert exc.value.code == "RATE_LIMIT_LOGIN_IP"
     # Outro IP segue livre.
     with pytest.raises(Exception) as exc2:
         svc.authenticate_user(
-            UserLogin(email="nope9@ex.com", password="Errada123"),
-            client_ip="203.0.113.9")
+            UserLogin(email="nope9@ex.com", password="Errada123"), client_ip="203.0.113.9"
+        )
     assert exc2.value.code != "RATE_LIMIT_LOGIN_IP"
 
 
-def test_register_ip_bucket_blocks_mass_creation(
-    db, sample_user, isolated_limiter, monkeypatch
-):
+def test_register_ip_bucket_blocks_mass_creation(db, sample_user, isolated_limiter, monkeypatch):
     monkeypatch.setattr(settings, "RATE_LIMIT_REGISTER_PER_HOUR", 2)
     svc = AuthService(db)
     ip = "198.51.100.8"
-    svc.register_user(UserCreate(name="Um Silva", email="um-r1@ex.com",
-                                 password="Segura123"), client_ip=ip)
-    svc.register_user(UserCreate(name="Dois Souza", email="dois-r1@ex.com",
-                                 password="Segura123"), client_ip=ip)
+    svc.register_user(
+        UserCreate(name="Um Silva", email="um-r1@ex.com", password="Segura123"), client_ip=ip
+    )
+    svc.register_user(
+        UserCreate(name="Dois Souza", email="dois-r1@ex.com", password="Segura123"), client_ip=ip
+    )
     with pytest.raises(AuthenticationError) as exc:
-        svc.register_user(UserCreate(name="Tres Lima", email="tres-r1@ex.com",
-                                     password="Segura123"), client_ip=ip)
+        svc.register_user(
+            UserCreate(name="Tres Lima", email="tres-r1@ex.com", password="Segura123"), client_ip=ip
+        )
     assert exc.value.code == "RATE_LIMIT_REGISTER"
 
 
 def test_http_hook_returns_429_on_burst(db_engine, isolated_limiter, monkeypatch):
-    """ Rajada real no endpoint Dash → HTTP 429 + Retry-After. """
+    """Rajada real no endpoint Dash → HTTP 429 + Retry-After."""
     import myindex  # noqa: F401 — registra app/callbacks
-
     from app import server
 
     monkeypatch.setattr(settings, "RATE_LIMIT_HTTP_ENABLED", True)

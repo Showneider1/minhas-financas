@@ -1,44 +1,48 @@
 """
 Schemas comuns reutilizáveis.
 """
-from typing import TypeVar, Generic, Optional, List, Any
-from pydantic import BaseModel, Field
-from datetime import datetime
 
+from datetime import datetime
+from typing import Any, Generic, TypeVar
+
+from pydantic import BaseModel, Field
 
 # TypeVar para responses paginados genéricos
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 class SuccessResponse(BaseModel):
     """Response padrão de sucesso."""
+
     success: bool = True
     message: str
-    data: Optional[Any] = None
+    data: Any | None = None
 
 
 class ErrorResponse(BaseModel):
     """Response padrão de erro."""
+
     success: bool = False
     error: str
-    details: Optional[dict] = None
+    details: dict | None = None
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 
 class PaginatedResponse(BaseModel, Generic[T]):
     """Response paginado genérico."""
-    items: List[T]
+
+    items: list[T]
     total: int
     page: int
     page_size: int
     total_pages: int
     has_next: bool
     has_previous: bool
-    
+
     @classmethod
     def create(
         cls,
-        items: List[T],
+        items: list[T],
         total: int,
         page: int,
         page_size: int,
@@ -58,6 +62,7 @@ class PaginatedResponse(BaseModel, Generic[T]):
 
 class TokenResponse(BaseModel):
     """Response de autenticação com token."""
+
     access_token: str
     token_type: str = "bearer"
     expires_in: int  # segundos
@@ -65,12 +70,13 @@ class TokenResponse(BaseModel):
     email: str
     name: str = ""
     # P1: refresh persistido no servidor (rotação/denylist); opcional p/ compat.
-    refresh_token: Optional[str] = None
+    refresh_token: str | None = None
 
 
 class FilterBase(BaseModel):
     """Base para filtros com paginação."""
+
     page: int = Field(default=1, ge=1)
     page_size: int = Field(default=50, ge=1, le=200)
-    sort_by: Optional[str] = None
+    sort_by: str | None = None
     sort_desc: bool = False

@@ -1,12 +1,13 @@
 """
 Funções de segurança: hash de senhas, JWT tokens, etc.
 """
+
+from datetime import datetime, timedelta, timezone
+
 import bcrypt
 import jwt
-from datetime import datetime, timedelta, timezone
-from typing import Optional, Dict
-from config.settings import settings
 
+from config.settings import settings
 
 # ──────────────────────────────────────────────────────────────────
 # BUG 8 CORRIGIDO (security.py): todas as chamadas a datetime.utcnow()
@@ -19,9 +20,10 @@ from config.settings import settings
 # PASSWORD HASHING
 # ===============================
 
+
 def hash_password(password: str) -> str:
     """Gera hash bcrypt da senha."""
-    salt   = bcrypt.gensalt()
+    salt = bcrypt.gensalt()
     hashed = bcrypt.hashpw(password.encode("utf-8"), salt)
     return hashed.decode("utf-8")
 
@@ -38,18 +40,20 @@ def verify_password(password: str, hashed_password: str) -> bool:
 # JWT TOKENS
 # ===============================
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+
+def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     """Cria JWT access token."""
     to_encode = data.copy()
-    expire    = datetime.now(timezone.utc) + (
-        expires_delta if expires_delta
-        else timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = datetime.now(timezone.utc) + (
+        expires_delta if expires_delta else timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
-    to_encode.update({
-        "exp":  expire,
-        "iat":  datetime.now(timezone.utc),
-        "type": "access",
-    })
+    to_encode.update(
+        {
+            "exp": expire,
+            "iat": datetime.now(timezone.utc),
+            "type": "access",
+        }
+    )
     return jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
 
@@ -59,16 +63,18 @@ def create_refresh_token(data: dict) -> str:
 
     to_encode = data.copy()
     to_encode.setdefault("jti", str(uuid.uuid4()))
-    expire    = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
-    to_encode.update({
-        "exp":  expire,
-        "iat":  datetime.now(timezone.utc),
-        "type": "refresh",
-    })
+    expire = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    to_encode.update(
+        {
+            "exp": expire,
+            "iat": datetime.now(timezone.utc),
+            "type": "refresh",
+        }
+    )
     return jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
 
-def decode_token(token: str) -> Optional[Dict]:
+def decode_token(token: str) -> dict | None:
     """Decodifica e valida JWT token. Retorna payload ou None se inválido."""
     try:
         return jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
@@ -78,7 +84,7 @@ def decode_token(token: str) -> Optional[Dict]:
         return None
 
 
-def verify_token(token: str) -> Optional[int]:
+def verify_token(token: str) -> int | None:
     """Verifica token e retorna user_id (int) ou None se inválido."""
     payload = decode_token(token)
     if not payload:
@@ -109,9 +115,7 @@ def generate_password_reset_token(user_id: int) -> str:
     """
     import uuid
 
-    expire = datetime.now(timezone.utc) + timedelta(
-        minutes=settings.RESET_TOKEN_EXPIRE_MINUTES
-    )
+    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.RESET_TOKEN_EXPIRE_MINUTES)
     to_encode = {
         "sub": str(user_id),
         "type": "password_reset",
@@ -131,7 +135,8 @@ def issue_password_reset_token(db, user_id: int) -> str:
     # PyJWT devolve `exp` como timestamp numérico — converte para datetime.
     exp_ts = payload["exp"]
     expires_at = (
-        exp_ts if isinstance(exp_ts, datetime)
+        exp_ts
+        if isinstance(exp_ts, datetime)
         else datetime.fromtimestamp(int(exp_ts), tz=timezone.utc)
     )
     record = PasswordResetToken(
@@ -145,16 +150,14 @@ def issue_password_reset_token(db, user_id: int) -> str:
     return token
 
 
-def _reset_record(db, payload) -> Optional[object]:
+def _reset_record(db, payload) -> object | None:
     """Busca registro do `jti` válido (não usado, não expirado)."""
     from database.models.password_reset_token import PasswordResetToken
 
     jti = payload.get("jti")
     if not jti:
         return None
-    record = db.query(PasswordResetToken).filter(
-        PasswordResetToken.jti == jti
-    ).first()
+    record = db.query(PasswordResetToken).filter(PasswordResetToken.jti == jti).first()
     if not record or record.used:
         return None
     expires_at = record.expires_at
@@ -166,7 +169,7 @@ def _reset_record(db, payload) -> Optional[object]:
     return record
 
 
-def verify_password_reset_token(db, token: str) -> Optional[int]:
+def verify_password_reset_token(db, token: str) -> int | None:
     """Valida reset token (tipo + assinatura + expiração + `jti` não usado).
 
     Retorna user_id ou None. NÃO marca como usado (ver consume_...).
@@ -186,7 +189,7 @@ def verify_password_reset_token(db, token: str) -> Optional[int]:
         return None
 
 
-def consume_password_reset_token(db, token: str) -> Optional[int]:
+def consume_password_reset_token(db, token: str) -> int | None:
     """Consome reset token (marca `jti` como usado, atômico). Reuso negado."""
     payload = decode_token(token)
     if not payload or payload.get("type") != "password_reset":
@@ -203,7 +206,7 @@ def consume_password_reset_token(db, token: str) -> Optional[int]:
     return user_id
 
 
-def verify_refresh_token(token: str) -> Optional[int]:
+def verify_refresh_token(token: str) -> int | None:
     """Verifica refresh token e retorna user_id (só `type == refresh`).
 
     P0: separação absoluta — refresh nunca passa em verify_token e
@@ -227,6 +230,7 @@ def verify_refresh_token(token: str) -> Optional[int]:
 # Refresh rotation + denylist server-side (P1 — Fase 3)
 # ------------------------------------------------------------------
 
+
 def _refresh_expires_at(payload: dict):
     exp = payload.get("exp")
     if isinstance(exp, datetime):
@@ -240,26 +244,26 @@ def issue_refresh_token(db, user_id: int) -> str:
 
     token = create_refresh_token({"sub": str(user_id)})
     payload = decode_token(token)
-    db.add(RefreshToken(
-        jti=payload["jti"],
-        user_id=user_id,
-        expires_at=_refresh_expires_at(payload),
-        revoked=False,
-    ))
+    db.add(
+        RefreshToken(
+            jti=payload["jti"],
+            user_id=user_id,
+            expires_at=_refresh_expires_at(payload),
+            revoked=False,
+        )
+    )
     db.commit()
     return token
 
 
-def verify_live_refresh_token(db, token: str) -> Optional[int]:
+def verify_live_refresh_token(db, token: str) -> int | None:
     """Refresh válido se: assinatura+tipo+expiração OK E `jti` vivo no servidor."""
     from database.models.refresh_token import RefreshToken
 
     payload = decode_token(token)
     if not payload or payload.get("type") != "refresh":
         return None
-    row = db.query(RefreshToken).filter(
-        RefreshToken.jti == payload.get("jti")
-    ).first()
+    row = db.query(RefreshToken).filter(RefreshToken.jti == payload.get("jti")).first()
     if not row or row.revoked:
         return None
     try:
@@ -302,28 +306,26 @@ def refresh_session(db, refresh_token: str):
     except (ValueError, TypeError):
         raise AuthenticationError("Refresh token inválido.", code="INVALID_REFRESH")
 
-    row = db.query(RefreshToken).filter(
-        RefreshToken.jti == payload.get("jti")
-    ).first()
+    row = db.query(RefreshToken).filter(RefreshToken.jti == payload.get("jti")).first()
     if not row or row.revoked:
         # Possível roubo: derruba todas as sessões do dono alegado.
         try:
             revoke_all_refresh_tokens(db, user_id)
         except Exception:
             db.rollback()
-        raise AuthenticationError(
-            "Sessão revogada — faça login novamente.", code="REVOKED_SESSION"
-        )
+        raise AuthenticationError("Sessão revogada — faça login novamente.", code="REVOKED_SESSION")
 
     new_refresh = create_refresh_token({"sub": str(user_id)})
     new_payload = decode_token(new_refresh)
     try:
-        db.add(RefreshToken(
-            jti=new_payload["jti"],
-            user_id=user_id,
-            expires_at=_refresh_expires_at(new_payload),
-            revoked=False,
-        ))
+        db.add(
+            RefreshToken(
+                jti=new_payload["jti"],
+                user_id=user_id,
+                expires_at=_refresh_expires_at(new_payload),
+                revoked=False,
+            )
+        )
         row.revoked = True
         row.replaced_by = new_payload["jti"]
         db.commit()

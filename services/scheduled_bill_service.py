@@ -5,15 +5,17 @@
   caixa corretos). Idempotente via `scheduled_bill_id` (sem duplicar em retry).
 - Isolamento por user_id em todos os métodos.
 """
-from datetime import datetime, timezone, date, timedelta
-from dateutil.relativedelta import relativedelta
-from typing import List, Optional, Dict, Any
-from sqlalchemy.orm import Session
-from sqlalchemy import and_
 
-from database.models.scheduled_bill import ScheduledBill, BillType, BillStatus, BillRecurrence
+from datetime import date, datetime, timedelta, timezone
+from typing import Any
+
+from dateutil.relativedelta import relativedelta
+from sqlalchemy import and_
+from sqlalchemy.orm import Session
+
 from config.logging_config import app_logger
-from utils.money import to_money2, money_sum
+from database.models.scheduled_bill import BillRecurrence, BillStatus, BillType, ScheduledBill
+from utils.money import money_sum, to_money2
 
 
 class ScheduledBillService:
@@ -41,12 +43,12 @@ class ScheduledBillService:
         amount,
         bill_type: BillType,
         due_date: date,
-        account_id: Optional[int] = None,
-        category_id: Optional[int] = None,
-        description: Optional[str] = None,
+        account_id: int | None = None,
+        category_id: int | None = None,
+        description: str | None = None,
         recurrence: BillRecurrence = BillRecurrence.NONE,
         reminder_days_before: int = 3,
-        notes: Optional[str] = None,
+        notes: str | None = None,
     ) -> ScheduledBill:
         """Cria uma nova conta a pagar ou receber.
 
@@ -115,7 +117,7 @@ class ScheduledBillService:
         )
         return bill
 
-    def get_bill(self, bill_id: int, user_id: int) -> Optional[ScheduledBill]:
+    def get_bill(self, bill_id: int, user_id: int) -> ScheduledBill | None:
         """Retorna uma conta pelo ID garantindo pertencer ao usuario."""
         return (
             self.db.query(ScheduledBill)
@@ -132,11 +134,11 @@ class ScheduledBillService:
     def list_bills(
         self,
         user_id: int,
-        bill_type: Optional[BillType] = None,
-        status: Optional[BillStatus] = None,
-        due_from: Optional[date] = None,
-        due_to: Optional[date] = None,
-    ) -> List[ScheduledBill]:
+        bill_type: BillType | None = None,
+        status: BillStatus | None = None,
+        due_from: date | None = None,
+        due_to: date | None = None,
+    ) -> list[ScheduledBill]:
         """Lista contas do usuario com filtros opcionais."""
         query = self.db.query(ScheduledBill).filter(
             and_(
@@ -159,8 +161,8 @@ class ScheduledBillService:
         bill_id: int,
         user_id: int,
         paid_amount=None,
-        paid_date: Optional[date] = None,
-    ) -> Optional[ScheduledBill]:
+        paid_date: date | None = None,
+    ) -> ScheduledBill | None:
         """Marca conta como paga/recebida e GERA o Transaction correspondente.
 
         Geração do lançamento (P0 — rastreabilidade):
@@ -209,9 +211,7 @@ class ScheduledBillService:
             self.db.rollback()
             raise
 
-        app_logger.info(
-            f"Conta paga: id={bill_id} valor={effective:.2f} data={bill.paid_date}"
-        )
+        app_logger.info(f"Conta paga: id={bill_id} valor={effective:.2f} data={bill.paid_date}")
 
         # Se recorrente, gera proxima parcela automaticamente
         if bill.recurrence != BillRecurrence.NONE:
@@ -221,13 +221,11 @@ class ScheduledBillService:
 
     def _ensure_transaction(self, bill: ScheduledBill):
         """Cria o Transaction do pagamento (se ainda não existir)."""
-        from database.models.transaction import Transaction, TransactionStatus
         from database.models.category import TransactionType
+        from database.models.transaction import Transaction, TransactionStatus
 
         existing = (
-            self.db.query(Transaction.id)
-            .filter(Transaction.scheduled_bill_id == bill.id)
-            .first()
+            self.db.query(Transaction.id).filter(Transaction.scheduled_bill_id == bill.id).first()
         )
         if existing:
             return existing
@@ -322,7 +320,7 @@ class ScheduledBillService:
         self,
         user_id: int,
         days_ahead: int = 30,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Retorna contas proximas do vencimento para o dashboard.
 
         Args:
@@ -343,7 +341,8 @@ class ScheduledBillService:
 
         # Contas vencidas
         overdue = self.list_bills(
-            user_id, status=BillStatus.OVERDUE,
+            user_id,
+            status=BillStatus.OVERDUE,
         )
 
         # Contas a vencer no periodo
@@ -358,13 +357,11 @@ class ScheduledBillService:
         due_this_week = [b for b in upcoming if b.due_date <= today + timedelta(days=7)]
 
         total_payable = money_sum(
-            b.amount for b in upcoming + overdue
-            if b.bill_type == BillType.PAYABLE
+            b.amount for b in upcoming + overdue if b.bill_type == BillType.PAYABLE
         )
         # P0: RECEIVABLE vencido também compõe o a receber (antes era ignorado).
         total_receivable = money_sum(
-            b.amount for b in upcoming + overdue
-            if b.bill_type == BillType.RECEIVABLE
+            b.amount for b in upcoming + overdue if b.bill_type == BillType.RECEIVABLE
         )
 
         def _serialize(bill: ScheduledBill) -> dict:
@@ -393,7 +390,7 @@ class ScheduledBillService:
     # RECURRENCE GENERATION                                                 #
     # ------------------------------------------------------------------ #
 
-    def _generate_next_recurrence(self, paid_bill: ScheduledBill) -> Optional[ScheduledBill]:
+    def _generate_next_recurrence(self, paid_bill: ScheduledBill) -> ScheduledBill | None:
         """Gera a proxima parcela de uma conta recorrente apos pagamento.
 
         Calcula a proxima data de vencimento baseada na frequencia.
@@ -402,10 +399,10 @@ class ScheduledBillService:
             return None
 
         delta_map = {
-            BillRecurrence.WEEKLY:    timedelta(weeks=1),
-            BillRecurrence.MONTHLY:   relativedelta(months=1),
+            BillRecurrence.WEEKLY: timedelta(weeks=1),
+            BillRecurrence.MONTHLY: relativedelta(months=1),
             BillRecurrence.QUARTERLY: relativedelta(months=3),
-            BillRecurrence.YEARLY:    relativedelta(years=1),
+            BillRecurrence.YEARLY: relativedelta(years=1),
         }
         delta = delta_map.get(paid_bill.recurrence)
         if not delta:

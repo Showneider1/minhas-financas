@@ -7,13 +7,15 @@ Repository de transações — contrato canônico (P0 — ADR-002).
 - TRANSFER excluído das agregações de receita/despesa.
 - Acesso com dono: get_owned / mark_as_paid_owned (anti-IDOR).
 """
+
 from datetime import date
 from decimal import Decimal
-from typing import List, Optional, Tuple
+
+from sqlalchemy import and_, asc, desc, func, or_
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func, and_, or_, desc, asc
+
+from database.models.category import Category, TransactionType
 from database.models.transaction import Transaction, TransactionStatus
-from database.models.category import TransactionType, Category
 from database.repositories.base_repo import BaseRepository
 from utils.money import to_money2
 
@@ -27,21 +29,26 @@ class TransactionRepository(BaseRepository[Transaction]):
     def __init__(self, db: Session):
         super().__init__(Transaction, db)
 
-    def get_with_relations(self, transaction_id: int, user_id: int) -> Optional[Transaction]:
+    def get_with_relations(self, transaction_id: int, user_id: int) -> Transaction | None:
         """Busca com Account/Category Eager + filtro de dono (anti-IDOR)."""
-        return self.db.query(Transaction).options(
-            joinedload(Transaction.category),
-            joinedload(Transaction.account),
-        ).filter(
-            Transaction.id == transaction_id,
-            Transaction.user_id == user_id,
-        ).first()
+        return (
+            self.db.query(Transaction)
+            .options(
+                joinedload(Transaction.category),
+                joinedload(Transaction.account),
+            )
+            .filter(
+                Transaction.id == transaction_id,
+                Transaction.user_id == user_id,
+            )
+            .first()
+        )
 
     def mark_as_paid(
         self,
         transaction_id: int,
         user_id: int,
-        paid_date: Optional[date] = None,
+        paid_date: date | None = None,
     ) -> bool:
         """Marca como paga sincronizando status + paid_date (idempotente).
 
@@ -61,26 +68,30 @@ class TransactionRepository(BaseRepository[Transaction]):
     def filter_transactions(
         self,
         user_id: int,
-        start_date: Optional[date] = None,
-        end_date: Optional[date] = None,
-        transaction_type: Optional[TransactionType] = None,
-        status: Optional[str] = None,   # 'PAID', 'PENDING' ou None (ALL)
-        category_ids: Optional[List[int]] = None,
-        account_ids: Optional[List[int]] = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        transaction_type: TransactionType | None = None,
+        status: str | None = None,  # 'PAID', 'PENDING' ou None (ALL)
+        category_ids: list[int] | None = None,
+        account_ids: list[int] | None = None,
         min_amount=None,
         max_amount=None,
-        search: Optional[str] = None,
-        is_recurring: Optional[bool] = None,
+        search: str | None = None,
+        is_recurring: bool | None = None,
         page: int = 1,
         page_size: int = 50,
-    ) -> Tuple[List[Transaction], int]:
+    ) -> tuple[list[Transaction], int]:
         """
         Motor de busca principal para listagens (Extrato, Relatórios).
         """
-        query = self.db.query(Transaction).options(
-            joinedload(Transaction.category),
-            joinedload(Transaction.account),
-        ).filter(Transaction.user_id == user_id)
+        query = (
+            self.db.query(Transaction)
+            .options(
+                joinedload(Transaction.category),
+                joinedload(Transaction.account),
+            )
+            .filter(Transaction.user_id == user_id)
+        )
 
         # ── 1. Filtro de Data ────────────────────────────────────────────────
         # CORREÇÃO: no modo ALL (status=None) retorna PAGOS com paid_date no
@@ -177,13 +188,13 @@ class TransactionRepository(BaseRepository[Transaction]):
     def get_filtered(
         self,
         user_id: int,
-        start_date: Optional[date],
-        end_date: Optional[date],
-        account_id: Optional[int],
-        category_id: Optional[int],
-        status: Optional[str],
-        type_: Optional[TransactionType],
-    ) -> List[Transaction]:
+        start_date: date | None,
+        end_date: date | None,
+        account_id: int | None,
+        category_id: int | None,
+        status: str | None,
+        type_: TransactionType | None,
+    ) -> list[Transaction]:
         """Wrapper simplificado para compatibilidade com o extrato_callbacks."""
         acc_ids = [account_id] if account_id else None
         cat_ids = [category_id] if category_id else None
@@ -236,15 +247,20 @@ class TransactionRepository(BaseRepository[Transaction]):
 
         return to_money2(query.scalar() or 0, where="tx_repo.sum")
 
-    def get_overdue(self, user_id: int) -> List[Transaction]:
+    def get_overdue(self, user_id: int) -> list[Transaction]:
         """Vencidas e não pagas (exclui CANCELLED)."""
         today = date.today()
-        return self.db.query(Transaction).filter(
-            Transaction.user_id == user_id,
-            Transaction.status == TransactionStatus.PENDING,
-            Transaction.paid_date.is_(None),
-            Transaction.due_date < today,
-        ).order_by(asc(Transaction.due_date)).all()
+        return (
+            self.db.query(Transaction)
+            .filter(
+                Transaction.user_id == user_id,
+                Transaction.status == TransactionStatus.PENDING,
+                Transaction.paid_date.is_(None),
+                Transaction.due_date < today,
+            )
+            .order_by(asc(Transaction.due_date))
+            .all()
+        )
 
     def get_category_totals(
         self,
@@ -254,21 +270,29 @@ class TransactionRepository(BaseRepository[Transaction]):
         end_date: date,
     ):
         """Agregação para gráficos (canônico: base_amount; só pagas)."""
-        return self.db.query(
-            Transaction.category_id,
-            Category.name,
-            Category.icon,
-            Category.color,
-            func.sum(Transaction.base_amount).label("total"),
-        ).join(
-            Category, Transaction.category_id == Category.id
-        ).filter(
-            Transaction.user_id == user_id,
-            Transaction.transaction_type == transaction_type,
-            Transaction.status == TransactionStatus.PAID,
-            Transaction.paid_date.isnot(None),
-            Transaction.paid_date >= start_date,
-            Transaction.paid_date <= end_date,
-        ).group_by(
-            Transaction.category_id, Category.name, Category.icon, Category.color,
-        ).order_by(desc("total")).all()
+        return (
+            self.db.query(
+                Transaction.category_id,
+                Category.name,
+                Category.icon,
+                Category.color,
+                func.sum(Transaction.base_amount).label("total"),
+            )
+            .join(Category, Transaction.category_id == Category.id)
+            .filter(
+                Transaction.user_id == user_id,
+                Transaction.transaction_type == transaction_type,
+                Transaction.status == TransactionStatus.PAID,
+                Transaction.paid_date.isnot(None),
+                Transaction.paid_date >= start_date,
+                Transaction.paid_date <= end_date,
+            )
+            .group_by(
+                Transaction.category_id,
+                Category.name,
+                Category.icon,
+                Category.color,
+            )
+            .order_by(desc("total"))
+            .all()
+        )

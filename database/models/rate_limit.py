@@ -4,8 +4,11 @@ Tabela operacional genérica para buckets sliding-window por (scope, key),
 ex.: ("login", "ip:1.2.3.4"), ("register", "ip:1.2.3.4").
 Criada via Alembic; nunca versionada como dado de negócio.
 """
-from sqlalchemy import Column, Integer, String, DateTime, Index
+
 from datetime import datetime, timezone
+
+from sqlalchemy import Column, DateTime, Index, Integer, String
+
 from database.base import Base
 
 
@@ -23,6 +26,4 @@ class RateLimitHit(Base):
     key = Column(String(200), nullable=False)
     attempted_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
-    __table_args__ = (
-        Index("ix_ratelimit_scope_key_at", "scope", "key", "attempted_at"),
-    )
+    __table_args__ = (Index("ix_ratelimit_scope_key_at", "scope", "key", "attempted_at"),)

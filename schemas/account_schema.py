@@ -1,35 +1,40 @@
-from pydantic import BaseModel
-from typing import Optional
 from datetime import datetime
 from decimal import Decimal
+
+from pydantic import BaseModel
+
 from database.models.account import AccountType
+
 
 class AccountBase(BaseModel):
     name: str
     account_type: AccountType
     initial_balance: Decimal = Decimal("0.00")
-    color: Optional[str] = "#2ecc71"
-    icon: Optional[str] = "bi-bank"
-    
+    color: str | None = "#2ecc71"
+    icon: str | None = "bi-bank"
+
     # Novos campos opcionais
-    credit_limit: Optional[Decimal] = Decimal("0.00")
-    closing_day: Optional[int] = None
-    due_day: Optional[int] = None
+    credit_limit: Decimal | None = Decimal("0.00")
+    closing_day: int | None = None
+    due_day: int | None = None
+
 
 class AccountCreate(AccountBase):
     pass
 
+
 class AccountUpdate(BaseModel):
     """Atualização parcial (todos opcionais)."""
 
-    name: Optional[str] = None
-    account_type: Optional[AccountType] = None
-    initial_balance: Optional[Decimal] = None
-    color: Optional[str] = None
-    icon: Optional[str] = None
-    credit_limit: Optional[Decimal] = None
-    closing_day: Optional[int] = None
-    due_day: Optional[int] = None
+    name: str | None = None
+    account_type: AccountType | None = None
+    initial_balance: Decimal | None = None
+    color: str | None = None
+    icon: str | None = None
+    credit_limit: Decimal | None = None
+    closing_day: int | None = None
+    due_day: int | None = None
+
 
 class AccountResponse(AccountBase):
     id: int
@@ -37,7 +42,7 @@ class AccountResponse(AccountBase):
     balance: Decimal
     is_active: bool
     created_at: datetime
-    updated_at: Optional[datetime]
+    updated_at: datetime | None
 
     class Config:
         from_attributes = True

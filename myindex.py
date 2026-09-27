@@ -2,60 +2,55 @@
 Arquivo principal - Entry point da aplicação.
 Gerencia roteamento e layout principal.
 """
-from dash import dcc, html, Input, Output
+
 import dash_bootstrap_components as dbc
+from dash import Input, Output, dcc, html
+
 from app import app, server
 from middleware.http_rate_limit import init_http_rate_limit
 
 # P1 segurança: rajadas no endpoint de escrita retornam HTTP 429 por IP.
 init_http_rate_limit(server)
-from components.sidebar import sidebar, modal_novo_lancamento
+from components.sidebar import modal_novo_lancamento, sidebar
+from config.logging_config import app_logger
 from pages import (
+    configuracoes_page,
     dashboard_page,
     extrato_page,
-    relatorios_page,
-    configuracoes_page,
-    login_page,
     goals_page,
+    login_page,
+    relatorios_page,
 )
-from config.logging_config import app_logger
-
 
 # ===============================
 # LAYOUT PRINCIPAL
 # ===============================
-app.layout = html.Div([
-    # URL para roteamento
-    dcc.Location(id="url", refresh=False),
-
-    # Stores globais (Memória do navegador)
-    dcc.Store(id="auth-store", storage_type="session"),
-    dcc.Store(id="store-user-id", storage_type="session"),
-
-    # === SINAIS DE ATUALIZAÇÃO ===
-    # 1. Sinal principal — lido pelos callbacks de KPIs e gráficos
-    dcc.Store(id="store-reload-dashboard", storage_type="memory"),
-
-    # 2. Sinal auxiliar — escrito por confirmar_exclusao,
-    #    propagado ao store-reload-dashboard pelo consolidador
-    dcc.Store(id="store-reload-aux", storage_type="memory"),
-
-    # 3. Guarda o ID da transação que está sendo editada
-    dcc.Store(id="store-transacao-id-editar", data=None, storage_type="memory"),
-    # =============================
-
-    dcc.Store(id="store-modal-state", storage_type="memory", data={"is_open": False}),
-
-    # Download components
-    dcc.Download(id="download-extrato"),
-    dcc.Download(id="download-dashboard"),
-
-    # Modal de novo lançamento (Global)
-    modal_novo_lancamento,
-
-    # Conteúdo renderizado (Páginas)
-    html.Div(id="page-content"),
-])
+app.layout = html.Div(
+    [
+        # URL para roteamento
+        dcc.Location(id="url", refresh=False),
+        # Stores globais (Memória do navegador)
+        dcc.Store(id="auth-store", storage_type="session"),
+        dcc.Store(id="store-user-id", storage_type="session"),
+        # === SINAIS DE ATUALIZAÇÃO ===
+        # 1. Sinal principal — lido pelos callbacks de KPIs e gráficos
+        dcc.Store(id="store-reload-dashboard", storage_type="memory"),
+        # 2. Sinal auxiliar — escrito por confirmar_exclusao,
+        #    propagado ao store-reload-dashboard pelo consolidador
+        dcc.Store(id="store-reload-aux", storage_type="memory"),
+        # 3. Guarda o ID da transação que está sendo editada
+        dcc.Store(id="store-transacao-id-editar", data=None, storage_type="memory"),
+        # =============================
+        dcc.Store(id="store-modal-state", storage_type="memory", data={"is_open": False}),
+        # Download components
+        dcc.Download(id="download-extrato"),
+        dcc.Download(id="download-dashboard"),
+        # Modal de novo lançamento (Global)
+        modal_novo_lancamento,
+        # Conteúdo renderizado (Páginas)
+        html.Div(id="page-content"),
+    ]
+)
 
 
 # ===============================
@@ -71,6 +66,7 @@ def display_page(pathname, auth_data):
 
     # P0 (IDOR): presença do store não autentica — valida assinatura/expiração.
     from config.security import verify_token
+
     token = (auth_data or {}).get("token") if isinstance(auth_data, dict) else None
     authenticated = verify_token(token) is not None if token else False
 
@@ -104,25 +100,31 @@ def display_page(pathname, auth_data):
     else:
         try:
             from components.shared.error import error_page_404
+
             return error_page_404()
         except Exception:
             return html.Div(
-                dbc.Container([
-                    html.H1("404", className="display-1 fw-bold"),
-                    html.P("Página não encontrada.", className="lead"),
-                    dbc.Button("Voltar ao Início", href="/dashboard", color="primary"),
-                ], className="py-5 text-center")
+                dbc.Container(
+                    [
+                        html.H1("404", className="display-1 fw-bold"),
+                        html.P("Página não encontrada.", className="lead"),
+                        dbc.Button("Voltar ao Início", href="/dashboard", color="primary"),
+                    ],
+                    className="py-5 text-center",
+                )
             )
 
     if content:
-        return html.Div([
-            sidebar,
-            html.Div(
-                content,
-                className="content",
-                style={"marginLeft": "280px", "padding": "20px"},
-            )
-        ])
+        return html.Div(
+            [
+                sidebar,
+                html.Div(
+                    content,
+                    className="content",
+                    style={"marginLeft": "280px", "padding": "20px"},
+                ),
+            ]
+        )
 
     return login_page.layout
 
@@ -131,11 +133,11 @@ def display_page(pathname, auth_data):
 # REGISTRA CALLBACKS
 # ===============================
 try:
-    import callbacks
     app_logger.info("✅ Callbacks registrados com sucesso!")
 except Exception as e:
     app_logger.error(f"❌ Erro ao registrar callbacks: {e}")
     import traceback
+
     traceback.print_exc()
 
 

@@ -3,27 +3,31 @@
 SQLite :memory: — isolamento total, sem efeito no banco de desenvolvimento.
 Valores Decimal em campos monetários (nunca float — ADR-002).
 """
+
 from decimal import Decimal
 
 import pytest
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from database.base import Base
+from database.models.account import Account
+from database.models.category import Category, TransactionType
+from database.models.goal import Goal, GoalCategory, GoalStatus  # noqa: F401
+from database.models.password_reset_token import PasswordResetToken  # noqa: F401
+from database.models.rate_limit import RateLimitHit  # noqa: F401
+from database.models.refresh_token import RefreshToken  # noqa: F401
+from database.models.scheduled_bill import (  # noqa: F401
+    BillRecurrence,
+    BillStatus,
+    BillType,
+    ScheduledBill,
+)
+from database.models.transaction import Transaction  # noqa: F401
 
 # Importa todos os models para que o Base.metadata os reconheca
 # (imports aparentemente não usados registram as tabelas — noqa F401)
 from database.models.user import User
-from database.models.account import Account
-from database.models.category import Category, TransactionType
-from database.models.transaction import Transaction  # noqa: F401
-from database.models.goal import Goal, GoalStatus, GoalCategory  # noqa: F401
-from database.models.scheduled_bill import (  # noqa: F401
-    ScheduledBill, BillType, BillStatus, BillRecurrence,
-)
-from database.models.password_reset_token import PasswordResetToken  # noqa: F401
-from database.models.rate_limit import RateLimitHit  # noqa: F401
-from database.models.refresh_token import RefreshToken  # noqa: F401
 
 
 @pytest.fixture(scope="function")

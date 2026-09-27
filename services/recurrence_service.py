@@ -19,16 +19,16 @@ Uso típico:
     # Checagem automática: quais recorrências do usuário precisam ser geradas?
     pendentes = service.get_pending_recurrences(user_id, target_month, target_year)
 """
+
 from datetime import date
+
 from dateutil.relativedelta import relativedelta
-from typing import List, Optional
-
+from sqlalchemy import and_, extract
 from sqlalchemy.orm import Session
-from sqlalchemy import extract, and_
 
-from database.models.transaction import Transaction, TransactionStatus
-from database.models.category import TransactionType
 from config.logging_config import app_logger
+from database.models.category import TransactionType
+from database.models.transaction import Transaction, TransactionStatus
 from utils.money import split_money
 
 
@@ -48,7 +48,7 @@ class RecurrenceService:
         self,
         base_transaction: Transaction,
         total: int,
-    ) -> List[Transaction]:
+    ) -> list[Transaction]:
         """
         Gera `total` parcelas a partir de uma transação-base.
 
@@ -89,7 +89,7 @@ class RecurrenceService:
         base_transaction.is_recurring = False  # parcelado ≠ recorrente
         self.db.flush()
 
-        generated: List[Transaction] = []
+        generated: list[Transaction] = []
 
         for i in range(2, total + 1):
             due = self._advance_months(base_transaction.due_date, i - 1)
@@ -132,7 +132,7 @@ class RecurrenceService:
     def generate_next_recurring(
         self,
         transaction: Transaction,
-    ) -> Optional[Transaction]:
+    ) -> Transaction | None:
         """
         Gera a próxima ocorrência mensal de uma transação recorrente.
 
@@ -199,7 +199,7 @@ class RecurrenceService:
         user_id: int,
         target_month: int,
         target_year: int,
-    ) -> List[Transaction]:
+    ) -> list[Transaction]:
         """
         Retorna todas as transações recorrentes do usuário cujo
         mês seguinte (target_month/target_year) ainda não foi gerado.
@@ -220,7 +220,7 @@ class RecurrenceService:
                 Transaction.user_id == user_id,
                 Transaction.is_recurring == True,
                 extract("month", Transaction.due_date) == source_month,
-                extract("year",  Transaction.due_date) == source_year,
+                extract("year", Transaction.due_date) == source_year,
             )
             .all()
         )
@@ -275,7 +275,7 @@ class RecurrenceService:
         category_id: int,
         month: int,
         year: int,
-    ) -> Optional[Transaction]:
+    ) -> Transaction | None:
         """Verifica se já existe uma transação com mesma descrição/categoria no período."""
         return (
             self.db.query(Transaction)
@@ -285,7 +285,7 @@ class RecurrenceService:
                     Transaction.description == description,
                     Transaction.category_id == category_id,
                     extract("month", Transaction.due_date) == month,
-                    extract("year",  Transaction.due_date) == year,
+                    extract("year", Transaction.due_date) == year,
                 )
             )
             .first()

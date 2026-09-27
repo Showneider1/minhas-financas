@@ -1,6 +1,7 @@
 """
 Componentes de loading e skeleton screens.
 """
+
 import dash_bootstrap_components as dbc
 from dash import html
 
@@ -12,12 +13,12 @@ def loading_spinner(
 ):
     """
     Spinner de loading simples.
-    
+
     Args:
         text: Texto a exibir
         color: Cor do spinner (primary, secondary, etc)
         spinner_style: Estilo (border ou grow)
-    
+
     Returns:
         Component Dash
     """
@@ -31,23 +32,25 @@ def loading_spinner(
 def skeleton_card():
     """
     Skeleton de um card para loading.
-    
+
     Returns:
         Component Dash
     """
     return dbc.Card(
-        dbc.CardBody([
-            html.Div(
-                className="placeholder-glow",
-                children=[
-                    html.Span(className="placeholder col-7 mb-2"),
-                    html.Span(className="placeholder col-4"),
-                    html.Span(className="placeholder col-4 mt-2"),
-                    html.Span(className="placeholder col-6 mt-2"),
-                    html.Span(className="placeholder col-8 mt-2"),
-                ]
-            )
-        ]),
+        dbc.CardBody(
+            [
+                html.Div(
+                    className="placeholder-glow",
+                    children=[
+                        html.Span(className="placeholder col-7 mb-2"),
+                        html.Span(className="placeholder col-4"),
+                        html.Span(className="placeholder col-4 mt-2"),
+                        html.Span(className="placeholder col-6 mt-2"),
+                        html.Span(className="placeholder col-8 mt-2"),
+                    ],
+                )
+            ]
+        ),
         className="mb-3",
     )
 
@@ -55,54 +58,58 @@ def skeleton_card():
 def skeleton_table(rows: int = 5):
     """
     Skeleton de uma tabela para loading.
-    
+
     Args:
         rows: Número de linhas skeleton
-    
+
     Returns:
         Component Dash
     """
     skeleton_rows = []
-    
+
     for _ in range(rows):
         row = dbc.Card(
             dbc.CardBody(
                 html.Div(
                     className="placeholder-glow",
                     children=[
-                        dbc.Row([
-                            dbc.Col(html.Span(className="placeholder col-10"), width=6),
-                            dbc.Col(html.Span(className="placeholder col-6"), width=3),
-                            dbc.Col(html.Span(className="placeholder col-8"), width=3),
-                        ])
-                    ]
+                        dbc.Row(
+                            [
+                                dbc.Col(html.Span(className="placeholder col-10"), width=6),
+                                dbc.Col(html.Span(className="placeholder col-6"), width=3),
+                                dbc.Col(html.Span(className="placeholder col-8"), width=3),
+                            ]
+                        )
+                    ],
                 )
             ),
             className="mb-2 border-0",
         )
         skeleton_rows.append(row)
-    
+
     return html.Div(skeleton_rows)
 
 
 def skeleton_kpi():
     """
     Skeleton de um KPI card.
-    
+
     Returns:
         Component Dash
     """
     return dbc.Card(
-        dbc.CardBody([
-            html.Div(
-                className="placeholder-glow",
-                children=[
-                    html.Span(className="placeholder col-6 mb-2"),
-                    html.Span(className="placeholder col-10", style={"height": "40px"}),
-                    html.Span(className="placeholder col-8 mt-2"),
-                ]
-            )
-        ]),
+        dbc.CardBody(
+            [
+                html.Div(
+                    className="placeholder-glow",
+                    children=[
+                        html.Span(className="placeholder col-6 mb-2"),
+                        html.Span(className="placeholder col-10", style={"height": "40px"}),
+                        html.Span(className="placeholder col-8 mt-2"),
+                    ],
+                )
+            ]
+        ),
         className="shadow-sm border-0 h-100",
     )
 
@@ -110,16 +117,16 @@ def skeleton_kpi():
 def loading_overlay(show: bool = True):
     """
     Overlay de loading que cobre a tela inteira.
-    
+
     Args:
         show: Se deve mostrar o overlay
-    
+
     Returns:
         Component Dash
     """
     if not show:
         return html.Div()
-    
+
     return html.Div(
         dbc.Spinner(
             html.Div(),
@@ -138,7 +145,7 @@ def loading_overlay(show: bool = True):
             "justifyContent": "center",
             "alignItems": "center",
             "zIndex": 9999,
-        }
+        },
     )
 
 
@@ -150,13 +157,13 @@ def empty_state(
 ):
     """
     Estado vazio estilizado.
-    
+
     Args:
         icon: Classe do ícone Bootstrap
         title: Título
         description: Descrição
         action_button: Dict com {text, id, color} para botão de ação
-    
+
     Returns:
         Component Dash
     """
@@ -165,7 +172,7 @@ def empty_state(
         html.H4(title, className="text-muted mb-2"),
         html.P(description, className="text-muted small"),
     ]
-    
+
     if action_button:
         button = dbc.Button(
             action_button.get("text", "Adicionar"),
@@ -174,7 +181,7 @@ def empty_state(
             className="mt-3",
         )
         children.append(button)
-    
+
     return dbc.Container(
         html.Div(
             children,

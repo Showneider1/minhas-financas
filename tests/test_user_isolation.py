@@ -3,17 +3,18 @@
 Regra: usuário A NUNCA consegue ler, modificar ou excluir dados financeiros do usuário B.
 Cobre Fase 3 §4 do plano Supabase + Fase 7 da Missão 2. Roda em SQLite :memory:.
 """
+
 from datetime import date
 
 import pytest
 
-from database.models.user import User
 from database.models.account import Account
 from database.models.category import Category, TransactionType
 from database.models.transaction import Transaction
+from database.models.user import User
 from database.repositories.base_repo import BaseRepository
-from services.finance_service import FinanceService
 from schemas.transaction_schema import TransactionCreate, TransactionUpdate
+from services.finance_service import FinanceService
 
 
 def _make_user(db, name, email):
@@ -33,7 +34,9 @@ def _make_account(db, user, name="Conta"):
 
 
 def _make_category(db, user, name="Cat"):
-    c = Category(user_id=user.id, name=name, transaction_type=TransactionType.EXPENSE, is_system=False)
+    c = Category(
+        user_id=user.id, name=name, transaction_type=TransactionType.EXPENSE, is_system=False
+    )
     db.add(c)
     db.commit()
     db.refresh(c)
@@ -70,7 +73,9 @@ def test_update_other_user_transaction_denied(db):
     svc_b = FinanceService(db)
     with pytest.raises(Exception):
         svc_b.update_transaction(
-            transaction_id=tx.id, user_id=b.id, transaction_data=TransactionUpdate(description="Ataque B")
+            transaction_id=tx.id,
+            user_id=b.id,
+            transaction_data=TransactionUpdate(description="Ataque B"),
         )
 
     db.refresh(tx)

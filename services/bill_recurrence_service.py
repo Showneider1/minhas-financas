@@ -18,9 +18,10 @@ Regras financeiras (fintech):
 - Fuso: datas de conta são dias civis locais; usa `date.today()` do servidor
   (America/Sao_Paulo em produção — ver scheduler).
 """
+
 from calendar import monthrange
 from datetime import date, timedelta
-from typing import Any, Dict, List
+from typing import Any
 
 from dateutil.relativedelta import relativedelta
 from sqlalchemy.orm import Session
@@ -46,7 +47,7 @@ def clamp_day(year: int, month: int, day: int) -> date:
     return date(year, month, min(day, last))
 
 
-def occurrences_in_month(bill: ScheduledBill, year: int, month: int) -> List[date]:
+def occurrences_in_month(bill: ScheduledBill, year: int, month: int) -> list[date]:
     """Vencimentos (ajustados p/ dia útil) da conta dentro do mês de competência."""
     if bill.recurrence == BillRecurrence.NONE:
         return []
@@ -54,7 +55,7 @@ def occurrences_in_month(bill: ScheduledBill, year: int, month: int) -> List[dat
     first_of_month = date(year, month, 1)
     last_day = monthrange(year, month)[1]
     last_of_month = date(year, month, last_day)
-    found: List[date] = []
+    found: list[date] = []
 
     if bill.recurrence == BillRecurrence.WEEKLY:
         # Avança de 7 em 7 dias a partir da âncora até cobrir o mês.
@@ -95,7 +96,7 @@ class BillRecurrenceService:
     # ------------------------------------------------------------------
     # Seleção
     # ------------------------------------------------------------------
-    def recurring_bills(self, user_id: int) -> List[ScheduledBill]:
+    def recurring_bills(self, user_id: int) -> list[ScheduledBill]:
         """Contas recorrentes elegíveis (dono, não pausadas/canceladas/excluídas)."""
         return (
             self.db.query(ScheduledBill)
@@ -130,9 +131,7 @@ class BillRecurrenceService:
     # ------------------------------------------------------------------
     # Projeção (sem persistir)
     # ------------------------------------------------------------------
-    def project_period(
-        self, user_id: int, year: int, month: int
-    ) -> List[Dict[str, Any]]:
+    def project_period(self, user_id: int, year: int, month: int) -> list[dict[str, Any]]:
         """Prévia das ocorrências do mês (não persiste)."""
         preview = []
         for bill in self.recurring_bills(user_id):
@@ -152,13 +151,11 @@ class BillRecurrenceService:
     # ------------------------------------------------------------------
     # Geração (persiste, idempotente, com relatório por item)
     # ------------------------------------------------------------------
-    def generate_period(
-        self, user_id: int, year: int, month: int
-    ) -> Dict[str, Any]:
+    def generate_period(self, user_id: int, year: int, month: int) -> dict[str, Any]:
         """Gera lançamentos PENDENTES da competência. Re-execução não duplica."""
-        generated: List[int] = []
-        skipped: List[int] = []
-        errors: List[Dict[str, Any]] = []
+        generated: list[int] = []
+        skipped: list[int] = []
+        errors: list[dict[str, Any]] = []
 
         for bill in self.recurring_bills(user_id):
             for due in occurrences_in_month(bill, year, month):
@@ -189,8 +186,7 @@ class BillRecurrenceService:
     def _create_occurrence(self, bill: ScheduledBill, due: date) -> Transaction:
         if not bill.account_id or not bill.category_id:
             raise ValueError(
-                f"Conta '{bill.name}' sem conta/categoria vinculada — "
-                "vincule antes de gerar."
+                f"Conta '{bill.name}' sem conta/categoria vinculada — vincule antes de gerar."
             )
         tx_type = (
             TransactionType.EXPENSE
@@ -201,9 +197,7 @@ class BillRecurrenceService:
 
         cat = self.db.query(Category).filter(Category.id == bill.category_id).first()
         if cat and cat.transaction_type is not None and cat.transaction_type != tx_type:
-            raise ValueError(
-                f"Conta '{bill.name}': categoria incompatível com o tipo."
-            )
+            raise ValueError(f"Conta '{bill.name}': categoria incompatível com o tipo.")
         tx = Transaction(
             user_id=bill.user_id,
             description=f"{bill.name} (recorrente {due.month:02d}/{due.year})",

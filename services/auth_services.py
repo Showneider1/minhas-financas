@@ -1,92 +1,95 @@
 """
 Serviço de autenticação e autorização.
 """
-from typing import Optional
+
 from sqlalchemy.orm import Session
+
+from config.logging_config import app_logger
 from config.security import (
+    create_access_token,
     hash_password,
     verify_password,
     verify_token,
-    create_access_token,
 )
 from config.settings import settings
-from config.logging_config import app_logger
-from database.repositories.user_repo import UserRepository
 from database.models.user import User
-from schemas.user_schema import UserCreate, UserLogin
+from database.repositories.user_repo import UserRepository
+from middleware.audit_log import audit_log
+from middleware.rate_limiter import rate_limiter
 from schemas.common import TokenResponse
+from schemas.user_schema import UserCreate, UserLogin
 from utils.exceptions import (
-    InvalidCredentialsError,
-    EmailAlreadyExistsError,
     AuthenticationError,
+    EmailAlreadyExistsError,
+    InvalidCredentialsError,
     InvalidPasswordError,
 )
 from utils.validators import is_valid_password
-from middleware.rate_limiter import rate_limiter
-from middleware.audit_log import audit_log
 
 
 class AuthService:
     """
     Serviço responsável por autenticação e autorização.
     """
-    
+
     def __init__(self, db: Session):
         self.db = db
         self.user_repo = UserRepository(db)
-    
-    def register_user(self, data: UserCreate, client_ip: Optional[str] = None) -> User:
+
+    def register_user(self, data: UserCreate, client_ip: str | None = None) -> User:
         """
         Registra novo usuário (com bucket anti-abuso por IP — P1).
         """
         from middleware.rate_limiter import hit as _hit
 
         allowed, retry = _hit(
-            "register", f"ip:{client_ip or 'unknown'}",
-            settings.RATE_LIMIT_REGISTER_PER_HOUR, 3600,
+            "register",
+            f"ip:{client_ip or 'unknown'}",
+            settings.RATE_LIMIT_REGISTER_PER_HOUR,
+            3600,
         )
         if not allowed:
             raise AuthenticationError(
                 message="Muitas contas criadas a partir deste endereço. "
-                        f"Tente novamente em {retry} segundos.",
+                f"Tente novamente em {retry} segundos.",
                 code="RATE_LIMIT_REGISTER",
             )
         # Verifica se email já existe
         if self.user_repo.email_exists(data.email):
             app_logger.warning(f"Tentativa de registro com email existente: {data.email}")
             raise EmailAlreadyExistsError()
-        
+
         # Valida senha
         is_valid, error_msg = is_valid_password(data.password)
         if not is_valid:
             raise InvalidPasswordError(message=error_msg)
-        
+
         # Hasheia senha
         password_hash = hash_password(data.password)
-        
+
         # Cria usuário
         user = self.user_repo.create_user(
             name=data.name,
             email=data.email,
             password_hash=password_hash,
         )
-        
+
         app_logger.info(f"Novo usuário registrado: {user.id} - {user.email}")
         audit_log.log_action(
             action="user.register",
             user_id=user.id,
-            details={"email": user.email, "name": user.name}
+            details={"email": user.email, "name": user.name},
         )
-        
+
         return user
-    
-    def authenticate_user(self, data: UserLogin, client_ip: Optional[str] = None) -> TokenResponse:
+
+    def authenticate_user(self, data: UserLogin, client_ip: str | None = None) -> TokenResponse:
         """
         Autentica usuário e retorna par access + refresh (P1: refresh persistido).
         Buckets: por email (legado) E por IP (anti-força-bruta distribuída).
         """
-        from middleware.rate_limiter import hit as _hit
         from config.security import issue_refresh_token
+        from middleware.rate_limiter import hit as _hit
 
         # Verifica rate limit de login (email + IP)
         allowed, retry_after = rate_limiter.check_login_attempts(data.email)
@@ -97,31 +100,33 @@ class AuthService:
                 code="RATE_LIMIT_LOGIN",
             )
         ip_allowed, ip_retry = _hit(
-            "login", f"ip:{client_ip or 'unknown'}",
-            settings.RATE_LIMIT_LOGIN_PER_IP, settings.RATE_LIMIT_WINDOW_SECONDS,
+            "login",
+            f"ip:{client_ip or 'unknown'}",
+            settings.RATE_LIMIT_LOGIN_PER_IP,
+            settings.RATE_LIMIT_WINDOW_SECONDS,
         )
         if not ip_allowed:
             raise AuthenticationError(
                 message="Muitas tentativas a partir deste endereço. "
-                        f"Tente novamente em {ip_retry} segundos.",
+                f"Tente novamente em {ip_retry} segundos.",
                 code="RATE_LIMIT_LOGIN_IP",
             )
-        
+
         # Busca usuário
         user = self.user_repo.get_by_email(data.email)
-        
+
         if not user:
             rate_limiter.record_login_attempt(data.email)
             app_logger.warning(f"Tentativa de login com email inexistente: {data.email}")
             raise InvalidCredentialsError()
-        
+
         # Verifica senha
         if not verify_password(data.password, user.password_hash):
             rate_limiter.record_login_attempt(data.email)
             app_logger.warning(f"Tentativa de login com senha incorreta: {data.email}")
             audit_log.log_login(user.id, user.email, success=False)
             raise InvalidCredentialsError()
-        
+
         # Verifica se usuário está ativo
         if not user.is_active:
             app_logger.warning(f"Tentativa de login de usuário inativo: {data.email}")
@@ -129,20 +134,20 @@ class AuthService:
                 message="Usuário inativo. Entre em contato com o suporte.",
                 code="USER_INACTIVE",
             )
-        
+
         # Limpa tentativas de login
         rate_limiter.clear_login_attempts(data.email)
-        
+
         # Atualiza último login
         self.user_repo.update_last_login(user.id)
-        
+
         # Gera tokens (P1: refresh persistido p/ rotação/denylist server-side)
         access_token = create_access_token({"sub": str(user.id)})
         refresh_token = issue_refresh_token(self.db, user.id)
-        
+
         app_logger.info(f"Login bem-sucedido: {user.id} - {user.email}")
         audit_log.log_login(user.id, user.email, success=True)
-        
+
         return TokenResponse(
             access_token=access_token,
             token_type="bearer",
@@ -175,7 +180,8 @@ class AuthService:
 
         count = revoke_all_refresh_tokens(self.db, user_id)
         audit_log.log_action(
-            action="user.logout", user_id=user_id,
+            action="user.logout",
+            user_id=user_id,
             details={"revoked_refresh": count},
         )
         return count

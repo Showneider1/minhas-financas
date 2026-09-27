@@ -4,9 +4,12 @@ Cada sessão possui um refresh `jti` vivo. Rotação (`refresh_session`):
 revoga o antigo (replaced_by) e emite par novo. Reuso de token revogado =
 indício de roubo → revoga a árvore inteira do usuário.
 """
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey
-from sqlalchemy.orm import relationship
+
 from datetime import datetime, timezone
+
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy.orm import relationship
+
 from database.base import Base
 
 
@@ -21,8 +24,9 @@ class RefreshToken(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     jti = Column(String(36), nullable=False, unique=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
-                     nullable=False, index=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     expires_at = Column(DateTime(timezone=True), nullable=False)
     revoked = Column(Boolean, default=False, nullable=False)
     replaced_by = Column(String(36), nullable=True)

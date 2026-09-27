@@ -1,10 +1,11 @@
+from dataclasses import dataclass
+
+from sqlalchemy import extract, func
 from sqlalchemy.orm import Session
-from sqlalchemy import func, extract
+
 from database.models.budget import Budget
 from database.models.category import Category, TransactionType
 from database.models.transaction import Transaction, TransactionStatus
-from typing import List, Optional, Dict
-from dataclasses import dataclass
 
 
 @dataclass
@@ -17,12 +18,13 @@ class BudgetAlert:
         'WARNING'  — gasto entre 80% e 99% do orçamento
         'EXCEEDED' — gasto >= 100% do orçamento
     """
-    category_id:   int
+
+    category_id: int
     category_name: str
     budget_amount: float
-    spent_amount:  float
-    pct_used:      float   # 0.0 – 100.0+
-    status:        str     # 'OK' | 'WARNING' | 'EXCEEDED'
+    spent_amount: float
+    pct_used: float  # 0.0 – 100.0+
+    status: str  # 'OK' | 'WARNING' | 'EXCEEDED'
 
 
 class BudgetService:
@@ -50,12 +52,16 @@ class BudgetService:
         if not cat or (cat.user_id is not None and cat.user_id != user_id):
             raise ValueError("Categoria não pertence a este usuário.")
 
-        existing_budget = self.db.query(Budget).filter(
-            Budget.user_id == user_id,
-            Budget.category_id == category_id,
-            Budget.month == month,
-            Budget.year == year
-        ).first()
+        existing_budget = (
+            self.db.query(Budget)
+            .filter(
+                Budget.user_id == user_id,
+                Budget.category_id == category_id,
+                Budget.month == month,
+                Budget.year == year,
+            )
+            .first()
+        )
 
         try:
             if existing_budget:
@@ -63,11 +69,7 @@ class BudgetService:
                 result = existing_budget
             else:
                 new_budget = Budget(
-                    user_id=user_id,
-                    category_id=category_id,
-                    amount=value,
-                    month=month,
-                    year=year
+                    user_id=user_id, category_id=category_id, amount=value, month=month, year=year
                 )
                 self.db.add(new_budget)
                 result = new_budget
@@ -79,29 +81,34 @@ class BudgetService:
             raise
         return result
 
-    def get_budgets_by_period(self, user_id: int, month: int, year: int) -> List[Budget]:
+    def get_budgets_by_period(self, user_id: int, month: int, year: int) -> list[Budget]:
         """Retorna todas as metas definidas para um mês/ano específico."""
-        return self.db.query(Budget).filter(
-            Budget.user_id == user_id,
-            Budget.month == month,
-            Budget.year == year
-        ).all()
+        return (
+            self.db.query(Budget)
+            .filter(Budget.user_id == user_id, Budget.month == month, Budget.year == year)
+            .all()
+        )
 
-    def get_budget_by_category(self, user_id: int, category_id: int, month: int, year: int) -> Optional[Budget]:
+    def get_budget_by_category(
+        self, user_id: int, category_id: int, month: int, year: int
+    ) -> Budget | None:
         """Retorna uma meta específica de uma categoria."""
-        return self.db.query(Budget).filter(
-            Budget.user_id == user_id,
-            Budget.category_id == category_id,
-            Budget.month == month,
-            Budget.year == year
-        ).first()
+        return (
+            self.db.query(Budget)
+            .filter(
+                Budget.user_id == user_id,
+                Budget.category_id == category_id,
+                Budget.month == month,
+                Budget.year == year,
+            )
+            .first()
+        )
 
     def delete_budget(self, user_id: int, budget_id: int) -> bool:
         """Remove uma meta."""
-        budget = self.db.query(Budget).filter(
-            Budget.id == budget_id,
-            Budget.user_id == user_id
-        ).first()
+        budget = (
+            self.db.query(Budget).filter(Budget.id == budget_id, Budget.user_id == user_id).first()
+        )
 
         if budget:
             self.db.delete(budget)
@@ -109,7 +116,9 @@ class BudgetService:
             return True
         return False
 
-    def copy_budgets_from_previous_month(self, user_id: int, target_month: int, target_year: int) -> int:
+    def copy_budgets_from_previous_month(
+        self, user_id: int, target_month: int, target_year: int
+    ) -> int:
         """
         Copia todas as metas do mês anterior para o mês atual.
         Retorna o número de metas copiadas.
@@ -125,14 +134,16 @@ class BudgetService:
 
         count = 0
         for old_budget in previous_budgets:
-            exists = self.get_budget_by_category(user_id, old_budget.category_id, target_month, target_year)
+            exists = self.get_budget_by_category(
+                user_id, old_budget.category_id, target_month, target_year
+            )
             if not exists:
                 self.save_budget(
                     user_id=user_id,
                     category_id=old_budget.category_id,
                     amount=old_budget.amount,
                     month=target_month,
-                    year=target_year
+                    year=target_year,
                 )
                 count += 1
 
@@ -148,7 +159,7 @@ class BudgetService:
         month: int,
         year: int,
         warning_threshold: float = 80.0,
-    ) -> List[BudgetAlert]:
+    ) -> list[BudgetAlert]:
         """
         Retorna alertas para todas as categorias de despesa que possuem
         orçamento definido no período.
@@ -176,13 +187,13 @@ class BudgetService:
         # Consulta o gasto real por categoria em um único round-trip
         spent_by_category = self._get_spent_by_category(user_id, month, year)
 
-        alerts: List[BudgetAlert] = []
+        alerts: list[BudgetAlert] = []
 
         for budget in budgets:
             from decimal import Decimal as _D
 
             spent = spent_by_category.get(budget.category_id, _D("0.00"))
-            pct   = (spent / budget.amount * 100) if budget.amount > 0 else 0.0
+            pct = (spent / budget.amount * 100) if budget.amount > 0 else 0.0
 
             if pct >= 100:
                 status = "EXCEEDED"
@@ -197,14 +208,16 @@ class BudgetService:
                 else f"Categoria {budget.category_id}"
             )
 
-            alerts.append(BudgetAlert(
-                category_id=budget.category_id,
-                category_name=category_name,
-                budget_amount=round(budget.amount, 2),
-                spent_amount=round(spent, 2),
-                pct_used=round(pct, 1),
-                status=status,
-            ))
+            alerts.append(
+                BudgetAlert(
+                    category_id=budget.category_id,
+                    category_name=category_name,
+                    budget_amount=round(budget.amount, 2),
+                    spent_amount=round(spent, 2),
+                    pct_used=round(pct, 1),
+                    status=status,
+                )
+            )
 
         return sorted(alerts, key=lambda a: a.pct_used, reverse=True)
 
@@ -213,15 +226,12 @@ class BudgetService:
         user_id: int,
         month: int,
         year: int,
-    ) -> List[BudgetAlert]:
+    ) -> list[BudgetAlert]:
         """
         Atalho: retorna apenas orçamentos com status EXCEEDED.
         Útil para notificações e badges de alerta na sidebar.
         """
-        return [
-            a for a in self.get_budget_alerts(user_id, month, year)
-            if a.status == "EXCEEDED"
-        ]
+        return [a for a in self.get_budget_alerts(user_id, month, year) if a.status == "EXCEEDED"]
 
     # ------------------------------------------------------------------
     # Privado
@@ -232,7 +242,7 @@ class BudgetService:
         user_id: int,
         month: int,
         year: int,
-    ) -> Dict[int, float]:
+    ) -> dict[int, float]:
         """
         Retorna o total gasto (PAID) por category_id para o período.
         Usa uma única query agregada para performance.

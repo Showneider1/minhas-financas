@@ -1,22 +1,24 @@
 """
 Callbacks de lançamentos financeiros (criar, editar, deletar).
 """
-from dash import Input, Output, State, ctx, no_update
+
 from datetime import date
 from decimal import Decimal, InvalidOperation
+
 import dash_bootstrap_components as dbc
+from dash import Input, Output, State, ctx, no_update
+
 from app import app
+from config.logging_config import app_logger
 from database.connection import get_db_session
-from middleware.auth_context import resolve_user
-from services.finance_service import FinanceService
-from services.category_service import CategoryService
-from services.account_service import AccountService
-from schemas.transaction_schema import TransactionCreate, TransactionUpdate
 from database.models.category import TransactionType
 from database.models.transaction import Transaction
-from config.logging_config import app_logger
+from middleware.auth_context import resolve_user
+from schemas.transaction_schema import TransactionCreate, TransactionUpdate
+from services.account_service import AccountService
+from services.category_service import CategoryService
+from services.finance_service import FinanceService
 from utils.exceptions import AuthenticationError
-
 
 
 # ==========================================
@@ -31,19 +33,18 @@ def resetar_modal_ao_mudar_pagina(pathname):
     return False
 
 
-
 # ==========================================
 # 2. CONTROLE VISUAL (ABRIR/FECHAR MODAL)
 # ==========================================
 @app.callback(
-    Output("modal-novo-lancamento",    "is_open",  allow_duplicate=True),
-    Output("store-transacao-id-editar","data",     allow_duplicate=True),
-    Output("data-pagamento",           "disabled"),
-    Input("btn-novo-lancamento",  "n_clicks"),
-    Input("btn-cancelar-modal",   "n_clicks"),
-    Input("btn-salvar-lancamento","n_clicks"),
-    Input("switch-pago",          "value"),
-    State("modal-novo-lancamento","is_open"),
+    Output("modal-novo-lancamento", "is_open", allow_duplicate=True),
+    Output("store-transacao-id-editar", "data", allow_duplicate=True),
+    Output("data-pagamento", "disabled"),
+    Input("btn-novo-lancamento", "n_clicks"),
+    Input("btn-cancelar-modal", "n_clicks"),
+    Input("btn-salvar-lancamento", "n_clicks"),
+    Input("switch-pago", "value"),
+    State("modal-novo-lancamento", "is_open"),
     prevent_initial_call=True,
 )
 def toggle_modal(n_novo, n_cancelar, n_salvar, switch_pago, is_open):
@@ -67,16 +68,15 @@ def toggle_modal(n_novo, n_cancelar, n_salvar, switch_pago, is_open):
     return is_open, no_update, disable_date
 
 
-
 # ==========================================
 # 3. CARREGAR OPÇÕES (CATEGORIAS E CONTAS)
 # ==========================================
 @app.callback(
     Output("select-categoria", "options"),
-    Output("select-conta",     "options"),
-    Input("tipo-lancamento",            "value"),
-    Input("auth-store",                 "data"),
-    Input("modal-novo-lancamento",      "is_open"),
+    Output("select-conta", "options"),
+    Input("tipo-lancamento", "value"),
+    Input("auth-store", "data"),
+    Input("modal-novo-lancamento", "is_open"),
     prevent_initial_call=True,
 )
 def carregar_opcoes(tipo, auth_data, is_open):
@@ -103,27 +103,26 @@ def carregar_opcoes(tipo, auth_data, is_open):
         return [], []
 
 
-
 # ==========================================
 # 4. PREENCHER FORMULÁRIO (CRIAR OU EDITAR)
 # ==========================================
 @app.callback(
-    Output("input-valor",           "value"),
-    Output("input-descricao",       "value"),
-    Output("select-categoria",      "value"),
-    Output("select-conta",          "value"),
-    Output("tipo-lancamento",       "value"),
-    Output("data-compra",           "date"),
-    Output("data-vencimento",       "date"),
-    Output("data-pagamento",        "date"),
-    Output("switch-pago",           "value"),
-    Output("check-recorrencia",     "value"),
-    Output("input-parcela-atual",   "value"),
-    Output("input-total-parcelas",  "value"),
-    Output("modal-header-title",    "children"),
-    Input("modal-novo-lancamento",  "is_open"),
+    Output("input-valor", "value"),
+    Output("input-descricao", "value"),
+    Output("select-categoria", "value"),
+    Output("select-conta", "value"),
+    Output("tipo-lancamento", "value"),
+    Output("data-compra", "date"),
+    Output("data-vencimento", "date"),
+    Output("data-pagamento", "date"),
+    Output("switch-pago", "value"),
+    Output("check-recorrencia", "value"),
+    Output("input-parcela-atual", "value"),
+    Output("input-total-parcelas", "value"),
+    Output("modal-header-title", "children"),
+    Input("modal-novo-lancamento", "is_open"),
     State("store-transacao-id-editar", "data"),
-    State("auth-store",                "data"),
+    State("auth-store", "data"),
     prevent_initial_call=True,
 )
 def preencher_formulario(is_open, edit_id, auth_data):
@@ -133,35 +132,45 @@ def preencher_formulario(is_open, edit_id, auth_data):
     hoje = date.today()
 
     if not edit_id:
-        return (
-            "", "", None, None, "EXPENSE",
-            hoje, hoje, hoje, True,
-            [], 1, 1,
-            "Novo Lançamento"
-        )
+        return ("", "", None, None, "EXPENSE", hoje, hoje, hoje, True, [], 1, 1, "Novo Lançamento")
 
     try:
         # P0 (IDOR): edição só com dono derivado do JWT.
         user_id = resolve_user(auth_data)
         with get_db_session() as db:
-            t = db.query(Transaction).filter(
-                Transaction.id == edit_id,
-                Transaction.user_id == user_id,
-            ).first()
+            t = (
+                db.query(Transaction)
+                .filter(
+                    Transaction.id == edit_id,
+                    Transaction.user_id == user_id,
+                )
+                .first()
+            )
 
             if not t:
                 return (no_update,) * 13
 
-            tipo       = t.transaction_type.value
-            pago       = True if t.paid_date else False
-            valor_fmt  = f"{t.base_amount:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            tipo = t.transaction_type.value
+            pago = True if t.paid_date else False
+            valor_fmt = (
+                f"{t.base_amount:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            )
             recorrencia = ["recorrente"] if t.is_recurring else []
 
             return (
-                valor_fmt, t.description, t.category_id, t.account_id, tipo,
-                t.purchase_date, t.due_date, t.paid_date, pago,
-                recorrencia, t.installment_number, t.total_installments,
-                "Editar Lançamento"
+                valor_fmt,
+                t.description,
+                t.category_id,
+                t.account_id,
+                tipo,
+                t.purchase_date,
+                t.due_date,
+                t.paid_date,
+                pago,
+                recorrencia,
+                t.installment_number,
+                t.total_installments,
+                "Editar Lançamento",
             )
     except AuthenticationError:
         return (no_update,) * 13
@@ -170,36 +179,49 @@ def preencher_formulario(is_open, edit_id, auth_data):
         return (no_update,) * 13
 
 
-
 # ==========================================
 # 5. SALVAR (CREATE / UPDATE)
 # — DONO ÚNICO do store-reload-dashboard —
 # ==========================================
 @app.callback(
-    Output("feedback-transacao",     "children"),
-    Output("store-reload-dashboard", "data"),          # <-- SEM allow_duplicate
-    Input("btn-salvar-lancamento",   "n_clicks"),
-    State("auth-store",               "data"),
-    State("store-transacao-id-editar","data"),
-    State("tipo-lancamento",          "value"),
-    State("input-valor",              "value"),
-    State("input-descricao",          "value"),
-    State("select-categoria",         "value"),
-    State("select-conta",             "value"),
-    State("data-compra",              "date"),
-    State("data-vencimento",          "date"),
-    State("data-pagamento",           "date"),
-    State("switch-pago",              "value"),
-    State("check-recorrencia",        "value"),
-    State("input-parcela-atual",      "value"),
-    State("input-total-parcelas",     "value"),
-    State("store-reload-dashboard",   "data"),
+    Output("feedback-transacao", "children"),
+    Output("store-reload-dashboard", "data"),  # <-- SEM allow_duplicate
+    Input("btn-salvar-lancamento", "n_clicks"),
+    State("auth-store", "data"),
+    State("store-transacao-id-editar", "data"),
+    State("tipo-lancamento", "value"),
+    State("input-valor", "value"),
+    State("input-descricao", "value"),
+    State("select-categoria", "value"),
+    State("select-conta", "value"),
+    State("data-compra", "date"),
+    State("data-vencimento", "date"),
+    State("data-pagamento", "date"),
+    State("switch-pago", "value"),
+    State("check-recorrencia", "value"),
+    State("input-parcela-atual", "value"),
+    State("input-total-parcelas", "value"),
+    State("store-reload-dashboard", "data"),
     prevent_initial_call=True,
 )
-def salvar_transacao(n_clicks, auth_data, edit_id, tipo, valor, descricao,
-                     cat_id, acc_id, d_compra, d_venc, d_pagto,
-                     switch_pago, recorrencia, parc_atual, parc_total,
-                     reload_counter):
+def salvar_transacao(
+    n_clicks,
+    auth_data,
+    edit_id,
+    tipo,
+    valor,
+    descricao,
+    cat_id,
+    acc_id,
+    d_compra,
+    d_venc,
+    d_pagto,
+    switch_pago,
+    recorrencia,
+    parc_atual,
+    parc_total,
+    reload_counter,
+):
 
     if not n_clicks:
         return no_update, no_update
@@ -231,7 +253,7 @@ def salvar_transacao(n_clicks, auth_data, edit_id, tipo, valor, descricao,
             raise ValueError("Valor deve ser maior que zero")
 
         date_purchase = date.fromisoformat(d_compra)
-        date_due      = date.fromisoformat(d_venc)
+        date_due = date.fromisoformat(d_venc)
 
         if date_due < date_purchase:
             raise ValueError("Data de vencimento não pode ser anterior à data de compra")
@@ -279,4 +301,6 @@ def salvar_transacao(n_clicks, auth_data, edit_id, tipo, valor, descricao,
 
     except Exception as e:
         app_logger.error(f"Erro ao salvar transação: {e}")
-        return dbc.Alert("❌ Erro inesperado ao salvar. Tente novamente.", color="danger", duration=5000), no_update
+        return dbc.Alert(
+            "❌ Erro inesperado ao salvar. Tente novamente.", color="danger", duration=5000
+        ), no_update

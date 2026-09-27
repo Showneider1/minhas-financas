@@ -6,10 +6,11 @@ caso preserva a INTENÇÃO original contra o sistema real. Sem xfail/skip.
 
 P0 novo comportamento coberto: pagar conta GERA o Transaction (rastreável).
 """
+
 from datetime import date, timedelta
 from decimal import Decimal
 
-from database.models import ScheduledBill, BillStatus, BillType, BillRecurrence
+from database.models import BillRecurrence, BillStatus, BillType, ScheduledBill
 from services.scheduled_bill_service import ScheduledBillService
 
 
@@ -18,7 +19,6 @@ def _svc(db) -> ScheduledBillService:
 
 
 class TestScheduledBillService:
-
     def test_create_scheduled_bill(self, db, sample_user, sample_account, sample_category):
         bill = _svc(db).create_bill(
             user_id=sample_user.id,
@@ -55,22 +55,13 @@ class TestScheduledBillService:
         # P0: lançamento gerado e vinculado (rastreabilidade).
         from database.models.transaction import Transaction
 
-        tx = (
-            db.query(Transaction)
-            .filter(Transaction.scheduled_bill_id == bill.id)
-            .first()
-        )
+        tx = db.query(Transaction).filter(Transaction.scheduled_bill_id == bill.id).first()
         assert tx is not None
         assert tx.base_amount == Decimal("120.00")
         assert tx.status.value == "PAID"
         # Idempotência: segundo pagamento não duplica.
         svc.mark_as_paid(bill.id, sample_user.id, paid_date=date.today())
-        assert (
-            db.query(Transaction)
-            .filter(Transaction.scheduled_bill_id == bill.id)
-            .count()
-            == 1
-        )
+        assert db.query(Transaction).filter(Transaction.scheduled_bill_id == bill.id).count() == 1
 
     def test_get_pending_bills_by_user(self, db, sample_user, sample_account, sample_category):
         svc = _svc(db)
@@ -163,11 +154,7 @@ class TestScheduledBillService:
             recurrence=BillRecurrence.MONTHLY,
         )
         svc.mark_as_paid(bill.id, sample_user.id, paid_date=date.today())
-        children = (
-            db.query(ScheduledBill)
-            .filter(ScheduledBill.parent_bill_id == bill.id)
-            .all()
-        )
+        children = db.query(ScheduledBill).filter(ScheduledBill.parent_bill_id == bill.id).all()
         assert len(children) == 1
         assert children[0].due_date > bill.due_date
         assert children[0].name == bill.name

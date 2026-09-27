@@ -10,14 +10,14 @@ Uso em todo callback que toca dados:
     user_id = resolve_user(auth_data)  # levanta AuthenticationError se inválido
     # opcional: resolve_user(auth_data, claimed_user_id) rejeita mismatch.
 """
-from typing import Any, Dict, Optional
+
+from typing import Any
 
 from config.security import verify_token
 from utils.exceptions import AuthenticationError
 
 
-def resolve_user(auth_data: Optional[Dict[str, Any]],
-                 claimed_user_id: Optional[int] = None) -> int:
+def resolve_user(auth_data: dict[str, Any] | None, claimed_user_id: int | None = None) -> int:
     """Extrai user_id do JWT; rejeita ausente/expirado/adulterado e mismatch.
 
     Args:

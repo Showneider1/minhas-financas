@@ -4,17 +4,18 @@ Garante: identidade entre models/schemas/services, mapeamento VARCHAR
 (SQLite e futuro Postgres), e que as rotas de API (services) aceitam
 valores crus sem quebrar.
 """
+
 from datetime import date
 from decimal import Decimal
 
 import database.enums as central
-from database.enums import TransactionType, TransactionStatus
+from database.enums import TransactionStatus, TransactionType
 
 
 def test_single_source_identity():
     from database.models.category import TransactionType as M1
-    from database.models.transaction import TransactionType as M2, TransactionStatus as S2
-    from schemas.transaction_schema import TransactionType as Sc1, TransactionStatus as Sc2
+    from database.models.transaction import TransactionStatus as S2, TransactionType as M2
+    from schemas.transaction_schema import TransactionStatus as Sc2, TransactionType as Sc1
 
     assert central.TransactionType is M1 is M2 is Sc1
     assert central.TransactionStatus is S2 is Sc2
@@ -50,8 +51,12 @@ def test_service_layer_no_regression(db, sample_user, sample_account):
     from schemas.transaction_schema import TransactionCreate
     from services.finance_service import FinanceService
 
-    cat = Category(user_id=sample_user.id, name="Salário",
-                   transaction_type=TransactionType.INCOME, is_system=False)
+    cat = Category(
+        user_id=sample_user.id,
+        name="Salário",
+        transaction_type=TransactionType.INCOME,
+        is_system=False,
+    )
     db.add(cat)
     db.commit()
 

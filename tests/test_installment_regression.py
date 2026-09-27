@@ -3,6 +3,7 @@
 sum(parcelas) == valor_original SEMPRE, resto de centavos nas PRIMEIRAS:
 100,00/3 -> [33.34, 33.33, 33.33]. Sem float (Decimal).
 """
+
 from datetime import date
 from decimal import Decimal
 
@@ -52,8 +53,7 @@ def test_installments_sum_equals_base(db, sample_user, sample_account, sample_ca
 def test_generate_installments_is_idempotent_guarded(
     db, sample_user, sample_account, sample_category
 ):
-    base = _base(db, sample_user, sample_account, sample_category, "300.00",
-                 due=date(2026, 2, 5))
+    base = _base(db, sample_user, sample_account, sample_category, "300.00", due=date(2026, 2, 5))
     svc = RecurrenceService(db)
     svc.generate_installments(base, total=3)
     with pytest.raises(ValueError):
@@ -90,9 +90,7 @@ def test_single_installment_rejected(db, sample_user, sample_account, sample_cat
         RecurrenceService(db).generate_installments(base, total=1)
 
 
-def test_negative_and_zero_split_exactly(
-    db, sample_user, sample_account, sample_category
-):
+def test_negative_and_zero_split_exactly(db, sample_user, sample_account, sample_category):
     # split_money é exato até para negativos (a API impede base <= 0 no schema).
     from utils.money import split_money
 
@@ -101,8 +99,7 @@ def test_negative_and_zero_split_exactly(
 
 
 def test_due_dates_advance_monthly(db, sample_user, sample_account, sample_category):
-    base = _base(db, sample_user, sample_account, sample_category, "300.00",
-                 due=date(2026, 1, 15))
+    base = _base(db, sample_user, sample_account, sample_category, "300.00", due=date(2026, 1, 15))
     generated = RecurrenceService(db).generate_installments(base, total=3)
     dues = [base.due_date] + [t.due_date for t in generated]
     assert [d.isoformat() for d in dues] == ["2026-01-15", "2026-02-15", "2026-03-15"]
@@ -129,8 +126,7 @@ def test_cancel_parcel_keeps_others(db, sample_user, sample_account, sample_cate
     FinanceService(db).delete_transaction(victim.id, sample_user.id)
     remaining = (
         db.query(Transaction)
-        .filter(Transaction.user_id == sample_user.id,
-                Transaction.total_installments == 3)
+        .filter(Transaction.user_id == sample_user.id, Transaction.total_installments == 3)
         .all()
     )
     assert len(remaining) == 2

@@ -1,20 +1,24 @@
 """
 Configurações da aplicação carregadas de variáveis de ambiente.
 """
+
 import os
 from pathlib import Path
 
 # Tenta importar do pydantic v2, senão usa v1
 try:
-    from pydantic_settings import BaseSettings
     from pydantic import ConfigDict, field_validator
+    from pydantic_settings import BaseSettings
+
     PYDANTIC_V2 = True
 except ImportError:
     from pydantic import BaseSettings, validator
+
     PYDANTIC_V2 = False
 
 # Carrega .env se existir
 from dotenv import load_dotenv
+
 load_dotenv()
 
 
@@ -23,7 +27,7 @@ class Settings(BaseSettings):
     Configurações da aplicação usando Pydantic Settings.
     Valores são carregados de variáveis de ambiente ou .env
     """
-    
+
     # ===============================
     # APLICAÇÃO
     # ===============================
@@ -34,12 +38,12 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     HOST: str = "0.0.0.0"
     PORT: int = 8050
-    
+
     # ===============================
     # BANCO DE DADOS
     # ===============================
     DATABASE_URL: str = "sqlite:///./data/finance.db"
-    
+
     # ===============================
     # SEGURANÇA
     # ===============================
@@ -50,7 +54,7 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     # P0 (Fase 8): reset curto e de uso único (padrão fintech 15 min).
     RESET_TOKEN_EXPIRE_MINUTES: int = 15
-    
+
     # ===============================
     # LOGS
     # ===============================
@@ -58,7 +62,7 @@ class Settings(BaseSettings):
     LOG_FORMAT: str = "detailed"
     LOG_FILE: str = "logs/app.log"
     AUDIT_LOG_FILE: str = "logs/audit.log"
-    
+
     # ===============================
     # RATE LIMITING
     # ===============================
@@ -69,7 +73,7 @@ class Settings(BaseSettings):
     RATE_LIMIT_REGISTER_PER_HOUR: int = 20
     RATE_LIMIT_HTTP_PER_MINUTE: int = 300
     RATE_LIMIT_HTTP_ENABLED: bool = True
-    
+
     # ===============================
     # FEATURES
     # ===============================
@@ -77,11 +81,12 @@ class Settings(BaseSettings):
     ENABLE_EMAIL_VERIFICATION: bool = False
     ENABLE_PASSWORD_RESET: bool = True
     AUDIT_ENABLED: bool = True
-    
+
     # ===============================
     # VALIDAÇÃO CRÍTICA PARA DEPLOY
     # ===============================
     if PYDANTIC_V2:
+
         @field_validator("DATABASE_URL")
         @classmethod
         def assemble_db_connection(cls, v: str) -> str:
@@ -90,6 +95,7 @@ class Settings(BaseSettings):
                 return v.replace("postgres://", "postgresql://", 1)
             return v
     else:
+
         @validator("DATABASE_URL", pre=True)
         def assemble_db_connection(cls, v: str) -> str:
             """Corrige string de conexão do Render/Heroku para SQLAlchemy."""
@@ -114,6 +120,7 @@ class Settings(BaseSettings):
             extra = "ignore"
 
     if PYDANTIC_V2:
+
         @field_validator("SECRET_KEY", "JWT_SECRET_KEY")
         @classmethod
         def _no_default_secrets_in_prod(cls, v: str) -> str:
@@ -136,7 +143,7 @@ try:
     Path("logs").mkdir(exist_ok=True)
     Path("data").mkdir(exist_ok=True)
 except Exception:
-    pass # Em ambientes read-only ou cloud, isso pode falhar silenciosamente
+    pass  # Em ambientes read-only ou cloud, isso pode falhar silenciosamente
 
 # Instância global das configurações
 settings = Settings()

@@ -6,9 +6,11 @@ Serviço de relatórios — P0 (ADR-002).
 - TRANSFER excluído de receitas/despesas/saldos.
 - Totais PAID consistentes com BalanceService (paid_date no período).
 """
+
 from datetime import date
 from decimal import Decimal
-from typing import Dict, Any
+from typing import Any
+
 from sqlalchemy.orm import Session
 
 from database.models.category import TransactionType
@@ -32,7 +34,7 @@ class ReportService:
     # Helpers
     # ------------------------------------------------------------------
     @staticmethod
-    def _row(t) -> Dict[str, Any]:
+    def _row(t) -> dict[str, Any]:
         category = t.category.name if t.category else "Sem categoria"
         account = t.account.name if t.account else "Sem conta"
         return {
@@ -53,7 +55,7 @@ class ReportService:
     # ------------------------------------------------------------------
     # Relatórios
     # ------------------------------------------------------------------
-    def generate_monthly_report(self, user_id: int, year: int, month: int) -> Dict[str, Any]:
+    def generate_monthly_report(self, user_id: int, year: int, month: int) -> dict[str, Any]:
         """Relatório mensal (totais PAID + categorias + lançamentos)."""
         start_date, end_date = get_month_range(year, month)
 
@@ -93,7 +95,7 @@ class ReportService:
             "transacoes": [self._row(t) for t in transactions],
         }
 
-    def generate_annual_report(self, user_id: int, year: int) -> Dict[str, Any]:
+    def generate_annual_report(self, user_id: int, year: int) -> dict[str, Any]:
         """Relatório anual (totais + evolução mensal + categorias)."""
         start_date, end_date = get_year_range(year)
 
@@ -101,12 +103,14 @@ class ReportService:
         for month in range(1, 13):
             month_start, month_end = get_month_range(year, month)
             summary = self._totals(user_id, month_start, month_end)
-            monthly_data.append({
-                "mes": month,
-                "receitas": str(summary["income_paid"]),
-                "despesas": str(summary["expense_paid"]),
-                "saldo": str(summary["balance_paid"]),
-            })
+            monthly_data.append(
+                {
+                    "mes": month,
+                    "receitas": str(summary["income_paid"]),
+                    "despesas": str(summary["expense_paid"]),
+                    "saldo": str(summary["balance_paid"]),
+                }
+            )
 
         annual = self._totals(user_id, start_date, end_date)
         categories_income = self.transaction_repo.get_category_totals(
@@ -135,9 +139,7 @@ class ReportService:
             },
         }
 
-    def generate_custom_report(
-        self, user_id: int, filters: TransactionFilter
-    ) -> Dict[str, Any]:
+    def generate_custom_report(self, user_id: int, filters: TransactionFilter) -> dict[str, Any]:
         """Relatório com filtros (usa apenas campos existentes do schema)."""
         transactions, total = self.transaction_repo.filter_transactions(
             user_id=user_id,
@@ -154,12 +156,10 @@ class ReportService:
         # Totais SOMENTE do realizado PAID no conjunto (TRANSFER excluído).
         paid = [t for t in transactions if t.status == TransactionStatus.PAID]
         total_income = money_sum(
-            t.base_amount for t in paid
-            if t.transaction_type == TransactionType.INCOME
+            t.base_amount for t in paid if t.transaction_type == TransactionType.INCOME
         )
         total_expense = money_sum(
-            t.base_amount for t in paid
-            if t.transaction_type == TransactionType.EXPENSE
+            t.base_amount for t in paid if t.transaction_type == TransactionType.EXPENSE
         )
 
         return {

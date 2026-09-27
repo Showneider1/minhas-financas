@@ -12,6 +12,7 @@ Escopo desta fase: PREPARAÇÃO LOCAL, sem credenciais reais.
 Uso futuro (quando houver projeto Supabase):
     from config.supabase import get_supabase_client, is_supabase_configured
 """
+
 import logging
 import os
 

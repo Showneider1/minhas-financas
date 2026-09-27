@@ -7,15 +7,17 @@ Duas camadas, mesma tabela de filosofia:
   (login, registro, reset) e para o hook HTTP do Dash.
 Sem Redis por decisão (stack SQLite síncrona; ver ADR).
 """
+
 import threading
 from datetime import datetime, timedelta, timezone
-from typing import Tuple
-from sqlalchemy import Column, Integer, String, DateTime
+
+from sqlalchemy import Column, DateTime, Integer, String
 from sqlalchemy.orm import Session
-from database.base import Base
-from database.connection import engine, SessionLocal
-from database.models.rate_limit import RateLimitHit
+
 from config.settings import settings
+from database.base import Base
+from database.connection import SessionLocal, engine
+from database.models.rate_limit import RateLimitHit
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -24,10 +26,11 @@ from config.settings import settings
 # ──────────────────────────────────────────────────────────────────────────
 class LoginAttempt(Base):
     """Registro de tentativas de login para rate limiting persistido."""
+
     __tablename__ = "login_attempts"
 
-    id           = Column(Integer,  primary_key=True, index=True)
-    email        = Column(String(100), nullable=False, index=True)
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String(100), nullable=False, index=True)
     attempted_at = Column(DateTime(timezone=True), nullable=False)
 
 
@@ -51,7 +54,7 @@ class RateLimiter:
     def _get_session(self) -> Session:
         return SessionLocal()
 
-    def check_login_attempts(self, email: str) -> Tuple[bool, int]:
+    def check_login_attempts(self, email: str) -> tuple[bool, int]:
         """
         Verifica se o email excedeu o limite de tentativas de login.
 
@@ -122,9 +125,9 @@ class RateLimiter:
         """Remove todas as tentativas de login do email (após login bem-sucedido)."""
         db = self._get_session()
         try:
-            db.query(LoginAttempt).filter(
-                LoginAttempt.email == email
-            ).delete(synchronize_session=False)
+            db.query(LoginAttempt).filter(LoginAttempt.email == email).delete(
+                synchronize_session=False
+            )
             db.commit()
         except Exception:
             db.rollback()
@@ -164,8 +167,9 @@ rate_limiter = RateLimiter()
 _lock = threading.Lock()
 
 
-def hit(scope: str, key: str, limit: int, window_seconds: int,
-        _session_factory=None) -> Tuple[bool, int]:
+def hit(
+    scope: str, key: str, limit: int, window_seconds: int, _session_factory=None
+) -> tuple[bool, int]:
     """Registra tentativa no bucket (scope, key) com lock (P1).
 
     Atômico na prática para o servidor síncrono: limpa expirados, conta,
@@ -214,7 +218,7 @@ def hit(scope: str, key: str, limit: int, window_seconds: int,
 def client_ip() -> str:
     """IP do cliente no contexto Flask/Dash (fallbacks seguros)."""
     try:
-        from flask import request, has_request_context
+        from flask import has_request_context, request
 
         if has_request_context():
             forwarded = (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip()

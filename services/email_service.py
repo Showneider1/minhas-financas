@@ -8,21 +8,23 @@ Configuracao necessaria em .env:
     EMAIL_PASSWORD=sua_senha_de_app
     EMAIL_FROM_NAME=Minhas Financas
 """
-import smtplib
+
 import os
 import re
+import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import Dict, Any
+from typing import Any
+
 from config.logging_config import app_logger
 
 
 def _get_smtp_config() -> dict:
     return {
-        "host":      os.getenv("EMAIL_HOST",      "smtp.gmail.com"),
-        "port":      int(os.getenv("EMAIL_PORT",  "587")),
-        "user":      os.getenv("EMAIL_USER",      ""),
-        "password":  os.getenv("EMAIL_PASSWORD",  ""),
+        "host": os.getenv("EMAIL_HOST", "smtp.gmail.com"),
+        "port": int(os.getenv("EMAIL_PORT", "587")),
+        "user": os.getenv("EMAIL_USER", ""),
+        "password": os.getenv("EMAIL_PASSWORD", ""),
         "from_name": os.getenv("EMAIL_FROM_NAME", "Minhas Financas"),
     }
 
@@ -45,12 +47,12 @@ def send_email(to: str, subject: str, html_body: str) -> bool:
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"]    = f"{cfg['from_name']} <{cfg['user']}>"
-    msg["To"]      = to
+    msg["From"] = f"{cfg['from_name']} <{cfg['user']}>"
+    msg["To"] = to
 
     plain_text = re.sub(r"<[^>]+>", "", html_body).strip()
     msg.attach(MIMEText(plain_text, "plain", "utf-8"))
-    msg.attach(MIMEText(html_body,  "html",  "utf-8"))
+    msg.attach(MIMEText(html_body, "html", "utf-8"))
 
     try:
         with smtplib.SMTP(cfg["host"], cfg["port"]) as server:
@@ -61,7 +63,9 @@ def send_email(to: str, subject: str, html_body: str) -> bool:
         app_logger.info(f"[EmailService] E-mail enviado para {to} | Assunto: {subject}")
         return True
     except smtplib.SMTPAuthenticationError:
-        app_logger.error("[EmailService] Falha de autenticacao SMTP. Verifique EMAIL_USER e EMAIL_PASSWORD.")
+        app_logger.error(
+            "[EmailService] Falha de autenticacao SMTP. Verifique EMAIL_USER e EMAIL_PASSWORD."
+        )
     except smtplib.SMTPException as exc:
         app_logger.error(f"[EmailService] Erro SMTP ao enviar para {to}: {exc}")
     except Exception as exc:
@@ -69,7 +73,7 @@ def send_email(to: str, subject: str, html_body: str) -> bool:
     return False
 
 
-def render_email_template(summary: Dict[str, Any]) -> str:
+def render_email_template(summary: dict[str, Any]) -> str:
     """
     Renderiza o template HTML do relatorio semanal.
 
@@ -77,17 +81,17 @@ def render_email_template(summary: Dict[str, Any]) -> str:
         summary: dict com week_label, user_name, total_receitas,
                  total_despesas, saldo, top_categorias, alertas
     """
-    week_label     = summary.get("week_label",     "esta semana")
-    user_name      = summary.get("user_name",      "voce")
+    week_label = summary.get("week_label", "esta semana")
+    user_name = summary.get("user_name", "voce")
     total_receitas = summary.get("total_receitas", 0.0)
     total_despesas = summary.get("total_despesas", 0.0)
-    saldo          = summary.get("saldo",          0.0)
+    saldo = summary.get("saldo", 0.0)
     top_categorias = summary.get("top_categorias", [])
-    alertas        = summary.get("alertas",        [])
+    alertas = summary.get("alertas", [])
 
     saldo_color = "#2e7d32" if saldo >= 0 else "#c62828"
-    saldo_sinal = "+"       if saldo >= 0 else ""
-    saldo_emoji = "✅"      if saldo >= 0 else "⚠️"
+    saldo_sinal = "+" if saldo >= 0 else ""
+    saldo_emoji = "✅" if saldo >= 0 else "⚠️"
 
     def fmt(value: float) -> str:
         return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -96,8 +100,8 @@ def render_email_template(summary: Dict[str, Any]) -> str:
     for i, cat in enumerate(top_categorias[:5], start=1):
         cat_rows += f"""
         <tr>
-          <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;color:#555;">{i}. {cat.get('nome', '-')}</td>
-          <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;text-align:right;color:#c62828;font-weight:600;">{fmt(cat.get('valor', 0))}</td>
+          <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;color:#555;">{i}. {cat.get("nome", "-")}</td>
+          <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;text-align:right;color:#c62828;font-weight:600;">{fmt(cat.get("valor", 0))}</td>
         </tr>"""
 
     if not cat_rows:
@@ -112,7 +116,9 @@ def render_email_template(summary: Dict[str, Any]) -> str:
           <ul style="margin:0;padding-left:18px;">{itens}</ul>
         </div>"""
 
-    alertas_block = f'<tr><td style="padding:0 32px;">{alertas_html}</td></tr>' if alertas_html else ""
+    alertas_block = (
+        f'<tr><td style="padding:0 32px;">{alertas_html}</td></tr>' if alertas_html else ""
+    )
 
     return f"""<!DOCTYPE html>
 <html lang="pt-BR">

@@ -5,15 +5,16 @@ Script utilitário para RESET e SEED do banco de dados em desenvolvimento.
     Nunca importe ou execute em produção.
     Use a variável de ambiente DEMO_USER_PASSWORD para definir a senha do usuário demo.
 """
+
 import os
-from database.connection import engine, SessionLocal
-from database.base import Base
-import database.models  # Registra todos os models no metadata
-from database.models.category import Category, TransactionType
-from database.models.account import Account, AccountType
-from database.models.user import User
-from config.settings import settings
+
 from config.security import hash_password
+from config.settings import settings
+from database.base import Base
+from database.connection import SessionLocal, engine
+from database.models.account import Account, AccountType
+from database.models.category import Category, TransactionType
+from database.models.user import User
 
 
 # ──────────────────────────────────────────────────────────────
@@ -52,7 +53,7 @@ def reset_and_seed_db():
         # Defina DEMO_USER_PASSWORD no .env para alterar o padrão.
         # ──────────────────────────────────────────────────────
         demo_password = os.environ.get("DEMO_USER_PASSWORD")
-        demo_email    = os.environ.get("DEMO_USER_EMAIL",    "demo@minhasfinancas.local")
+        demo_email = os.environ.get("DEMO_USER_EMAIL", "demo@minhasfinancas.local")
         if not demo_password:
             raise RuntimeError(
                 "DEMO_USER_PASSWORD não definido. Defina no .env local "
@@ -72,10 +73,36 @@ def reset_and_seed_db():
         # 3. Criar Contas Padrão
         print("🏦 Criando contas bancárias...")
         contas = [
-            Account(name="Carteira",         account_type=AccountType.CASH,        user_id=user.id, balance=0, color="#2ecc71"),
-            Account(name="Nubank",           account_type=AccountType.CHECKING,    user_id=user.id, balance=0, color="#8e44ad"),
-            Account(name="Itaú Cartão",      account_type=AccountType.CREDIT_CARD, user_id=user.id, balance=0, closing_day=25, due_day=5, color="#e67e22"),
-            Account(name="XP Investimentos", account_type=AccountType.INVESTMENT,  user_id=user.id, balance=0, color="#f1c40f"),
+            Account(
+                name="Carteira",
+                account_type=AccountType.CASH,
+                user_id=user.id,
+                balance=0,
+                color="#2ecc71",
+            ),
+            Account(
+                name="Nubank",
+                account_type=AccountType.CHECKING,
+                user_id=user.id,
+                balance=0,
+                color="#8e44ad",
+            ),
+            Account(
+                name="Itaú Cartão",
+                account_type=AccountType.CREDIT_CARD,
+                user_id=user.id,
+                balance=0,
+                closing_day=25,
+                due_day=5,
+                color="#e67e22",
+            ),
+            Account(
+                name="XP Investimentos",
+                account_type=AccountType.INVESTMENT,
+                user_id=user.id,
+                balance=0,
+                color="#f1c40f",
+            ),
         ]
         db.add_all(contas)
 
@@ -83,19 +110,44 @@ def reset_and_seed_db():
         print("📂 Criando categorias...")
         categorias = [
             # Receitas
-            {"name": "Salário",         "type": TransactionType.INCOME,   "icon": "💰", "color": "#27ae60"},
-            {"name": "Dividendos",      "type": TransactionType.INCOME,   "icon": "📈", "color": "#2ecc71"},
-            {"name": "Outras Receitas", "type": TransactionType.INCOME,   "icon": "➕", "color": "#16a085"},
+            {"name": "Salário", "type": TransactionType.INCOME, "icon": "💰", "color": "#27ae60"},
+            {
+                "name": "Dividendos",
+                "type": TransactionType.INCOME,
+                "icon": "📈",
+                "color": "#2ecc71",
+            },
+            {
+                "name": "Outras Receitas",
+                "type": TransactionType.INCOME,
+                "icon": "➕",
+                "color": "#16a085",
+            },
             # Despesas
-            {"name": "Alimentação",     "type": TransactionType.EXPENSE,  "icon": "🍔", "color": "#e74c3c"},
-            {"name": "Moradia",         "type": TransactionType.EXPENSE,  "icon": "🏠", "color": "#c0392b"},
-            {"name": "Transporte",      "type": TransactionType.EXPENSE,  "icon": "🚗", "color": "#e67e22"},
-            {"name": "Lazer",           "type": TransactionType.EXPENSE,  "icon": "🎉", "color": "#f1c40f"},
-            {"name": "Saúde",           "type": TransactionType.EXPENSE,  "icon": "💊", "color": "#8e44ad"},
-            {"name": "Educação",        "type": TransactionType.EXPENSE,  "icon": "📚", "color": "#2980b9"},
-            {"name": "Compras",         "type": TransactionType.EXPENSE,  "icon": "🛍️", "color": "#9b59b6"},
+            {
+                "name": "Alimentação",
+                "type": TransactionType.EXPENSE,
+                "icon": "🍔",
+                "color": "#e74c3c",
+            },
+            {"name": "Moradia", "type": TransactionType.EXPENSE, "icon": "🏠", "color": "#c0392b"},
+            {
+                "name": "Transporte",
+                "type": TransactionType.EXPENSE,
+                "icon": "🚗",
+                "color": "#e67e22",
+            },
+            {"name": "Lazer", "type": TransactionType.EXPENSE, "icon": "🎉", "color": "#f1c40f"},
+            {"name": "Saúde", "type": TransactionType.EXPENSE, "icon": "💊", "color": "#8e44ad"},
+            {"name": "Educação", "type": TransactionType.EXPENSE, "icon": "📚", "color": "#2980b9"},
+            {"name": "Compras", "type": TransactionType.EXPENSE, "icon": "🛍️", "color": "#9b59b6"},
             # Transferências
-            {"name": "Transferência",   "type": TransactionType.TRANSFER, "icon": "↔️", "color": "#95a5a6"},
+            {
+                "name": "Transferência",
+                "type": TransactionType.TRANSFER,
+                "icon": "↔️",
+                "color": "#95a5a6",
+            },
         ]
 
         for cat in categorias:

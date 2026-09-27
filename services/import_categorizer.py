@@ -8,10 +8,10 @@ com o historico de transacoes ja categorizadas pelo usuario.
 Dependencias:
     pip install rapidfuzz
 """
-import re
-from typing import Optional
 
-from rapidfuzz import process, fuzz
+import re
+
+from rapidfuzz import fuzz, process
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -38,7 +38,7 @@ def auto_categorize(
     user_id: int,
     db: Session,
     threshold: int = 75,
-) -> Optional[int]:
+) -> int | None:
     """
     Infere category_id pelo historico de transacoes do usuario.
 
@@ -64,9 +64,9 @@ def auto_categorize(
     if not result:
         return None
 
-    history      = [{"description": row[0], "category_id": row[1]} for row in result]
+    history = [{"description": row[0], "category_id": row[1]} for row in result]
     descriptions = [normalize_description(row["description"]) for row in history]
-    desc_clean   = normalize_description(description)
+    desc_clean = normalize_description(description)
 
     match = process.extractOne(
         desc_clean,

@@ -2,13 +2,15 @@
 
 Valores Decimal (Numeric). Isolamento por user_id em todos os métodos.
 """
-from datetime import datetime, timezone
-from typing import List, Optional, Dict, Any
-from sqlalchemy.orm import Session
-from sqlalchemy import and_
 
-from database.models.goal import Goal, GoalStatus, GoalCategory
+from datetime import datetime, timezone
+from typing import Any
+
+from sqlalchemy import and_
+from sqlalchemy.orm import Session
+
 from config.logging_config import app_logger
+from database.models.goal import Goal, GoalCategory, GoalStatus
 from utils.money import to_money2
 
 
@@ -35,9 +37,9 @@ class GoalService:
         name: str,
         target_amount,
         category: GoalCategory = GoalCategory.OTHER,
-        description: Optional[str] = None,
-        deadline: Optional[datetime] = None,
-        account_id: Optional[int] = None,
+        description: str | None = None,
+        deadline: datetime | None = None,
+        account_id: int | None = None,
         current_amount=0,
     ) -> Goal:
         """Cria uma nova meta financeira.
@@ -95,7 +97,7 @@ class GoalService:
         app_logger.info(f"Meta criada: id={goal.id} user_id={user_id} nome='{name}'")
         return goal
 
-    def get_goal(self, goal_id: int, user_id: int) -> Optional[Goal]:
+    def get_goal(self, goal_id: int, user_id: int) -> Goal | None:
         """Retorna uma meta pelo ID garantindo pertencer ao usuario."""
         return (
             self.db.query(Goal)
@@ -112,9 +114,9 @@ class GoalService:
     def list_goals(
         self,
         user_id: int,
-        status: Optional[GoalStatus] = None,
-        category: Optional[GoalCategory] = None,
-    ) -> List[Goal]:
+        status: GoalStatus | None = None,
+        category: GoalCategory | None = None,
+    ) -> list[Goal]:
         """Lista todas as metas do usuario com filtros opcionais."""
         query = self.db.query(Goal).filter(
             and_(Goal.user_id == user_id, Goal.is_deleted.is_(False))
@@ -130,7 +132,7 @@ class GoalService:
         goal_id: int,
         user_id: int,
         **kwargs,
-    ) -> Optional[Goal]:
+    ) -> Goal | None:
         """Atualiza campos de uma meta existente.
 
         Campos suportados: name, description, target_amount,
@@ -155,8 +157,13 @@ class GoalService:
                 raise ValueError("Conta vinculada não pertence a este usuário.")
 
         allowed_fields = {
-            "name", "description", "target_amount",
-            "current_amount", "deadline", "account_id", "category",
+            "name",
+            "description",
+            "target_amount",
+            "current_amount",
+            "deadline",
+            "account_id",
+            "category",
         }
         money_fields = {"target_amount", "current_amount"}
         for key, value in kwargs.items():
@@ -178,7 +185,7 @@ class GoalService:
         goal_id: int,
         user_id: int,
         amount,
-    ) -> Optional[Goal]:
+    ) -> Goal | None:
         """Adiciona uma contribuicao ao valor acumulado da meta.
 
         Args:
@@ -223,7 +230,7 @@ class GoalService:
         self.db.commit()
         return True
 
-    def cancel_goal(self, goal_id: int, user_id: int) -> Optional[Goal]:
+    def cancel_goal(self, goal_id: int, user_id: int) -> Goal | None:
         """Cancela uma meta ativa ou pausada."""
         goal = self.get_goal(goal_id, user_id)
         if not goal:
@@ -238,7 +245,7 @@ class GoalService:
     # ANALYTICS                                                             #
     # ------------------------------------------------------------------ #
 
-    def get_goals_summary(self, user_id: int) -> Dict[str, Any]:
+    def get_goals_summary(self, user_id: int) -> dict[str, Any]:
         """Retorna um resumo de todas as metas do usuario para o dashboard.
 
         Returns:
@@ -255,8 +262,7 @@ class GoalService:
         total_target = sum(g.target_amount for g in active_goals)
         total_current = sum(g.current_amount for g in active_goals)
         overall_progress = (
-            round((total_current / total_target) * 100, 2)
-            if total_target > 0 else 0.0
+            round((total_current / total_target) * 100, 2) if total_target > 0 else 0.0
         )
 
         now = datetime.now(timezone.utc)
@@ -264,7 +270,9 @@ class GoalService:
             {
                 "id": g.id,
                 "name": g.name,
-                "days_left": g.months_to_deadline * 30 if g.months_to_deadline is not None else None,
+                "days_left": g.months_to_deadline * 30
+                if g.months_to_deadline is not None
+                else None,
                 "progress": g.progress_percent,
                 "remaining": g.remaining_amount,
                 "monthly_needed": g.suggested_monthly_contribution,
@@ -315,12 +323,7 @@ class GoalService:
 
     def _check_completion(self, goal: Goal) -> None:
         """Marca a meta como concluida se o valor atual atingiu o alvo."""
-        if (
-            goal.status == GoalStatus.ACTIVE
-            and goal.current_amount >= goal.target_amount
-        ):
+        if goal.status == GoalStatus.ACTIVE and goal.current_amount >= goal.target_amount:
             goal.status = GoalStatus.COMPLETED
             goal.completed_at = datetime.now(timezone.utc)
-            app_logger.info(
-                f"Meta concluida automaticamente: id={goal.id} nome='{goal.name}'"
-            )
+            app_logger.info(f"Meta concluida automaticamente: id={goal.id} nome='{goal.name}'")

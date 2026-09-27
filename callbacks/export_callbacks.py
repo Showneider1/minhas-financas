@@ -1,21 +1,24 @@
 """
 Callbacks para exportação de dados.
 """
+
+import io
+from datetime import date, datetime
+
 from dash import Input, Output, State, dcc
-from datetime import datetime, date
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import inch
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from sqlalchemy import func
+
 from app import app
+from config.logging_config import app_logger
 from database.connection import get_db_session
 from middleware.auth_context import resolve_user
-from config.logging_config import app_logger
 from utils.exceptions import AuthenticationError
-import io
-from reportlab.lib.pagesizes import A4
-from reportlab.lib import colors
-from reportlab.lib.units import inch
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_CENTER
-from sqlalchemy import func
 
 
 @app.callback(
@@ -37,30 +40,30 @@ def exportar_extrato(n_clicks, auth_data, start_date, end_date, tipos, status_li
             return None
         # P0 (IDOR): usuário derivado do JWT.
         user_id = resolve_user(auth_data)
-        
+
         # Converte datas
         if start_date:
             data_inicio = datetime.fromisoformat(start_date).date()
         else:
             data_inicio = date.today().replace(day=1)
-        
+
         if end_date:
             data_fim = datetime.fromisoformat(end_date).date()
         else:
             data_fim = date.today()
-        
+
         with get_db_session() as db:
-            from database.models.transaction import Transaction, TransactionStatus
             from database.models.category import TransactionType
-            
+            from database.models.transaction import Transaction, TransactionStatus
+
             # Query (CANCELLED fora; tipos convertidos de string p/ enum)
             query = db.query(Transaction).filter(
                 Transaction.user_id == user_id,
                 Transaction.status != TransactionStatus.CANCELLED,
                 Transaction.due_date >= data_inicio,
-                Transaction.due_date <= data_fim
+                Transaction.due_date <= data_fim,
             )
-            
+
             # Filtros
             if tipos:
                 wanted = []
@@ -71,41 +74,46 @@ def exportar_extrato(n_clicks, auth_data, start_date, end_date, tipos, status_li
                         continue
                 if wanted:
                     query = query.filter(Transaction.transaction_type.in_(wanted))
-            
+
             if status_list:
                 if "PAID" in status_list and "PENDING" not in status_list:
                     query = query.filter(Transaction.paid_date.isnot(None))
                 elif "PENDING" in status_list and "PAID" not in status_list:
                     query = query.filter(Transaction.paid_date.is_(None))
-            
+
             query = query.order_by(Transaction.due_date.desc())
             transactions = query.all()
-            
+
             # Gera PDF
             buffer = io.BytesIO()
             doc = SimpleDocTemplate(buffer, pagesize=A4)
             elements = []
             styles = getSampleStyleSheet()
-            
+
             # Título
             title_style = ParagraphStyle(
-                'CustomTitle',
-                parent=styles['Heading1'],
+                "CustomTitle",
+                parent=styles["Heading1"],
                 fontSize=24,
-                textColor=colors.HexColor('#2c3e50'),
+                textColor=colors.HexColor("#2c3e50"),
                 spaceAfter=30,
-                alignment=TA_CENTER
+                alignment=TA_CENTER,
             )
             elements.append(Paragraph("Extrato Financeiro", title_style))
-            elements.append(Paragraph(
-                f"Período: {data_inicio.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')}",
-                styles['Normal']
-            ))
+            elements.append(
+                Paragraph(
+                    (
+                        f"Período: {data_inicio.strftime('%d/%m/%Y')} a "
+                        f"{data_fim.strftime('%d/%m/%Y')}"
+                    ),
+                    styles["Normal"],
+                )
+            )
             elements.append(Spacer(1, 20))
-            
+
             # Tabela
             data = [["Data", "Descrição", "Categoria", "Tipo", "Valor", "Status"]]
-            
+
             for t in transactions:
                 if t.transaction_type == TransactionType.INCOME:
                     tipo_str = "Receita"
@@ -117,36 +125,37 @@ def exportar_extrato(n_clicks, auth_data, start_date, end_date, tipos, status_li
                 valor_str = _fmt_brl(t.base_amount)
                 data_str = t.due_date.strftime("%d/%m/%Y")
                 cat_name = t.category.name if t.category else "Sem categoria"
-                
-                data.append([
-                    data_str,
-                    t.description[:30],
-                    cat_name[:20],
-                    tipo_str,
-                    valor_str,
-                    status_str
-                ])
-            
-            table = Table(data, colWidths=[1*inch, 2*inch, 1.5*inch, 1*inch, 1.2*inch, 1*inch])
-            table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, 0), 12),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-                ('GRID', (0, 0), (-1, -1), 1, colors.black)
-            ]))
-            
+
+                data.append(
+                    [data_str, t.description[:30], cat_name[:20], tipo_str, valor_str, status_str]
+                )
+
+            table = Table(
+                data, colWidths=[1 * inch, 2 * inch, 1.5 * inch, 1 * inch, 1.2 * inch, 1 * inch]
+            )
+            table.setStyle(
+                TableStyle(
+                    [
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
+                        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                        ("FONTSIZE", (0, 0), (-1, 0), 12),
+                        ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
+                        ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
+                        ("GRID", (0, 0), (-1, -1), 1, colors.black),
+                    ]
+                )
+            )
+
             elements.append(table)
             doc.build(elements)
-            
+
             buffer.seek(0)
             filename = f"extrato_{data_inicio}_{data_fim}.pdf"
-            
+
             return dcc.send_bytes(buffer.getvalue(), filename=filename)
-    
+
     except AuthenticationError:
         return None
     except Exception as e:
@@ -154,13 +163,12 @@ def exportar_extrato(n_clicks, auth_data, start_date, end_date, tipos, status_li
         return None
 
 
-
 def _fmt_brl(value) -> str:
     # Borda de exibição (sem aritmética aqui).
     from decimal import Decimal as _D
+
     amount = value if isinstance(value, _D) else _D(str(value or 0))
     return f"R$ {amount:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
 
 
 @app.callback(
@@ -180,69 +188,80 @@ def exportar_dashboard(n_clicks, auth_data, start_date, end_date):
             return None
         # P0 (IDOR): usuário derivado do JWT.
         user_id = resolve_user(auth_data)
-        
+
         # Converte datas
         if start_date:
             data_inicio = datetime.fromisoformat(start_date).date()
         else:
             data_inicio = date.today().replace(day=1)
-        
+
         if end_date:
             data_fim = datetime.fromisoformat(end_date).date()
         else:
             data_fim = date.today()
-        
+
         with get_db_session() as db:
-            from database.models.transaction import Transaction, TransactionStatus
             from database.models.category import TransactionType
-            
+            from database.models.transaction import Transaction, TransactionStatus
+
             # Totais PAID (canônico: base_amount + status sincronizado)
-            receitas = db.query(
-                func.sum(Transaction.base_amount)
-            ).filter(
-                Transaction.user_id == user_id,
-                Transaction.transaction_type == TransactionType.INCOME,
-                Transaction.status == TransactionStatus.PAID,
-                Transaction.paid_date.isnot(None),
-                Transaction.paid_date >= data_inicio,
-                Transaction.paid_date <= data_fim
-            ).scalar() or 0
-            
-            despesas = db.query(
-                func.sum(Transaction.base_amount)
-            ).filter(
-                Transaction.user_id == user_id,
-                Transaction.transaction_type == TransactionType.EXPENSE,
-                Transaction.status == TransactionStatus.PAID,
-                Transaction.paid_date.isnot(None),
-                Transaction.paid_date >= data_inicio,
-                Transaction.paid_date <= data_fim
-            ).scalar() or 0
-            
+            receitas = (
+                db.query(func.sum(Transaction.base_amount))
+                .filter(
+                    Transaction.user_id == user_id,
+                    Transaction.transaction_type == TransactionType.INCOME,
+                    Transaction.status == TransactionStatus.PAID,
+                    Transaction.paid_date.isnot(None),
+                    Transaction.paid_date >= data_inicio,
+                    Transaction.paid_date <= data_fim,
+                )
+                .scalar()
+                or 0
+            )
+
+            despesas = (
+                db.query(func.sum(Transaction.base_amount))
+                .filter(
+                    Transaction.user_id == user_id,
+                    Transaction.transaction_type == TransactionType.EXPENSE,
+                    Transaction.status == TransactionStatus.PAID,
+                    Transaction.paid_date.isnot(None),
+                    Transaction.paid_date >= data_inicio,
+                    Transaction.paid_date <= data_fim,
+                )
+                .scalar()
+                or 0
+            )
+
             saldo = receitas - despesas
-            
+
             # Gera PDF
             buffer = io.BytesIO()
             doc = SimpleDocTemplate(buffer, pagesize=A4)
             elements = []
             styles = getSampleStyleSheet()
-            
+
             # Título
             title_style = ParagraphStyle(
-                'CustomTitle',
-                parent=styles['Heading1'],
+                "CustomTitle",
+                parent=styles["Heading1"],
                 fontSize=24,
-                textColor=colors.HexColor('#2c3e50'),
+                textColor=colors.HexColor("#2c3e50"),
                 spaceAfter=30,
-                alignment=TA_CENTER
+                alignment=TA_CENTER,
             )
             elements.append(Paragraph("Relatório Financeiro", title_style))
-            elements.append(Paragraph(
-                f"Período: {data_inicio.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')}",
-                styles['Normal']
-            ))
+            elements.append(
+                Paragraph(
+                    (
+                        f"Período: {data_inicio.strftime('%d/%m/%Y')} a "
+                        f"{data_fim.strftime('%d/%m/%Y')}"
+                    ),
+                    styles["Normal"],
+                )
+            )
             elements.append(Spacer(1, 20))
-            
+
             # Resumo
             data = [
                 ["Métrica", "Valor"],
@@ -250,27 +269,31 @@ def exportar_dashboard(n_clicks, auth_data, start_date, end_date):
                 ["Despesas", _fmt_brl(despesas)],
                 ["Saldo", _fmt_brl(saldo)],
             ]
-            
-            table = Table(data, colWidths=[3*inch, 3*inch])
-            table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, 0), 14),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-                ('GRID', (0, 0), (-1, -1), 1, colors.black)
-            ]))
-            
+
+            table = Table(data, colWidths=[3 * inch, 3 * inch])
+            table.setStyle(
+                TableStyle(
+                    [
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
+                        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                        ("FONTSIZE", (0, 0), (-1, 0), 14),
+                        ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
+                        ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
+                        ("GRID", (0, 0), (-1, -1), 1, colors.black),
+                    ]
+                )
+            )
+
             elements.append(table)
             doc.build(elements)
-            
+
             buffer.seek(0)
             filename = f"dashboard_{data_inicio}_{data_fim}.pdf"
-            
+
             return dcc.send_bytes(buffer.getvalue(), filename=filename)
-    
+
     except AuthenticationError:
         return None
     except Exception as e:

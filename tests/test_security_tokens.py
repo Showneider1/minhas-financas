@@ -4,15 +4,16 @@
 - Refresh: só passa em verify_refresh_token; access só em verify_token.
 - Testes negativos nos 6 sentidos + reuso negado + adulterado negado.
 """
+
 from config import security
 from config.security import (
+    consume_password_reset_token,
     create_access_token,
     create_refresh_token,
-    verify_token,
-    verify_refresh_token,
     issue_password_reset_token,
     verify_password_reset_token,
-    consume_password_reset_token,
+    verify_refresh_token,
+    verify_token,
 )
 
 
@@ -57,6 +58,7 @@ def test_tampered_and_wrong_type_denied(db):
 
 def test_reset_expired_denied(db):
     from datetime import datetime, timedelta, timezone
+
     import jwt
 
     # Token com exp no passado (assinatura válida) — deve negar.
@@ -67,7 +69,8 @@ def test_reset_expired_denied(db):
         "exp": datetime.now(timezone.utc) - timedelta(minutes=1),
         "iat": datetime.now(timezone.utc) - timedelta(minutes=20),
     }
-    token = jwt.encode(payload, security.settings.JWT_SECRET_KEY,
-                       algorithm=security.settings.JWT_ALGORITHM)
+    token = jwt.encode(
+        payload, security.settings.JWT_SECRET_KEY, algorithm=security.settings.JWT_ALGORITHM
+    )
     assert verify_password_reset_token(db, token) is None
     assert consume_password_reset_token(db, token) is None

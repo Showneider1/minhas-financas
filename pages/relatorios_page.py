@@ -6,9 +6,11 @@ Layout completo com:
 - Filtros de periodo e tipo
 - Exportacao para CSV e Excel
 """
-import dash_bootstrap_components as dbc
-from dash import html, dcc
+
 from datetime import date
+
+import dash_bootstrap_components as dbc
+from dash import dcc, html
 
 
 def _section_title(icon: str, title: str) -> html.Div:
@@ -40,7 +42,10 @@ def _kpi_card(title: str, kpi_id: str, color: str, icon: str = "") -> dbc.Col:
             ),
             className="shadow-sm h-100",
         ),
-        width=12, sm=6, lg=3, className="mb-3",
+        width=12,
+        sm=6,
+        lg=3,
+        className="mb-3",
     )
 
 
@@ -52,7 +57,6 @@ layout = dbc.Container(
     [
         # Store para dados calculados
         dcc.Store(id="store-relatorio-data"),
-
         # ── Cabecalho ──────────────────────────────────────────────── #
         dbc.Row(
             [
@@ -92,7 +96,6 @@ layout = dbc.Container(
             align="center",
             className="mb-4",
         ),
-
         # ── Filtros ─────────────────────────────────────────────────── #
         dbc.Card(
             dbc.CardBody(
@@ -109,7 +112,8 @@ layout = dbc.Container(
                                     className="w-100",
                                 ),
                             ],
-                            width=12, md=5,
+                            width=12,
+                            md=5,
                         ),
                         dbc.Col(
                             [
@@ -117,14 +121,15 @@ layout = dbc.Container(
                                 dbc.Select(
                                     id="relatorio-tipo",
                                     options=[
-                                        {"label": "Mensal",        "value": "monthly"},
-                                        {"label": "Anual",         "value": "annual"},
+                                        {"label": "Mensal", "value": "monthly"},
+                                        {"label": "Anual", "value": "annual"},
                                         {"label": "Personalizado", "value": "custom"},
                                     ],
                                     value="monthly",
                                 ),
                             ],
-                            width=12, md=3,
+                            width=12,
+                            md=3,
                         ),
                         dbc.Col(
                             [
@@ -138,7 +143,8 @@ layout = dbc.Container(
                                     value=str(date.today().year),
                                 ),
                             ],
-                            width=12, md=2,
+                            width=12,
+                            md=2,
                         ),
                         dbc.Col(
                             [
@@ -150,7 +156,8 @@ layout = dbc.Container(
                                     className="w-100",
                                 ),
                             ],
-                            width=12, md=2,
+                            width=12,
+                            md=2,
                         ),
                     ],
                     className="g-3",
@@ -158,18 +165,20 @@ layout = dbc.Container(
             ),
             className="shadow-sm mb-4",
         ),
-
         # ── KPIs de Resumo ───────────────────────────────────────────── #
         dbc.Row(
             [
-                _kpi_card("Total Receitas",  "rel-kpi-receitas",  "text-success", "bi-arrow-up-circle-fill"),
-                _kpi_card("Total Despesas",  "rel-kpi-despesas",  "text-danger",  "bi-arrow-down-circle-fill"),
-                _kpi_card("Saldo do Periodo","rel-kpi-saldo",     "text-primary", "bi-wallet2"),
-                _kpi_card("Transacoes",      "rel-kpi-transacoes","text-secondary","bi-list-check"),
+                _kpi_card(
+                    "Total Receitas", "rel-kpi-receitas", "text-success", "bi-arrow-up-circle-fill"
+                ),
+                _kpi_card(
+                    "Total Despesas", "rel-kpi-despesas", "text-danger", "bi-arrow-down-circle-fill"
+                ),
+                _kpi_card("Saldo do Periodo", "rel-kpi-saldo", "text-primary", "bi-wallet2"),
+                _kpi_card("Transacoes", "rel-kpi-transacoes", "text-secondary", "bi-list-check"),
             ],
             className="mb-4",
         ),
-
         # ── Score de Saude Financeira ─────────────────────────────────── #
         dbc.Row(
             dbc.Col(
@@ -192,7 +201,6 @@ layout = dbc.Container(
                 className="mb-4",
             )
         ),
-
         # ── Graficos Principais ─────────────────────────────────────── #
         dbc.Row(
             [
@@ -201,7 +209,9 @@ layout = dbc.Container(
                     dbc.Card(
                         [
                             dbc.CardHeader(
-                                _section_title("bi-graph-up-arrow", "Evolucao de Receitas x Despesas"),
+                                _section_title(
+                                    "bi-graph-up-arrow", "Evolucao de Receitas x Despesas"
+                                ),
                                 className="bg-white fw-bold border-0 pb-0",
                             ),
                             dbc.CardBody(
@@ -217,9 +227,10 @@ layout = dbc.Container(
                         ],
                         className="shadow-sm",
                     ),
-                    width=12, lg=8, className="mb-4",
+                    width=12,
+                    lg=8,
+                    className="mb-4",
                 ),
-
                 # Distribuicao por Categoria (pizza)
                 dbc.Col(
                     dbc.Card(
@@ -241,18 +252,21 @@ layout = dbc.Container(
                         ],
                         className="shadow-sm",
                     ),
-                    width=12, lg=4, className="mb-4",
+                    width=12,
+                    lg=4,
+                    className="mb-4",
                 ),
             ]
         ),
-
         # ── Comparativo Mensal (barras agrupadas) ────────────────────── #
         dbc.Row(
             dbc.Col(
                 dbc.Card(
                     [
                         dbc.CardHeader(
-                            _section_title("bi-bar-chart-fill", "Comparativo Mensal - Ano Completo"),
+                            _section_title(
+                                "bi-bar-chart-fill", "Comparativo Mensal - Ano Completo"
+                            ),
                             className="bg-white fw-bold border-0 pb-0",
                         ),
                         dbc.CardBody(
@@ -272,7 +286,6 @@ layout = dbc.Container(
                 className="mb-4",
             )
         ),
-
         # ── Tabela de Transacoes ─────────────────────────────────────── #
         dbc.Row(
             dbc.Col(
@@ -312,7 +325,6 @@ layout = dbc.Container(
                 className="mb-4",
             )
         ),
-
         # Download invisivel para exportacao
         dcc.Download(id="rel-download"),
     ],

@@ -19,15 +19,15 @@ Regras:
 
 Target URL nunca é logada (pode conter senha).
 """
+
 import os
 import sys
 from decimal import Decimal
-from typing import Dict, List
 
 SOURCE_URL = "sqlite:///./data/finance.db"
 
 # Ordem de integridade referencial (pais antes dos filhos).
-TABLE_ORDER: List[str] = [
+TABLE_ORDER: list[str] = [
     "users",
     "accounts",
     "categories",
@@ -41,14 +41,14 @@ TABLE_ORDER: List[str] = [
 ]
 
 # Colunas monetárias: tabela -> {coluna: casas}. Quantização determinística.
-MONEY_Q2: Dict[str, List[str]] = {
+MONEY_Q2: dict[str, list[str]] = {
     "accounts": ["balance", "initial_balance", "credit_limit"],
     "transactions": ["base_amount"],
     "budgets": ["amount"],
     "goals": ["target_amount", "current_amount", "monthly_contribution"],
     "scheduled_bills": ["amount", "paid_amount"],
 }
-MONEY_Q4: Dict[str, List[str]] = {
+MONEY_Q4: dict[str, list[str]] = {
     "investment_operations": ["quantity", "price_per_unit", "fees", "total_amount"],
 }
 
@@ -83,7 +83,7 @@ def _target_url() -> str:
 
 
 def main() -> int:
-    from sqlalchemy import create_engine, MetaData, Table, select, func
+    from sqlalchemy import MetaData, Table, create_engine, func, select
 
     target_url = _target_url()
     is_pg = target_url.startswith(("postgresql://", "postgres://"))
@@ -101,7 +101,9 @@ def main() -> int:
         print("ETL: aplique o schema antes: alembic upgrade head no banco destino.")
         return 1
 
-    print(f"ETL: origem=sqlite local | destino={'postgres' if is_pg else 'sqlite'} | tabelas={len(TABLE_ORDER)}")
+    print(
+        f"ETL: origem=sqlite local | destino={'postgres' if is_pg else 'sqlite'} | tabelas={len(TABLE_ORDER)}"
+    )
     totals = {}
     with src.connect() as sconn, dst.connect() as dconn:
         for name in TABLE_ORDER:
@@ -120,13 +122,17 @@ def main() -> int:
                 trans.commit()
             except Exception as exc:
                 trans.rollback()
-                print(f"ETL: FALHA em '{name}' após {inserted}/{read_n} linhas: {type(exc).__name__}: {exc}")
+                print(
+                    f"ETL: FALHA em '{name}' após {inserted}/{read_n} linhas: {type(exc).__name__}: {exc}"
+                )
                 print("ETL: rollback da tabela; nada parcial foi confirmado. Abortando.")
                 return 1
             # Confere contagem no destino.
             have = dconn.execute(select(func.count()).select_from(dtable)).scalar()
             status = "OK" if have == read_n else "DIVERGENTE"
-            print(f"ETL: {name:22s} lidas={read_n:4d} inseridas={inserted:4d} destino={have:4d} [{status}]")
+            print(
+                f"ETL: {name:22s} lidas={read_n:4d} inseridas={inserted:4d} destino={have:4d} [{status}]"
+            )
             if have != read_n:
                 return 1
             totals[name] = (read_n, inserted)

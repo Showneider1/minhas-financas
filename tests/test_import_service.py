@@ -3,6 +3,7 @@
 Cobre: parse BR/ISO sem float, fallback de categoria, geração via
 FinanceService (saldos movem), duplicata ignorada via import_hash.
 """
+
 from decimal import Decimal
 
 from services.import_service import _parse_valor, import_from_csv
@@ -17,10 +18,10 @@ def test_parse_valor_decimal():
 
 def test_import_csv_end_to_end_and_idempotent(db, sample_user, sample_account):
     csv = (
-        "data;descricao;valor\n"
-        "10/03/2026;Salario ACME;5000,00\n"
-        "11/03/2026;Mercado Central;-350,75\n"
-    ).encode("utf-8")
+        b"data;descricao;valor\n"
+        b"10/03/2026;Salario ACME;5000,00\n"
+        b"11/03/2026;Mercado Central;-350,75\n"
+    )
 
     r1 = import_from_csv(csv, sample_account.id, sample_user.id, db)
     assert r1["imported"] == 2

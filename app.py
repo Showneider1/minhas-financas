@@ -1,10 +1,12 @@
 """
 Inicialização do aplicativo Dash.
 """
+
 import dash
 import dash_bootstrap_components as dbc
-from config.settings import settings
+
 from config.logging_config import app_logger
+from config.settings import settings
 from database.connection import init_db
 
 # ===============================
@@ -25,9 +27,7 @@ app = dash.Dash(
     suppress_callback_exceptions=True,
     title=settings.APP_NAME,
     update_title="Carregando...",
-    meta_tags=[
-        {"name": "viewport", "content": "width=device-width, initial-scale=1.0"}
-    ],
+    meta_tags=[{"name": "viewport", "content": "width=device-width, initial-scale=1.0"}],
 )
 
 server = app.server

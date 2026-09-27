@@ -1,7 +1,8 @@
-from dash import html, dcc
-import dash_bootstrap_components as dbc
 from datetime import date
-from .filters import dropdown_filter, date_range_filter
+
+import dash_bootstrap_components as dbc
+from dash import dcc
+
 
 def modal_transaction(id="modal-novo-lancamento") -> dbc.Modal:
     """Modal padrão para criar/editar uma transação"""
@@ -24,7 +25,9 @@ def modal_transaction(id="modal-novo-lancamento") -> dbc.Modal:
                                     inline=True,
                                     class_name="d-flex justify-content-center mb-4",
                                     inputClassName="btn-check",
-                                    labelClassName="btn btn-outline-secondary rounded-pill px-4 mx-1 fw-bold",
+                                    labelClassName=(
+                                        "btn btn-outline-secondary rounded-pill px-4 mx-1 fw-bold"
+                                    ),
                                     labelCheckedClassName="active btn-primary text-white border-0",
                                 ),
                                 width=12,
@@ -35,25 +38,30 @@ def modal_transaction(id="modal-novo-lancamento") -> dbc.Modal:
                             [
                                 dbc.Col(
                                     [
-                                        dbc.Label("Valor Total", className="small text-muted fw-bold"),
-                                        dbc.Input(id="input-valor", placeholder="0,00", type="text")
+                                        dbc.Label(
+                                            "Valor Total", className="small text-muted fw-bold"
+                                        ),
+                                        dbc.Input(
+                                            id="input-valor", placeholder="0,00", type="text"
+                                        ),
                                     ],
-                                    md=6
+                                    md=6,
                                 ),
                                 dbc.Col(
                                     [
                                         dbc.Label("Data", className="small text-muted fw-bold"),
-                                        dcc.DatePickerSingle(id="data-lancamento", date=date.today())
+                                        dcc.DatePickerSingle(
+                                            id="data-lancamento", date=date.today()
+                                        ),
                                     ],
-                                    md=6
-                                )
+                                    md=6,
+                                ),
                             ]
                         ),
                         # Descrição
                         dbc.Row(
                             dbc.Col(
-                                dbc.Input(id="input-descricao", placeholder="Descrição"),
-                                width=12
+                                dbc.Input(id="input-descricao", placeholder="Descrição"), width=12
                             )
                         ),
                         # Categoria
@@ -64,13 +72,13 @@ def modal_transaction(id="modal-novo-lancamento") -> dbc.Modal:
                                     options=[
                                         {"label": "Casa", "value": "casa"},
                                         {"label": "Alimentação", "value": "alimentacao"},
-                                    ]
+                                    ],
                                 ),
-                                width=12
+                                width=12,
                             )
-                        )
+                        ),
                     ],
-                    fluid=True
+                    fluid=True,
                 )
             ),
             dbc.ModalFooter(

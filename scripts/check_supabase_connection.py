@@ -12,6 +12,7 @@ as credenciais ainda não foram configuradas — nunca inventa valores.
 
 Variáveis documentadas em .env.example.
 """
+
 import os
 import sys
 from urllib.parse import urlsplit
@@ -78,9 +79,7 @@ def main() -> int:
             version = conn.execute(text("SELECT version()")).scalar() or "?"
             print(f"SUPABASE: conexão OK — {str(version).split(',')[0][:80]}")
             try:
-                exts = conn.execute(
-                    text("SELECT extname FROM pg_extension ORDER BY 1")
-                ).fetchall()
+                exts = conn.execute(text("SELECT extname FROM pg_extension ORDER BY 1")).fetchall()
                 print(f"SUPABASE: extensões: {', '.join(e[0] for e in exts) or '(nenhuma)'}")
             except Exception:
                 print("SUPABASE: sem permissão para listar extensões (ok para staging).")

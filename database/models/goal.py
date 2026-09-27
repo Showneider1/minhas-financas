@@ -1,10 +1,13 @@
 """Model de Metas Financeiras."""
+
 from datetime import datetime, timezone
 from decimal import Decimal
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Enum, Text, Numeric
+
+from sqlalchemy import Boolean, Column, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import relationship
+
 from database.base import Base
-from database.enums import GoalStatus, GoalCategory  # canônicos (P1)
+from database.enums import GoalCategory, GoalStatus  # canônicos (P1)
 
 __all__ = ["Goal", "GoalStatus", "GoalCategory"]
 
@@ -26,24 +29,30 @@ class Goal(Base):
     __tablename__ = "goals"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     account_id = Column(Integer, ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True)
 
     # Dados da meta
     name = Column(String(200), nullable=False)
     description = Column(Text, nullable=True)
-    category = Column(Enum(GoalCategory, native_enum=False), default=GoalCategory.OTHER, nullable=False)
+    category = Column(
+        Enum(GoalCategory, native_enum=False), default=GoalCategory.OTHER, nullable=False
+    )
 
     # Valores (Numeric — nunca Float; ADR-002)
-    target_amount = Column(Numeric(12, 2), nullable=False)   # Valor alvo
-    current_amount = Column(Numeric(12, 2), default=0)     # Valor acumulado atual
+    target_amount = Column(Numeric(12, 2), nullable=False)  # Valor alvo
+    current_amount = Column(Numeric(12, 2), default=0)  # Valor acumulado atual
     monthly_contribution = Column(Numeric(12, 2), nullable=True)  # Contribuicao mensal sugerida
 
     # Prazo
     deadline = Column(DateTime(timezone=True), nullable=True)
 
     # Status
-    status = Column(Enum(GoalStatus, native_enum=False), default=GoalStatus.ACTIVE, nullable=False, index=True)
+    status = Column(
+        Enum(GoalStatus, native_enum=False), default=GoalStatus.ACTIVE, nullable=False, index=True
+    )
     is_deleted = Column(Boolean, default=False)
 
     # Timestamps
@@ -80,6 +89,7 @@ class Goal(Base):
         deadline = self.deadline
         if deadline.tzinfo is None:
             from datetime import timezone as tz
+
             deadline = deadline.replace(tzinfo=tz.utc)
         diff_days = (deadline - now).days
         return max(int(diff_days / 30), 0)

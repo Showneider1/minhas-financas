@@ -1,9 +1,11 @@
 """
 Repository para operações com usuários.
 """
-from typing import Optional
-from sqlalchemy.orm import Session
+
 from datetime import datetime, timezone
+
+from sqlalchemy.orm import Session
+
 from database.models.user import User
 
 
@@ -13,7 +15,7 @@ class UserRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def get_by_email(self, email: str) -> Optional[User]:
+    def get_by_email(self, email: str) -> User | None:
         """
         Busca usuário ativo por email.
 
@@ -25,13 +27,9 @@ class UserRepository:
         em nenhum ponto do sistema.
         ──────────────────────────────────────────────────────────────
         """
-        return (
-            self.db.query(User)
-            .filter(User.email == email, User.is_deleted == False)
-            .first()
-        )
+        return self.db.query(User).filter(User.email == email, User.is_deleted == False).first()
 
-    def email_exists(self, email: str, exclude_id: Optional[int] = None) -> bool:
+    def email_exists(self, email: str, exclude_id: int | None = None) -> bool:
         """Verifica se email já está cadastrado (ignora usuários deletados)."""
         query = self.db.query(User.id).filter(
             User.email == email,
@@ -54,17 +52,13 @@ class UserRepository:
         self.db.flush()
         return user
 
-    def get_by_id(self, user_id: int) -> Optional[User]:
+    def get_by_id(self, user_id: int) -> User | None:
         """
         Busca usuário por ID.
         BUG 7 CORRIGIDO: filtro is_deleted adicionado — antes retornava
         usuários deletados via soft delete, expondo dados indevidos.
         """
-        return (
-            self.db.query(User)
-            .filter(User.id == user_id, User.is_deleted == False)
-            .first()
-        )
+        return self.db.query(User).filter(User.id == user_id, User.is_deleted == False).first()
 
     def soft_delete_user(self, user_id: int) -> bool:
         """
@@ -74,7 +68,7 @@ class UserRepository:
         user = self.get_by_id(user_id)
         if user:
             user.is_deleted = True
-            user.is_active  = False
+            user.is_active = False
             self.db.flush()
             return True
         return False

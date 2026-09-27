@@ -5,6 +5,7 @@
 - delete_transaction com dono; update parcial via TransactionUpdate.
 - Estorno: voltar para PENDING remove do saldo.
 """
+
 from datetime import date
 from decimal import Decimal
 
@@ -42,9 +43,7 @@ def test_no_amount_columns_on_model():
     assert hasattr(Transaction, "base_amount")
 
 
-def test_create_syncs_status_and_moves_balance(
-    db, sample_user, sample_account, sample_category
-):
+def test_create_syncs_status_and_moves_balance(db, sample_user, sample_account, sample_category):
     tx = _create(db, sample_user.id, sample_account.id, sample_category.id)
     assert tx.status == TransactionStatus.PAID
     assert isinstance(tx.base_amount, Decimal)
@@ -52,9 +51,7 @@ def test_create_syncs_status_and_moves_balance(
     assert bal == Decimal("5000.00") - Decimal("100.00")
 
 
-def test_mark_as_paid_syncs_and_idempotent(
-    db, sample_user, sample_account, sample_category
-):
+def test_mark_as_paid_syncs_and_idempotent(db, sample_user, sample_account, sample_category):
     tx = _create(db, sample_user.id, sample_account.id, sample_category.id, paid=False)
     assert tx.status == TransactionStatus.PENDING
     svc = FinanceService(db)
@@ -68,8 +65,7 @@ def test_mark_as_paid_syncs_and_idempotent(
 def test_reversal_removes_from_balance(db, sample_user, sample_account, sample_category):
     svc = FinanceService(db)
     tx = _create(db, sample_user.id, sample_account.id, sample_category.id)
-    svc.update_transaction(
-        tx.id, sample_user.id, TransactionUpdate(paid_date=None))
+    svc.update_transaction(tx.id, sample_user.id, TransactionUpdate(paid_date=None))
     db.refresh(tx)
     assert tx.status == TransactionStatus.PENDING
     bal = BalanceService(db).get_account_balance(sample_account.id, sample_user.id)
@@ -85,13 +81,15 @@ def test_cancelled_cannot_be_paid(db, sample_user, sample_account, sample_catego
         FinanceService(db).mark_as_paid(tx.id, sample_user.id)
 
 
-def test_category_type_mismatch_rejected(
-    db, sample_user, sample_account, sample_category
-):
+def test_category_type_mismatch_rejected(db, sample_user, sample_account, sample_category):
     from database.models.category import Category
 
-    other_cat = Category(user_id=sample_user.id, name="Salário",
-                         transaction_type=TransactionType.INCOME, is_system=False)
+    other_cat = Category(
+        user_id=sample_user.id,
+        name="Salário",
+        transaction_type=TransactionType.INCOME,
+        is_system=False,
+    )
     db.add(other_cat)
     db.commit()
     day = date(2026, 5, 10)
@@ -111,20 +109,19 @@ def test_category_type_mismatch_rejected(
         )
 
 
-def test_delete_unknown_or_foreign_raises(
-    db, sample_user, sample_account, sample_category
-):
+def test_delete_unknown_or_foreign_raises(db, sample_user, sample_account, sample_category):
     svc = FinanceService(db)
     with pytest.raises(TransactionNotFound):
         svc.delete_transaction(999999, sample_user.id)
     tx = _create(db, sample_user.id, sample_account.id, sample_category.id)
     from database.models.user import User
 
-    other = User(name="X", email="x@ex.com", password_hash="h",
-                 is_active=True, is_deleted=False)
+    other = User(name="X", email="x@ex.com", password_hash="h", is_active=True, is_deleted=False)
     db.add(other)
     db.commit()
     with pytest.raises(TransactionNotFound):
         svc.delete_transaction(tx.id, other.id)
     with pytest.raises(TransactionNotFound):
-        svc.update_transaction(tx.id, other.id, TransactionUpdate(description="Golpe financeiro aqui!"))
+        svc.update_transaction(
+            tx.id, other.id, TransactionUpdate(description="Golpe financeiro aqui!")
+        )

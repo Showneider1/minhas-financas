@@ -1,6 +1,7 @@
 """
 Componentes de error handling e feedback.
 """
+
 import dash_bootstrap_components as dbc
 from dash import html
 
@@ -13,13 +14,13 @@ def error_alert(
 ):
     """
     Alert de erro estilizado.
-    
+
     Args:
         message: Mensagem de erro
         title: Título do erro
         dismissable: Se pode ser fechado
         color: Cor do alert
-    
+
     Returns:
         Component Dash
     """
@@ -40,11 +41,11 @@ def error_alert(
 def success_toast(message: str, header: str = "Sucesso"):
     """
     Toast de sucesso.
-    
+
     Args:
         message: Mensagem
         header: Cabeçalho
-    
+
     Returns:
         Component Dash
     """
@@ -61,7 +62,7 @@ def success_toast(message: str, header: str = "Sucesso"):
 def error_page_404():
     """
     Página de erro 404.
-    
+
     Returns:
         Component Dash
     """
@@ -91,10 +92,10 @@ def error_page_404():
 def error_boundary(error_message: str = None):
     """
     Error boundary para capturar erros de renderização.
-    
+
     Args:
         error_message: Mensagem de erro
-    
+
     Returns:
         Component Dash
     """
@@ -108,7 +109,8 @@ def error_boundary(error_message: str = None):
                 html.Hr(),
                 html.P("Ocorreu um erro inesperado ao carregar esta página."),
                 html.P(
-                    error_message or "Por favor, tente recarregar a página ou entre em contato com o suporte.",
+                    error_message
+                    or "Por favor, tente recarregar a página ou entre em contato com o suporte.",
                     className="mb-0 small text-muted",
                 ),
                 html.Hr(),
@@ -128,12 +130,12 @@ def error_boundary(error_message: str = None):
 def validation_feedback(field_id: str, message: str, is_valid: bool = False):
     """
     Feedback de validação para campos de formulário.
-    
+
     Args:
         field_id: ID do campo
         message: Mensagem
         is_valid: Se é válido ou inválido
-    
+
     Returns:
         Component Dash
     """

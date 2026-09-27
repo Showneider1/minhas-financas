@@ -3,6 +3,7 @@
 saldo = initial + INCOME pagos − EXPENSE pagos (+TRANSFER destino −TRANSFER origem)
 TRANSFER nunca em receita/despesa; patrimônio = soma das contas ativas.
 """
+
 from datetime import date
 from decimal import Decimal
 
@@ -15,8 +16,9 @@ from services.finance_service import FinanceService
 
 
 def _category_for(db, user_id, type_):
-    cat = Category(user_id=user_id, name=f"Cat {type_.value}",
-                   transaction_type=type_, is_system=False)
+    cat = Category(
+        user_id=user_id, name=f"Cat {type_.value}", transaction_type=type_, is_system=False
+    )
     db.add(cat)
     db.commit()
     db.refresh(cat)
@@ -44,21 +46,39 @@ def test_balance_formula_initial_plus_flows(db, sample_user, sample_account, sam
     bal = BalanceService(db)
     # initial 5000 (conftest) — sem lançamentos, saldo == initial.
     assert bal.get_account_balance(sample_account.id, sample_user.id) == Decimal("5000.00")
-    _tx(db, sample_user.id, sample_account.id, sample_category.id,
-        TransactionType.EXPENSE, "1500.00", paid=True)
+    _tx(
+        db,
+        sample_user.id,
+        sample_account.id,
+        sample_category.id,
+        TransactionType.EXPENSE,
+        "1500.00",
+        paid=True,
+    )
     assert bal.get_account_balance(sample_account.id, sample_user.id) == Decimal("3500.00")
     # Pendente não move saldo.
-    _tx(db, sample_user.id, sample_account.id, sample_category.id,
-        TransactionType.EXPENSE, "999.99", paid=False)
+    _tx(
+        db,
+        sample_user.id,
+        sample_account.id,
+        sample_category.id,
+        TransactionType.EXPENSE,
+        "999.99",
+        paid=False,
+    )
     assert bal.get_account_balance(sample_account.id, sample_user.id) == Decimal("3500.00")
 
 
 def test_total_balance_sums_active_accounts(db, sample_user, sample_account):
     from database.models.account import Account
 
-    other = Account(user_id=sample_user.id, name="Poupança",
-                    balance=Decimal("0"), initial_balance=Decimal("100.00"),
-                    is_active=True)
+    other = Account(
+        user_id=sample_user.id,
+        name="Poupança",
+        balance=Decimal("0"),
+        initial_balance=Decimal("100.00"),
+        is_active=True,
+    )
     db.add(other)
     db.commit()
     bal = BalanceService(db)
@@ -67,8 +87,15 @@ def test_total_balance_sums_active_accounts(db, sample_user, sample_account):
 
 def test_reconcile_detects_and_heals_drift(db, sample_user, sample_account, sample_category):
     bal = BalanceService(db)
-    _tx(db, sample_user.id, sample_account.id, sample_category.id,
-        TransactionType.EXPENSE, "10.00", paid=True)
+    _tx(
+        db,
+        sample_user.id,
+        sample_account.id,
+        sample_category.id,
+        TransactionType.EXPENSE,
+        "10.00",
+        paid=True,
+    )
     # Simula cache stale (legado nunca atualizava Account.balance).
     sample_account.balance = Decimal("0.00")
     db.commit()
@@ -82,10 +109,24 @@ def test_reconcile_detects_and_heals_drift(db, sample_user, sample_account, samp
 def test_period_summary_paid_vs_pending(db, sample_user, sample_account, sample_category):
     bal = BalanceService(db)
     inc_cat = _category_for(db, sample_user.id, TransactionType.INCOME)
-    _tx(db, sample_user.id, sample_account.id, inc_cat.id,
-        TransactionType.INCOME, "2000.00", paid=True)
-    _tx(db, sample_user.id, sample_account.id, sample_category.id,
-        TransactionType.EXPENSE, "500.00", paid=False)
+    _tx(
+        db,
+        sample_user.id,
+        sample_account.id,
+        inc_cat.id,
+        TransactionType.INCOME,
+        "2000.00",
+        paid=True,
+    )
+    _tx(
+        db,
+        sample_user.id,
+        sample_account.id,
+        sample_category.id,
+        TransactionType.EXPENSE,
+        "500.00",
+        paid=False,
+    )
     s = bal.get_period_summary(sample_user.id, date(2026, 3, 1), date(2026, 3, 31))
     assert s["income_paid"] == Decimal("2000.00")
     assert s["expense_paid"] == Decimal("0.00")
@@ -97,8 +138,9 @@ def test_period_summary_paid_vs_pending(db, sample_user, sample_account, sample_
 def test_cross_user_balance_denied(db, sample_user, sample_account):
     from database.models.user import User
 
-    other = User(name="Outro", email="outro@ex.com", password_hash="x",
-                 is_active=True, is_deleted=False)
+    other = User(
+        name="Outro", email="outro@ex.com", password_hash="x", is_active=True, is_deleted=False
+    )
     db.add(other)
     db.commit()
     with pytest.raises(LookupError):

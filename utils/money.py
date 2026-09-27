@@ -13,8 +13,9 @@ Compatibilidade SQLite/Postgres:
 - Models usam `Numeric(12,2)` / `Numeric(14,4)` (mapeiam para NUMERIC no Postgres
   e NUMERIC affinity no SQLite; SQLAlchemy devolve Decimal nos dois).
 """
-from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
-from typing import List, Union
+
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from typing import Union
 
 Q2 = Decimal("0.01")
 Q4 = Decimal("0.0001")
@@ -47,9 +48,7 @@ def _coerce(value: MoneyLike, where: str) -> Decimal:
             import re as _re
 
             if not _re.fullmatch(r"\d{1,3}(\.\d{3})+,\d{2}", body):
-                raise ValueError(
-                    f"{where}: formato ambíguo (use 1234.56 ou 1.234,56): {value!r}"
-                )
+                raise ValueError(f"{where}: formato ambíguo (use 1234.56 ou 1.234,56): {value!r}")
             clean = body.replace(".", "").replace(",", ".")
         elif has_comma:
             clean = body.replace(",", ".")
@@ -79,7 +78,7 @@ def to_qty8(value: MoneyLike, *, where: str = "to_qty8") -> Decimal:
     return _coerce(value, where).quantize(Q8, rounding=ROUND_HALF_UP)
 
 
-def split_money(total: MoneyLike, n: int) -> List[Decimal]:
+def split_money(total: MoneyLike, n: int) -> list[Decimal]:
     """Rateia `total` em `n` parcelas Decimal somando exatamente o original.
 
     O resto de centavos vai para as PRIMEIRAS parcelas:

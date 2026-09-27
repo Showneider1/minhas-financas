@@ -15,9 +15,9 @@ Invariantes:
 - Auditável: log estruturado sem PII (ids + grupo + valor).
 - Atômica: commit único; rollback em qualquer erro.
 """
+
 import uuid
 from datetime import date
-from typing import Optional
 
 from sqlalchemy.orm import Session
 
@@ -46,11 +46,11 @@ class TransferService:
         from_account_id: int,
         to_account_id: int,
         amount,
-        due_date: Optional[date] = None,
-        paid_date: Optional[date] = None,
+        due_date: date | None = None,
+        paid_date: date | None = None,
         description: str = "Transferência entre contas",
-        category_id: Optional[int] = None,
-        client_transfer_id: Optional[str] = None,
+        category_id: int | None = None,
+        client_transfer_id: str | None = None,
     ) -> Transaction:
         """Executa transferência. Retorna a linha TRANSFER (existente em retry)."""
         value = to_money2(amount, where="transfer.amount")
@@ -68,11 +68,7 @@ class TransferService:
             raise TransferError("Transferência exige categoria do tipo TRANSFER.")
         from database.models.category import Category
 
-        cat = (
-            self.db.query(Category)
-            .filter(Category.id == category_id)
-            .first()
-        )
+        cat = self.db.query(Category).filter(Category.id == category_id).first()
         if (
             not cat
             or cat.transaction_type != TransactionType.TRANSFER
@@ -169,8 +165,9 @@ class TransferService:
         )
         return tx
 
-    def confirm_transfer(self, transaction_id: int, user_id: int,
-                         paid_date: Optional[date] = None) -> Transaction:
+    def confirm_transfer(
+        self, transaction_id: int, user_id: int, paid_date: date | None = None
+    ) -> Transaction:
         """Efetiva TRANSFER pendente (move saldos). Idempotente."""
         tx = self._owned_transfer(transaction_id, user_id)
         if tx.status == TransactionStatus.PAID and tx.paid_date is not None:

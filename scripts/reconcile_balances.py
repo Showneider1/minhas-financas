@@ -11,14 +11,22 @@ Qualquer divergência imprime a linha e exit 1.
 
 URLs nunca são logadas.
 """
+
 import os
 import sys
 
 SOURCE_URL = "sqlite:///./data/finance.db"
 
 TABLES_COUNT = [
-    "users", "accounts", "categories", "transactions", "budgets",
-    "goals", "scheduled_bills", "assets", "investment_operations",
+    "users",
+    "accounts",
+    "categories",
+    "transactions",
+    "budgets",
+    "goals",
+    "scheduled_bills",
+    "assets",
+    "investment_operations",
     "password_reset_tokens",
 ]
 
@@ -42,8 +50,8 @@ def main() -> int:
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
-    from database.base import Base
     import database.models  # noqa: F401 — registra metadata p/ tipos
+    from database.base import Base
     from database.models.account import Account
     from services.balance_service import BalanceService
 
@@ -85,17 +93,21 @@ def main() -> int:
 
         # 3. Somas por (tipo, status) — quantizadas no centavo (unidade contábil).
         print("== somas por tipo/status ==")
-        from database.models.transaction import Transaction
         from sqlalchemy import func
+
+        from database.models.transaction import Transaction
         from utils.money import to_money2
 
         def _sums(db):
             return {
                 (t.value, s.value): to_money2(v or 0, where="reconcile")
                 for t, s, v in db.query(
-                    Transaction.transaction_type, Transaction.status,
+                    Transaction.transaction_type,
+                    Transaction.status,
                     func.sum(Transaction.base_amount),
-                ).group_by(Transaction.transaction_type, Transaction.status).all()
+                )
+                .group_by(Transaction.transaction_type, Transaction.status)
+                .all()
             }
 
         s_map, d_map = _sums(sdb), _sums(ddb)

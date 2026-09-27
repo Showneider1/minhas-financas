@@ -12,38 +12,45 @@ Uso:
     with get_db_session() as db:
         result = import_from_csv(file_bytes, account_id=1, user_id=1, db=db)
 """
+
 import hashlib
 import io
 import re
 from datetime import date, datetime
-from typing import Optional
 
 import pandas as pd
 from sqlalchemy.orm import Session
 
-from services.import_categorizer import auto_categorize
 from config.logging_config import app_logger
-
+from services.import_categorizer import auto_categorize
 
 # ------------------------------------------------------------------ #
 # MAPEAMENTO DE COLUNAS POR BANCO                                       #
 # ------------------------------------------------------------------ #
 
 BANK_SCHEMAS = {
-    "nubank":    {"data": "date",            "valor": "amount", "descricao": "title"},
-    "bradesco":  {"data": "Data",            "valor": "Valor",  "descricao": "Histórico"},
-    "itau":      {"data": "Data",            "valor": "Valor",  "descricao": "Lançamento"},
-    "inter":     {"data": "Data lançamento", "valor": "Valor",  "descricao": "Descrição"},
-    "santander": {"data": "Data",            "valor": "Valor",  "descricao": "Descrição"},
-    "c6":        {"data": "Data",            "valor": "Valor",  "descricao": "Descrição"},
+    "nubank": {"data": "date", "valor": "amount", "descricao": "title"},
+    "bradesco": {"data": "Data", "valor": "Valor", "descricao": "Histórico"},
+    "itau": {"data": "Data", "valor": "Valor", "descricao": "Lançamento"},
+    "inter": {"data": "Data lançamento", "valor": "Valor", "descricao": "Descrição"},
+    "santander": {"data": "Data", "valor": "Valor", "descricao": "Descrição"},
+    "c6": {"data": "Data", "valor": "Valor", "descricao": "Descrição"},
 }
 
-_DATE_CANDIDATES   = ["date", "data", "data lançamento", "dt", "data_lancamento", "data lancamento"]
+_DATE_CANDIDATES = ["date", "data", "data lançamento", "dt", "data_lancamento", "data lancamento"]
 _AMOUNT_CANDIDATES = ["amount", "valor", "value", "quantia", "montante"]
-_DESC_CANDIDATES   = [
-    "title", "description", "descricao", "descrição",
-    "histórico", "historico", "lançamento", "lancamento",
-    "memo", "detalhe", "detalhes"
+_DESC_CANDIDATES = [
+    "title",
+    "description",
+    "descricao",
+    "descrição",
+    "histórico",
+    "historico",
+    "lançamento",
+    "lancamento",
+    "memo",
+    "detalhe",
+    "detalhes",
 ]
 
 
@@ -51,18 +58,19 @@ _DESC_CANDIDATES   = [
 # HELPERS PRIVADOS                                                      #
 # ------------------------------------------------------------------ #
 
+
 def _detect_column_schema(df: pd.DataFrame) -> dict:
     cols_lower = {c.lower().strip(): c for c in df.columns}
 
     for bank, schema in BANK_SCHEMAS.items():
-        match_data  = schema["data"].lower()      in cols_lower
-        match_valor = schema["valor"].lower()     in cols_lower
-        match_desc  = schema["descricao"].lower() in cols_lower
+        match_data = schema["data"].lower() in cols_lower
+        match_valor = schema["valor"].lower() in cols_lower
+        match_desc = schema["descricao"].lower() in cols_lower
         if match_data and match_valor and match_desc:
             app_logger.debug(f"[ImportService] Schema detectado: {bank}")
             return {
-                cols_lower[schema["data"].lower()]:      "data",
-                cols_lower[schema["valor"].lower()]:     "valor",
+                cols_lower[schema["data"].lower()]: "data",
+                cols_lower[schema["valor"].lower()]: "valor",
                 cols_lower[schema["descricao"].lower()]: "descricao",
             }
 
@@ -141,7 +149,7 @@ def _insert_transaction(
     row: pd.Series,
     tipo: str,
     valor,
-    category_id: Optional[int],
+    category_id: int | None,
     account_id: int,
     user_id: int,
     transaction_date: date,
@@ -195,8 +203,12 @@ def _ensure_fallback_category(db: Session, user_id: int, tipo: str) -> int:
     # Nome por tipo: UNIQUE(name, user_id) impede homônimos entre tipos.
     label = "receitas" if tx_type.value == "INCOME" else "despesas"
     cat = Category(
-        user_id=user_id, name=f"Importados ({label})",
-        transaction_type=tx_type, icon="📥", color="#95a5a6", is_system=False,
+        user_id=user_id,
+        name=f"Importados ({label})",
+        transaction_type=tx_type,
+        icon="📥",
+        color="#95a5a6",
+        is_system=False,
     )
     db.add(cat)
     db.flush()
@@ -206,6 +218,7 @@ def _ensure_fallback_category(db: Session, user_id: int, tipo: str) -> int:
 # ------------------------------------------------------------------ #
 # FUNCAO PRINCIPAL                                                      #
 # ------------------------------------------------------------------ #
+
 
 def import_from_csv(
     file_content: bytes,
@@ -232,11 +245,11 @@ def import_from_csv(
 
     for idx, row in df.iterrows():
         try:
-            valor            = _parse_valor(row["valor"])
+            valor = _parse_valor(row["valor"])
             transaction_date = _parse_date(row["data"])
-            descricao        = str(row.get("descricao", f"Importado linha {idx}")).strip()
+            descricao = str(row.get("descricao", f"Importado linha {idx}")).strip()
 
-            tipo  = "INCOME"  if valor > 0 else "EXPENSE"
+            tipo = "INCOME" if valor > 0 else "EXPENSE"
             valor = abs(valor)
 
             if _is_duplicate(db, transaction_date, valor, descricao, user_id):
@@ -248,9 +261,14 @@ def import_from_csv(
                 category_id = _ensure_fallback_category(db, user_id, tipo)
 
             _insert_transaction(
-                db=db, row=row, tipo=tipo, valor=valor,
-                category_id=category_id, account_id=account_id,
-                user_id=user_id, transaction_date=transaction_date,
+                db=db,
+                row=row,
+                tipo=tipo,
+                valor=valor,
+                category_id=category_id,
+                account_id=account_id,
+                user_id=user_id,
+                transaction_date=transaction_date,
             )
             results["imported"] += 1
 

@@ -1,12 +1,13 @@
 """
 Serviço de categorias.
 """
-from typing import List, Optional
+
 from sqlalchemy.orm import Session
+
+from config.logging_config import app_logger
 from database.models.category import Category, TransactionType
 from database.repositories.category_repo import CategoryRepository
 from schemas.category_schema import CategoryCreate
-from config.logging_config import app_logger
 
 
 class CategoryService:
@@ -22,11 +23,11 @@ class CategoryService:
         self,
         user_id: int,
         transaction_type: TransactionType,
-    ) -> List[Category]:
+    ) -> list[Category]:
         """Retorna categorias disponíveis para o usuário (sistema + próprias)."""
         return self.category_repo.get_categories_by_type(user_id, transaction_type)
 
-    def get_user_categories(self, user_id: int) -> List[Category]:
+    def get_user_categories(self, user_id: int) -> list[Category]:
         """Retorna todas as categorias do usuário (sistema + próprias)."""
         return self.category_repo.get_all_user_categories(user_id)
 
@@ -72,13 +73,11 @@ class CategoryService:
             raise ValueError("Categoria não encontrada para este usuário.")
         if category.is_system:
             raise ValueError("Categorias padrão não podem ser excluídas.")
-        from database.models.transaction import Transaction
         from database.models.scheduled_bill import ScheduledBill
+        from database.models.transaction import Transaction
 
         in_use = (
-            self.db.query(Transaction.id)
-            .filter(Transaction.category_id == category_id)
-            .first()
+            self.db.query(Transaction.id).filter(Transaction.category_id == category_id).first()
             or self.db.query(ScheduledBill.id)
             .filter(ScheduledBill.category_id == category_id)
             .first()
@@ -94,7 +93,7 @@ class CategoryService:
         app_logger.info(f"Categoria excluída: {category_id} (usuário {user_id})")
         return True
 
-    def seed_default_categories(self, user_id: Optional[int] = None):
+    def seed_default_categories(self, user_id: int | None = None):
         """
         Cria categorias padrão do sistema de forma idempotente.
 
@@ -112,18 +111,33 @@ class CategoryService:
         """
         default_categories = [
             # Despesas
-            {"name": "Alimentação", "type": TransactionType.EXPENSE,  "icon": "🍔", "color": "#e74c3c"},
-            {"name": "Transporte",  "type": TransactionType.EXPENSE,  "icon": "🚗", "color": "#3498db"},
-            {"name": "Moradia",     "type": TransactionType.EXPENSE,  "icon": "🏠", "color": "#9b59b6"},
-            {"name": "Saúde",       "type": TransactionType.EXPENSE,  "icon": "💊", "color": "#1abc9c"},
-            {"name": "Educação",    "type": TransactionType.EXPENSE,  "icon": "📚", "color": "#f39c12"},
-            {"name": "Lazer",       "type": TransactionType.EXPENSE,  "icon": "🎮", "color": "#e67e22"},
-            {"name": "Outros",      "type": TransactionType.EXPENSE,  "icon": "📦", "color": "#95a5a6"},
+            {
+                "name": "Alimentação",
+                "type": TransactionType.EXPENSE,
+                "icon": "🍔",
+                "color": "#e74c3c",
+            },
+            {
+                "name": "Transporte",
+                "type": TransactionType.EXPENSE,
+                "icon": "🚗",
+                "color": "#3498db",
+            },
+            {"name": "Moradia", "type": TransactionType.EXPENSE, "icon": "🏠", "color": "#9b59b6"},
+            {"name": "Saúde", "type": TransactionType.EXPENSE, "icon": "💊", "color": "#1abc9c"},
+            {"name": "Educação", "type": TransactionType.EXPENSE, "icon": "📚", "color": "#f39c12"},
+            {"name": "Lazer", "type": TransactionType.EXPENSE, "icon": "🎮", "color": "#e67e22"},
+            {"name": "Outros", "type": TransactionType.EXPENSE, "icon": "📦", "color": "#95a5a6"},
             # Receitas
-            {"name": "Salário",      "type": TransactionType.INCOME,  "icon": "💰", "color": "#27ae60"},
-            {"name": "Freelance",    "type": TransactionType.INCOME,  "icon": "💻", "color": "#2ecc71"},
-            {"name": "Investimentos","type": TransactionType.INCOME,  "icon": "📈", "color": "#16a085"},
-            {"name": "Outros",       "type": TransactionType.INCOME,  "icon": "💵", "color": "#27ae60"},
+            {"name": "Salário", "type": TransactionType.INCOME, "icon": "💰", "color": "#27ae60"},
+            {"name": "Freelance", "type": TransactionType.INCOME, "icon": "💻", "color": "#2ecc71"},
+            {
+                "name": "Investimentos",
+                "type": TransactionType.INCOME,
+                "icon": "📈",
+                "color": "#16a085",
+            },
+            {"name": "Outros", "type": TransactionType.INCOME, "icon": "💵", "color": "#27ae60"},
         ]
 
         created = 0
@@ -146,7 +160,7 @@ class CategoryService:
                     transaction_type=cat_data["type"],
                     icon=cat_data["icon"],
                     color=cat_data["color"],
-                    user_id=user_id,   # None para categorias globais
+                    user_id=user_id,  # None para categorias globais
                     is_system=True,
                 )
                 self.db.add(new_cat)

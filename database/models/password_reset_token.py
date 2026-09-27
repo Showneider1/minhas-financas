@@ -3,9 +3,12 @@
 Um `jti` (UUID v4) é gerado por reset solicitado e marcado como usado no
 consumo. Reuso do mesmo token é negado mesmo dentro da expiração.
 """
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean
-from sqlalchemy.orm import relationship
+
 from datetime import datetime, timezone
+
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy.orm import relationship
+
 from database.base import Base
 
 
@@ -20,8 +23,9 @@ class PasswordResetToken(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     jti = Column(String(36), nullable=False, unique=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
-                     nullable=False, index=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     expires_at = Column(DateTime(timezone=True), nullable=False)
     used = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), default=_utcnow)

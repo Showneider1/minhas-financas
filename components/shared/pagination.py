@@ -1,6 +1,7 @@
 """
 Componente de paginação reutilizável.
 """
+
 import dash_bootstrap_components as dbc
 from dash import html
 
@@ -13,21 +14,21 @@ def pagination_component(
 ):
     """
     Componente de paginação com navegação.
-    
+
     Args:
         current_page: Página atual (1-indexed)
         total_pages: Total de páginas
         component_id: ID do componente
         max_displayed: Máximo de páginas exibidas
-    
+
     Returns:
         Component Dash
     """
     if total_pages <= 1:
         return html.Div()
-    
+
     items = []
-    
+
     # Botão anterior
     items.append(
         dbc.PaginationItem(
@@ -36,15 +37,15 @@ def pagination_component(
             disabled=current_page == 1,
         )
     )
-    
+
     # Calcula range de páginas a exibir
     start_page = max(1, current_page - max_displayed // 2)
     end_page = min(total_pages, start_page + max_displayed - 1)
-    
+
     # Ajusta start se end estiver no limite
     if end_page == total_pages:
         start_page = max(1, end_page - max_displayed + 1)
-    
+
     # Primeira página se não estiver no range
     if start_page > 1:
         items.append(
@@ -56,7 +57,7 @@ def pagination_component(
         )
         if start_page > 2:
             items.append(dbc.PaginationItem("...", disabled=True))
-    
+
     # Páginas do range
     for page in range(start_page, end_page + 1):
         items.append(
@@ -66,7 +67,7 @@ def pagination_component(
                 active=page == current_page,
             )
         )
-    
+
     # Última página se não estiver no range
     if end_page < total_pages:
         if end_page < total_pages - 1:
@@ -78,7 +79,7 @@ def pagination_component(
                 active=False,
             )
         )
-    
+
     # Botão próximo
     items.append(
         dbc.PaginationItem(
@@ -87,7 +88,7 @@ def pagination_component(
             disabled=current_page == total_pages,
         )
     )
-    
+
     return dbc.Pagination(
         items,
         className="justify-content-center mt-4",
@@ -101,18 +102,18 @@ def items_per_page_selector(
 ):
     """
     Seletor de itens por página.
-    
+
     Args:
         component_id: ID do componente
         options: Lista de opções (default: [25, 50, 100])
         default: Valor padrão
-    
+
     Returns:
         Component Dash
     """
     if options is None:
         options = [25, 50, 100, 200]
-    
+
     return dbc.Row(
         [
             dbc.Col(

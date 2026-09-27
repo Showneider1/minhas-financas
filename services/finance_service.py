@@ -9,8 +9,8 @@ Contrato:
 - Isolamento: todo acesso filtra user_id (IDOR — Fase 7).
 - Erros: rollback explícito + exceção tipada (nunca str(e) vazar SQL).
 """
+
 from datetime import date
-from typing import Optional
 
 from sqlalchemy.orm import Session
 
@@ -47,13 +47,8 @@ class FinanceService:
         category = self._owned_category(user_id, transaction_data.category_id)
         # P0: categoria deve ser do mesmo tipo do lançamento (ex.: receita com
         # categoria de receita). Categorias sem tipo (NULL) aceitam qualquer.
-        if (
-            category.transaction_type is not None
-            and category.transaction_type != tx_type
-        ):
-            raise ValueError(
-                "Categoria incompatível com o tipo do lançamento."
-            )
+        if category.transaction_type is not None and category.transaction_type != tx_type:
+            raise ValueError("Categoria incompatível com o tipo do lançamento.")
 
         value = to_money2(transaction_data.base_amount, where="finance.create")
         paid = transaction_data.paid_date is not None
@@ -102,7 +97,9 @@ class FinanceService:
             if update_data["transaction_type"] == TransactionType.TRANSFER:
                 raise ValueError("Conversão para TRANSFER não permitida aqui.")
         if "base_amount" in update_data and update_data["base_amount"] is not None:
-            update_data["base_amount"] = to_money2(update_data["base_amount"], where="finance.update")
+            update_data["base_amount"] = to_money2(
+                update_data["base_amount"], where="finance.update"
+            )
         if "account_id" in update_data and update_data["account_id"] is not None:
             self._owned_account(user_id, update_data["account_id"])
         if "category_id" in update_data and update_data["category_id"] is not None:
@@ -112,8 +109,7 @@ class FinanceService:
                 raise ValueError("Categoria incompatível com o tipo do lançamento.")
         if update_data.get("destination_account_id") is not None:
             raise ValueError(
-                "destination_account_id é exclusivo de TRANSFER "
-                "(use TransferService)."
+                "destination_account_id é exclusivo de TRANSFER (use TransferService)."
             )
 
         old_account = tx.account_id
@@ -122,9 +118,7 @@ class FinanceService:
 
         if "paid_date" in update_data:
             tx.status = (
-                TransactionStatus.PAID
-                if update_data["paid_date"]
-                else TransactionStatus.PENDING
+                TransactionStatus.PAID if update_data["paid_date"] else TransactionStatus.PENDING
             )
 
         try:
@@ -164,7 +158,7 @@ class FinanceService:
         self,
         transaction_id: int,
         user_id: int,
-        paid_date: Optional[date] = None,
+        paid_date: date | None = None,
     ):
         """Efetiva transação (sincroniza status + paid_date). Idempotente.
 
@@ -176,9 +170,7 @@ class FinanceService:
         if tx.transaction_type == TransactionType.TRANSFER:
             from services.transfer_service import TransferService
 
-            return TransferService(self.db).confirm_transfer(
-                transaction_id, user_id, paid_date
-            )
+            return TransferService(self.db).confirm_transfer(transaction_id, user_id, paid_date)
         if tx.status == TransactionStatus.PAID and tx.paid_date is not None:
             return tx
         tx.paid_date = paid_date or date.today()

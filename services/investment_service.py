@@ -17,12 +17,12 @@ Tudo Decimal nativo (utils.money — float/bool rejeitados). Escala: 8 casas
 (qty/preço/PM), 2 casas (totais BRL). Posse (user_id) e suficiência validadas.
 Sem integração com frontend (P1 backend-only).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
-from typing import Dict, List, Optional
 
 from sqlalchemy import extract
 from sqlalchemy.orm import Session
@@ -54,20 +54,22 @@ ZERO = Decimal("0")
 # Data-classes de resposta (Decimal; sem dependência de Pydantic ou ORM)
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class InvestmentPosition:
     """Posição derivada de um ativo (replay do ledger)."""
+
     asset_id: int
     ticker: str
     name: str
     asset_type: str
-    sector: Optional[str]
-    quantity: Decimal          # 8 casas
-    avg_price: Decimal          # PM ponderado, 8 casas
-    total_cost: Decimal          # custo carregado (8 casas)
-    total_fees: Decimal          # 8 casas
-    total_dividends: Decimal      # proventos acumulados (2 casas)
-    realized_pnl: Decimal         # P&L realizado em vendas (2 casas)
+    sector: str | None
+    quantity: Decimal  # 8 casas
+    avg_price: Decimal  # PM ponderado, 8 casas
+    total_cost: Decimal  # custo carregado (8 casas)
+    total_fees: Decimal  # 8 casas
+    total_dividends: Decimal  # proventos acumulados (2 casas)
+    realized_pnl: Decimal  # P&L realizado em vendas (2 casas)
 
 
 # Alias de compatibilidade com callers legados (dashboard futuro).
@@ -77,16 +79,18 @@ PositionSummary = InvestmentPosition
 @dataclass
 class DividendSummary:
     """Resumo de dividendos/rendimentos de um ativo no período."""
+
     ticker: str
     name: str
     asset_type: str
     total: Decimal
-    events: List[Dict] = field(default_factory=list)
+    events: list[dict] = field(default_factory=list)
 
 
 @dataclass
 class IRPFLine:
     """Linha do demonstrativo de ganho de capital (IRPF)."""
+
     ticker: str
     name: str
     asset_type: str
@@ -102,6 +106,7 @@ class IRPFLine:
 @dataclass
 class SellResult:
     """Resultado de uma venda registrada."""
+
     operation_id: int
     quantity: Decimal
     sale_price: Decimal
@@ -115,6 +120,7 @@ class SellResult:
 # ---------------------------------------------------------------------------
 # Service
 # ---------------------------------------------------------------------------
+
 
 class InvestmentService:
     """Motor de carteira: registro validado + posição derivada."""
@@ -131,7 +137,7 @@ class InvestmentService:
         ticker: str,
         name: str,
         asset_type: AssetType,
-        sector: Optional[str] = None,
+        sector: str | None = None,
     ) -> Asset:
         """Cadastra ativo (idempotente por ticker+usuário)."""
         code = (ticker or "").strip().upper()
@@ -140,15 +146,16 @@ class InvestmentService:
         if not (name or "").strip():
             raise InvestmentValidationError("Nome do ativo é obrigatório.")
         existing = (
-            self.db.query(Asset)
-            .filter(Asset.user_id == user_id, Asset.ticker == code)
-            .first()
+            self.db.query(Asset).filter(Asset.user_id == user_id, Asset.ticker == code).first()
         )
         if existing:
             return existing
         asset = Asset(
-            user_id=user_id, ticker=code, name=name.strip(),
-            asset_type=asset_type, sector=(sector or "").strip() or None,
+            user_id=user_id,
+            ticker=code,
+            name=name.strip(),
+            asset_type=asset_type,
+            sector=(sector or "").strip() or None,
         )
         try:
             self.db.add(asset)
@@ -161,11 +168,7 @@ class InvestmentService:
         return asset
 
     def _owned_asset(self, asset_id: int, user_id: int) -> Asset:
-        asset = (
-            self.db.query(Asset)
-            .filter(Asset.id == asset_id, Asset.user_id == user_id)
-            .first()
-        )
+        asset = self.db.query(Asset).filter(Asset.id == asset_id, Asset.user_id == user_id).first()
         if not asset:
             raise InvestmentValidationError("Ativo não encontrado para este usuário.")
         return asset
@@ -180,9 +183,9 @@ class InvestmentService:
         quantity,
         price_per_unit,
         account_id: int,
-        operation_date: Optional[date] = None,
+        operation_date: date | None = None,
         fees=0,
-        notes: Optional[str] = None,
+        notes: str | None = None,
     ) -> InvestmentOperation:
         """Registra COMPRA com liquidação atômica no caixa.
 
@@ -209,12 +212,20 @@ class InvestmentService:
             )
         try:
             op = self._build_op(
-                asset, OperationType.BUY, operation_date or date.today(),
-                qty, price, fee, (qty * price + fee).quantize(Q8),
-                account.id, notes,
+                asset,
+                OperationType.BUY,
+                operation_date or date.today(),
+                qty,
+                price,
+                fee,
+                (qty * price + fee).quantize(Q8),
+                account.id,
+                notes,
             )
             self._settle(
-                user_id, account.id, op,
+                user_id,
+                account.id,
+                op,
                 kind="Compra",
                 tx_type=TransactionType.EXPENSE,
                 amount=settlement,
@@ -235,9 +246,9 @@ class InvestmentService:
         quantity,
         price_per_unit,
         account_id: int,
-        operation_date: Optional[date] = None,
+        operation_date: date | None = None,
         fees=0,
-        notes: Optional[str] = None,
+        notes: str | None = None,
     ) -> SellResult:
         """Registra VENDA com liquidação atômica (bloqueia oversell; PM não muda).
 
@@ -264,12 +275,20 @@ class InvestmentService:
         settlement = to_money2(qty * price - fee, where="invest.sell.settle")
         try:
             op = self._build_op(
-                asset, OperationType.SELL, operation_date or date.today(),
-                qty, price, fee, (qty * price - fee).quantize(Q8),
-                account.id, notes,
+                asset,
+                OperationType.SELL,
+                operation_date or date.today(),
+                qty,
+                price,
+                fee,
+                (qty * price - fee).quantize(Q8),
+                account.id,
+                notes,
             )
             self._settle(
-                user_id, account.id, op,
+                user_id,
+                account.id,
+                op,
                 kind="Venda",
                 tx_type=TransactionType.INCOME,
                 amount=settlement,
@@ -286,9 +305,14 @@ class InvestmentService:
             f"P&L {net} (usuário {user_id})"
         )
         return SellResult(
-            operation_id=op.id, quantity=qty, sale_price=price,
-            avg_price_at_sale=pos.avg_price, gross_gain=gross, fees=fee,
-            net_gain=net, remaining_quantity=(pos.quantity - qty).quantize(Q8),
+            operation_id=op.id,
+            quantity=qty,
+            sale_price=price,
+            avg_price_at_sale=pos.avg_price,
+            gross_gain=gross,
+            fees=fee,
+            net_gain=net,
+            remaining_quantity=(pos.quantity - qty).quantize(Q8),
         )
 
     def record_dividend(
@@ -297,9 +321,9 @@ class InvestmentService:
         user_id: int,
         amount,
         account_id: int,
-        operation_date: Optional[date] = None,
+        operation_date: date | None = None,
         kind: OperationType = OperationType.DIVIDEND,
-        notes: Optional[str] = None,
+        notes: str | None = None,
     ) -> InvestmentOperation:
         """Registra PROVENTO com crédito atômico (não altera qty nem PM)."""
         if kind not in (OperationType.DIVIDEND, OperationType.INTEREST):
@@ -311,11 +335,20 @@ class InvestmentService:
         account = self._owned_account(user_id, account_id)
         try:
             op = self._build_op(
-                asset, kind, operation_date or date.today(),
-                ZERO, ZERO, ZERO, value, account.id, notes,
+                asset,
+                kind,
+                operation_date or date.today(),
+                ZERO,
+                ZERO,
+                ZERO,
+                value,
+                account.id,
+                notes,
             )
             self._settle(
-                user_id, account.id, op,
+                user_id,
+                account.id,
+                op,
                 kind="Dividendo" if kind == OperationType.DIVIDEND else "JCP",
                 tx_type=TransactionType.INCOME,
                 amount=value,
@@ -334,8 +367,8 @@ class InvestmentService:
         asset_id: int,
         user_id: int,
         factor,
-        operation_date: Optional[date] = None,
-        notes: Optional[str] = None,
+        operation_date: date | None = None,
+        notes: str | None = None,
     ) -> InvestmentOperation:
         """Aplica DESDOBRAMENTO f:1 (qty ×= f, custo intacto, SEM caixa)."""
         asset = self._owned_asset(asset_id, user_id)
@@ -344,8 +377,15 @@ class InvestmentService:
             raise InvestmentValidationError("Fator do split deve ser > 0.")
         try:
             op = self._build_op(
-                asset, OperationType.SPLIT, operation_date or date.today(),
-                f, ZERO, ZERO, ZERO, None, notes or f"split {f}:1",
+                asset,
+                OperationType.SPLIT,
+                operation_date or date.today(),
+                f,
+                ZERO,
+                ZERO,
+                ZERO,
+                None,
+                notes or f"split {f}:1",
             )
             self.db.commit()
             self.db.refresh(op)
@@ -379,9 +419,11 @@ class InvestmentService:
             if tx_id:
                 from database.models.transaction import Transaction
 
-                tx = self.db.query(Transaction).filter(
-                    Transaction.id == tx_id, Transaction.user_id == user_id
-                ).first()
+                tx = (
+                    self.db.query(Transaction)
+                    .filter(Transaction.id == tx_id, Transaction.user_id == user_id)
+                    .first()
+                )
                 if tx:
                     account_id = account_id or tx.account_id
                     self.db.delete(tx)
@@ -389,9 +431,7 @@ class InvestmentService:
             # Integridade do ledger restante: posição nunca negativa.
             pos = self.get_position(op.asset_id, user_id)
             if pos.quantity < 0:
-                raise InvestmentValidationError(
-                    "Estorno recusado: deixaria a posição negativa."
-                )
+                raise InvestmentValidationError("Estorno recusado: deixaria a posição negativa.")
             if account_id:
                 from services.balance_service import BalanceService
 
@@ -407,14 +447,26 @@ class InvestmentService:
     # Liquidação (interno — sem commit; o chamador confirma)
     # ------------------------------------------------------------------
     def _build_op(
-        self, asset: Asset, op_type: OperationType, op_date: date,
-        qty: Decimal, price: Decimal, fee: Decimal, total: Decimal,
-        account_id: Optional[int], notes: Optional[str],
+        self,
+        asset: Asset,
+        op_type: OperationType,
+        op_date: date,
+        qty: Decimal,
+        price: Decimal,
+        fee: Decimal,
+        total: Decimal,
+        account_id: int | None,
+        notes: str | None,
     ) -> InvestmentOperation:
         op = InvestmentOperation(
-            asset_id=asset.id, account_id=account_id,
-            operation_type=op_type, date=op_date,
-            quantity=qty, price_per_unit=price, fees=fee, total_amount=total,
+            asset_id=asset.id,
+            account_id=account_id,
+            operation_type=op_type,
+            date=op_date,
+            quantity=qty,
+            price_per_unit=price,
+            fees=fee,
+            total_amount=total,
             notes=(notes or "")[:255] or None,
         )
         self.db.add(op)
@@ -422,8 +474,15 @@ class InvestmentService:
         return op
 
     def _settle(
-        self, user_id: int, account_id: int, op: InvestmentOperation,
-        kind: str, tx_type, amount: Decimal, op_date: date, ticker: str,
+        self,
+        user_id: int,
+        account_id: int,
+        op: InvestmentOperation,
+        kind: str,
+        tx_type,
+        amount: Decimal,
+        op_date: date,
+        ticker: str,
     ) -> None:
         """Cria a Transaction PAGA da liquidação e vincula (flush, sem commit)."""
         from database.models.transaction import Transaction, TransactionStatus
@@ -467,8 +526,12 @@ class InvestmentService:
         if cat:
             return cat.id
         cat = Category(
-            user_id=user_id, name=name, transaction_type=tx_type,
-            icon="📈", color="#16a085", is_system=False,
+            user_id=user_id,
+            name=name,
+            transaction_type=tx_type,
+            icon="📈",
+            color="#16a085",
+            is_system=False,
         )
         self.db.add(cat)
         try:
@@ -542,8 +605,11 @@ class InvestmentService:
                 dividends += t
         avg = (cost / qty).quantize(Q8) if qty > 0 else ZERO
         return InvestmentPosition(
-            asset_id=asset.id, ticker=asset.ticker, name=asset.name,
-            asset_type=asset.asset_type.value, sector=asset.sector,
+            asset_id=asset.id,
+            ticker=asset.ticker,
+            name=asset.name,
+            asset_type=asset.asset_type.value,
+            sector=asset.sector,
             quantity=qty.quantize(Q8),
             avg_price=avg,
             total_cost=cost.quantize(Q8),
@@ -552,62 +618,58 @@ class InvestmentService:
             realized_pnl=realized.quantize(Q2),
         )
 
-    def get_portfolio_position(self, user_id: int) -> List[InvestmentPosition]:
+    def get_portfolio_position(self, user_id: int) -> list[InvestmentPosition]:
         """Posições com saldo (qty > 0), ordenadas por ticker."""
         assets = self.db.query(Asset).filter(Asset.user_id == user_id).all()
         positions = [self.get_position(a.id, user_id) for a in assets]
-        return sorted(
-            (p for p in positions if p.quantity > 0), key=lambda p: p.ticker
-        )
+        return sorted((p for p in positions if p.quantity > 0), key=lambda p: p.ticker)
 
-    def get_portfolio_summary_by_type(self, user_id: int) -> Dict[str, Decimal]:
+    def get_portfolio_summary_by_type(self, user_id: int) -> dict[str, Decimal]:
         """Custo carregado por tipo de ativo (NÃO é valor de mercado)."""
-        summary: Dict[str, Decimal] = {}
+        summary: dict[str, Decimal] = {}
         for p in self.get_portfolio_position(user_id):
-            summary[p.asset_type] = (
-                summary.get(p.asset_type, ZERO) + p.total_cost
-            ).quantize(Q2)
+            summary[p.asset_type] = (summary.get(p.asset_type, ZERO) + p.total_cost).quantize(Q2)
         return summary
 
     # ------------------------------------------------------------------
     # Dividendos / IRPF
     # ------------------------------------------------------------------
-    def get_dividend_history(
-        self, user_id: int, year: Optional[int] = None
-    ) -> List[DividendSummary]:
+    def get_dividend_history(self, user_id: int, year: int | None = None) -> list[DividendSummary]:
         """Histórico de proventos (Decimal exato)."""
         dividend_types = [OperationType.DIVIDEND, OperationType.INTEREST]
-        summaries: List[DividendSummary] = []
+        summaries: list[DividendSummary] = []
         for asset in self.db.query(Asset).filter(Asset.user_id == user_id).all():
-            q = (
-                self.db.query(InvestmentOperation)
-                .filter(
-                    InvestmentOperation.asset_id == asset.id,
-                    InvestmentOperation.operation_type.in_(dividend_types),
-                )
+            q = self.db.query(InvestmentOperation).filter(
+                InvestmentOperation.asset_id == asset.id,
+                InvestmentOperation.operation_type.in_(dividend_types),
             )
             if year:
                 q = q.filter(extract("year", InvestmentOperation.date) == year)
             ops = q.order_by(InvestmentOperation.date).all()
             if not ops:
                 continue
-            total = sum(
-                (Decimal(str(op.total_amount or 0)) for op in ops), ZERO
-            ).quantize(Q2)
-            summaries.append(DividendSummary(
-                ticker=asset.ticker, name=asset.name,
-                asset_type=asset.asset_type.value, total=total,
-                events=[{
-                    "date": op.date.isoformat(),
-                    "type": op.operation_type.value,
-                    "amount": str(op.total_amount),
-                } for op in ops],
-            ))
+            total = sum((Decimal(str(op.total_amount or 0)) for op in ops), ZERO).quantize(Q2)
+            summaries.append(
+                DividendSummary(
+                    ticker=asset.ticker,
+                    name=asset.name,
+                    asset_type=asset.asset_type.value,
+                    total=total,
+                    events=[
+                        {
+                            "date": op.date.isoformat(),
+                            "type": op.operation_type.value,
+                            "amount": str(op.total_amount),
+                        }
+                        for op in ops
+                    ],
+                )
+            )
         return sorted(summaries, key=lambda s: s.total, reverse=True)
 
-    def get_irpf_report(self, user_id: int, year: int) -> List[IRPFLine]:
+    def get_irpf_report(self, user_id: int, year: int) -> list[IRPFLine]:
         """Ganho de capital por venda no ano (PM da data, taxas deduzidas)."""
-        lines: List[IRPFLine] = []
+        lines: list[IRPFLine] = []
         for asset in self.db.query(Asset).filter(Asset.user_id == user_id).all():
             sells = (
                 self.db.query(InvestmentOperation)
@@ -625,30 +687,30 @@ class InvestmentService:
                 p = Decimal(str(sell.price_per_unit or 0))
                 f = Decimal(str(sell.fees or 0))
                 gross = (q * (p - avg)).quantize(Q2)
-                lines.append(IRPFLine(
-                    ticker=asset.ticker, name=asset.name,
-                    asset_type=asset.asset_type.value,
-                    quantity_sold=q.quantize(Q8),
-                    avg_price=avg.quantize(Q8),
-                    sale_price=p.quantize(Q8),
-                    gross_gain=gross, fees=f.quantize(Q8),
-                    net_gain=(gross - f).quantize(Q2),
-                    sale_date=sell.date,
-                ))
+                lines.append(
+                    IRPFLine(
+                        ticker=asset.ticker,
+                        name=asset.name,
+                        asset_type=asset.asset_type.value,
+                        quantity_sold=q.quantize(Q8),
+                        avg_price=avg.quantize(Q8),
+                        sale_price=p.quantize(Q8),
+                        gross_gain=gross,
+                        fees=f.quantize(Q8),
+                        net_gain=(gross - f).quantize(Q2),
+                        sale_date=sell.date,
+                    )
+                )
         return sorted(lines, key=lambda l: l.sale_date)
 
-    def _avg_price_until(self, asset_id: int, until_date: date,
-                         until_id: int) -> Decimal:
+    def _avg_price_until(self, asset_id: int, until_date: date, until_id: int) -> Decimal:
         """PM ponderado com taxas até (data, id) — replay parcial."""
         ops = (
             self.db.query(InvestmentOperation)
             .filter(
                 InvestmentOperation.asset_id == asset_id,
                 (InvestmentOperation.date < until_date)
-                | (
-                    (InvestmentOperation.date == until_date)
-                    & (InvestmentOperation.id < until_id)
-                ),
+                | ((InvestmentOperation.date == until_date) & (InvestmentOperation.id < until_id)),
             )
             .order_by(InvestmentOperation.date, InvestmentOperation.id)
             .all()

@@ -4,6 +4,7 @@
 - Reuso de revogado = roubo → árvore inteira revogada + 401.
 - Logout revoga tudo; expirado/adulterado negado; access não rotaciona.
 """
+
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -14,14 +15,13 @@ from config.security import (
     refresh_session,
     verify_live_refresh_token,
 )
-from services.auth_services import AuthService
 from schemas.user_schema import UserLogin
+from services.auth_services import AuthService
 from utils.exceptions import AuthenticationError
 
 
 def test_rotation_happy_path(db, sample_user):
-    access, new_refresh = refresh_session(
-        db, issue_refresh_token(db, sample_user.id))
+    access, new_refresh = refresh_session(db, issue_refresh_token(db, sample_user.id))
     from config.security import verify_token
 
     assert verify_token(access) == sample_user.id
@@ -65,6 +65,7 @@ def test_logout_revokes_server_side(db, sample_user):
 
 def test_expired_and_tampered_refresh_denied(db, sample_user):
     import jwt
+
     from config import security as _sec
 
     payload = {
@@ -74,8 +75,9 @@ def test_expired_and_tampered_refresh_denied(db, sample_user):
         "exp": datetime.now(timezone.utc) - timedelta(minutes=1),
         "iat": datetime.now(timezone.utc) - timedelta(days=8),
     }
-    expired = jwt.encode(payload, _sec.settings.JWT_SECRET_KEY,
-                         algorithm=_sec.settings.JWT_ALGORITHM)
+    expired = jwt.encode(
+        payload, _sec.settings.JWT_SECRET_KEY, algorithm=_sec.settings.JWT_ALGORITHM
+    )
     assert verify_live_refresh_token(db, expired) is None
 
     live = issue_refresh_token(db, sample_user.id)
@@ -94,11 +96,10 @@ def test_full_login_logout_cycle(db, isolated_limiter):
     from schemas.user_schema import UserCreate
 
     svc = AuthService(db)
-    svc.register_user(UserCreate(name="Ciclo Silva", email="ciclo@ex.com",
-                                 password="Segura123"))
+    svc.register_user(UserCreate(name="Ciclo Silva", email="ciclo@ex.com", password="Segura123"))
     token = svc.authenticate_user(
-        UserLogin(email="ciclo@ex.com", password="Segura123"),
-        client_ip="198.51.100.44")
+        UserLogin(email="ciclo@ex.com", password="Segura123"), client_ip="198.51.100.44"
+    )
     assert token.refresh_token
     assert verify_live_refresh_token(db, token.refresh_token) == token.user_id
     svc.logout(token.user_id)

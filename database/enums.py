@@ -7,11 +7,13 @@ Regras:
 - Valores idênticos aos legados (migração sem reescrita de dados).
 - Models, schemas e services importam daqui. Nada de redefinir.
 """
+
 import enum
 
 
 class TransactionType(str, enum.Enum):
     """Tipo de lançamento."""
+
     INCOME = "INCOME"
     EXPENSE = "EXPENSE"
     TRANSFER = "TRANSFER"
@@ -19,6 +21,7 @@ class TransactionType(str, enum.Enum):
 
 class TransactionStatus(str, enum.Enum):
     """Status do lançamento (sincronizado com paid_date em escrita)."""
+
     PENDING = "PENDING"
     PAID = "PAID"
     CANCELLED = "CANCELLED"
@@ -26,6 +29,7 @@ class TransactionStatus(str, enum.Enum):
 
 class AccountType(str, enum.Enum):
     """Tipo de conta."""
+
     CHECKING = "checking"
     SAVINGS = "savings"
     INVESTMENT = "investment"
@@ -54,6 +58,7 @@ class GoalCategory(str, enum.Enum):
 
 class AssetType(str, enum.Enum):
     """Tipos de ativos financeiros."""
+
     STOCK = "STOCK"
     FII = "FII"
     FIXED_INCOME = "FIXED"
@@ -64,6 +69,7 @@ class AssetType(str, enum.Enum):
 
 class OperationType(str, enum.Enum):
     """Tipos de operação de investimento."""
+
     BUY = "BUY"
     SELL = "SELL"
     DIVIDEND = "DIVIDEND"

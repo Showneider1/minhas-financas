@@ -16,9 +16,9 @@ REGRA CANÔNICA ÚNICA (todas as telas consomem este serviço):
 `Account.balance` é CACHE persistido desta fórmula — o único escritor é
 `recalculate_and_persist()`. Nenhum outro código atribui `balance` à mão.
 """
+
 from datetime import date
 from decimal import Decimal
-from typing import Dict, Optional
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -149,15 +149,19 @@ class BalanceService:
     # ------------------------------------------------------------------
     def get_period_summary(
         self, user_id: int, start_date: date, end_date: date
-    ) -> Dict[str, Decimal]:
+    ) -> dict[str, Decimal]:
         """Receitas/despesas PAGAS (paid_date no período) + PENDENTES (due_date).
 
         TRANSFER excluído. Retorna Decimal (formatação na borda).
         """
         income_paid = self._period_sum(user_id, TransactionType.INCOME, True, start_date, end_date)
-        expense_paid = self._period_sum(user_id, TransactionType.EXPENSE, True, start_date, end_date)
+        expense_paid = self._period_sum(
+            user_id, TransactionType.EXPENSE, True, start_date, end_date
+        )
         income_pend = self._period_sum(user_id, TransactionType.INCOME, False, start_date, end_date)
-        expense_pend = self._period_sum(user_id, TransactionType.EXPENSE, False, start_date, end_date)
+        expense_pend = self._period_sum(
+            user_id, TransactionType.EXPENSE, False, start_date, end_date
+        )
         return {
             "income_paid": income_paid,
             "expense_paid": expense_paid,
@@ -198,7 +202,7 @@ class BalanceService:
         total = query.scalar()
         return to_money2(total or 0, where="balance.period")
 
-    def reconcile(self, user_id: int) -> Dict[str, object]:
+    def reconcile(self, user_id: int) -> dict[str, object]:
         """Conciliação: calculado (transações) × persistido (Account.balance).
 
         Retorna divergências por conta. Vazio = consistente.
@@ -222,7 +226,7 @@ class BalanceService:
                 )
         return {"ok": not divergences, "divergences": divergences}
 
-    def touch_account(self, account_id: Optional[int], user_id: int) -> None:
+    def touch_account(self, account_id: int | None, user_id: int) -> None:
         """Recalcula conta se pertencer ao usuário; silencioso se None/terceiro."""
         if account_id is None:
             return

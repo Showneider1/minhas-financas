@@ -1,6 +1,7 @@
-from dash import html, dcc
 from datetime import date
+
 import dash_bootstrap_components as dbc
+from dash import dcc, html
 
 # ===================
 # DASHBOARD LAYOUT
@@ -44,7 +45,6 @@ layout = dbc.Container(
             ],
             className="mb-4 align-items-center",
         ),
-
         # ======================================================
         # KPI CARDS
         # ======================================================
@@ -57,9 +57,7 @@ layout = dbc.Container(
                             [
                                 html.Div(
                                     [
-                                        html.I(
-                                            className="bi bi-wallet2 me-2 text-warning"
-                                        ),
+                                        html.I(className="bi bi-wallet2 me-2 text-warning"),
                                         html.Span(
                                             "Saldo Atual",
                                             className="text-muted small fw-bold text-uppercase",
@@ -84,7 +82,6 @@ layout = dbc.Container(
                     md=4,
                     className="mb-4",
                 ),
-
                 # RECEITA
                 dbc.Col(
                     dbc.Card(
@@ -92,9 +89,7 @@ layout = dbc.Container(
                             [
                                 html.Div(
                                     [
-                                        html.I(
-                                            className="bi bi-arrow-up-circle me-2 text-success"
-                                        ),
+                                        html.I(className="bi bi-arrow-up-circle me-2 text-success"),
                                         html.Span(
                                             "Receitas",
                                             className="text-muted small fw-bold text-uppercase",
@@ -119,7 +114,6 @@ layout = dbc.Container(
                     md=4,
                     className="mb-4",
                 ),
-
                 # DESPESA
                 dbc.Col(
                     dbc.Card(
@@ -156,7 +150,6 @@ layout = dbc.Container(
                 ),
             ]
         ),
-
         # ======================================================
         # FILTROS (Accordion)
         # ======================================================
@@ -262,9 +255,7 @@ layout = dbc.Container(
                                 dbc.Col(
                                     dbc.Button(
                                         [
-                                            html.I(
-                                                className="bi bi-arrow-clockwise me-2"
-                                            ),
+                                            html.I(className="bi bi-arrow-clockwise me-2"),
                                             "Limpar Filtros",
                                         ],
                                         id="dashboard-limpar-filtros",
@@ -285,7 +276,6 @@ layout = dbc.Container(
             flush=True,
             className="mb-4 shadow-sm",
         ),
-
         # ======================================================
         # GRÁFICOS
         # ======================================================
@@ -297,9 +287,7 @@ layout = dbc.Container(
                             dbc.CardHeader(
                                 html.H5(
                                     [
-                                        html.I(
-                                            className="bi bi-graph-up me-2"
-                                        ),
+                                        html.I(className="bi bi-graph-up me-2"),
                                         "Fluxo de Caixa",
                                     ],
                                     className="mb-0 fw-bold fs-6",
@@ -326,9 +314,7 @@ layout = dbc.Container(
                             dbc.CardHeader(
                                 html.H5(
                                     [
-                                        html.I(
-                                            className="bi bi-pie-chart me-2"
-                                        ),
+                                        html.I(className="bi bi-pie-chart me-2"),
                                         "Categorias",
                                     ],
                                     className="mb-0 fw-bold fs-6",

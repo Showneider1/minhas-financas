@@ -1,6 +1,8 @@
-from dash import dcc
-import dash_bootstrap_components as dbc
 from datetime import date
+
+import dash_bootstrap_components as dbc
+from dash import dcc
+
 
 def date_range_filter(id: str, start: date = None, end: date = None) -> dbc.Col:
     """Retorna um filtro de período com DatePickerRange"""
@@ -19,7 +21,10 @@ def date_range_filter(id: str, start: date = None, end: date = None) -> dbc.Col:
         className="mb-3",
     )
 
-def dropdown_filter(id: str, label: str, options: list[dict], multi=True, placeholder="Todos") -> dbc.Col:
+
+def dropdown_filter(
+    id: str, label: str, options: list[dict], multi=True, placeholder="Todos"
+) -> dbc.Col:
     """Retorna um filtro de dropdown"""
     return dbc.Col(
         [
@@ -34,6 +39,7 @@ def dropdown_filter(id: str, label: str, options: list[dict], multi=True, placeh
         md=4,
         className="mb-3",
     )
+
 
 def status_filter(id: str) -> dbc.Col:
     """Filtro de status de pagamento"""

@@ -4,12 +4,14 @@
 - Contas/categorias: criação, soft-delete, unicidade, bloqueio em uso.
 - Transação órfã (conta/categoria de outro usuário) é rejeitada no service.
 """
+
 from decimal import Decimal
 
 import pytest
 from sqlalchemy.exc import IntegrityError
 
 from database.base import Base
+from database.models.account import AccountType
 from database.models.category import TransactionType
 from schemas.account_schema import AccountCreate
 from schemas.category_schema import CategoryCreate
@@ -17,22 +19,33 @@ from schemas.transaction_schema import TransactionCreate
 from services.account_service import AccountService
 from services.category_service import CategoryService
 from services.finance_service import FinanceService, TransactionNotFound
-from database.models.account import AccountType
 
 
 def test_init_db_creates_all_tables(db_engine):
     tables = set(Base.metadata.tables.keys())
-    for expected in ("users", "accounts", "categories", "transactions", "budgets",
-                     "goals", "scheduled_bills", "assets", "investment_operations",
-                     "password_reset_tokens"):
+    for expected in (
+        "users",
+        "accounts",
+        "categories",
+        "transactions",
+        "budgets",
+        "goals",
+        "scheduled_bills",
+        "assets",
+        "investment_operations",
+        "password_reset_tokens",
+    ):
         assert expected in tables, f"tabela ausente no metadata: {expected}"
 
 
 def test_account_crud_soft_delete(db, sample_user):
     svc = AccountService(db)
-    acc = svc.create_account(sample_user.id, AccountCreate(
-        name="Reserva", account_type=AccountType.SAVINGS,
-        initial_balance=Decimal("100.00")))
+    acc = svc.create_account(
+        sample_user.id,
+        AccountCreate(
+            name="Reserva", account_type=AccountType.SAVINGS, initial_balance=Decimal("100.00")
+        ),
+    )
     assert acc.balance == Decimal("100.00")
     assert svc.get_account_by_id(acc.id, sample_user.id) is not None
     assert svc.delete_account(acc.id, sample_user.id) is True
@@ -64,16 +77,14 @@ def test_account_with_transactions_cannot_be_deleted(
 
 def test_category_unique_per_user(db, sample_user):
     svc = CategoryService(db)
-    svc.create_category(sample_user.id, CategoryCreate(
-        name="Cinema", type=TransactionType.EXPENSE))
+    svc.create_category(sample_user.id, CategoryCreate(name="Cinema", type=TransactionType.EXPENSE))
     with pytest.raises(IntegrityError):
-        svc.create_category(sample_user.id, CategoryCreate(
-            name="Cinema", type=TransactionType.EXPENSE))
+        svc.create_category(
+            sample_user.id, CategoryCreate(name="Cinema", type=TransactionType.EXPENSE)
+        )
 
 
-def test_category_in_use_cannot_be_deleted(
-    db, sample_user, sample_account, sample_category
-):
+def test_category_in_use_cannot_be_deleted(db, sample_user, sample_account, sample_category):
     from datetime import date
 
     FinanceService(db).create_transaction(
@@ -97,10 +108,16 @@ def test_transaction_with_foreign_account_rejected(
     db, sample_user, sample_account, sample_category
 ):
     from datetime import date
+
     from database.models.user import User
 
-    other = User(name="Estranho", email="estranho@ex.com", password_hash="h",
-                 is_active=True, is_deleted=False)
+    other = User(
+        name="Estranho",
+        email="estranho@ex.com",
+        password_hash="h",
+        is_active=True,
+        is_deleted=False,
+    )
     db.add(other)
     db.commit()
     with pytest.raises(TransactionNotFound):
