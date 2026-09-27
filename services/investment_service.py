@@ -31,6 +31,7 @@ from sqlalchemy.orm import Session
 
 from config.logging_config import app_logger
 from database.enums import AssetType, OperationType, TransactionType
+from database.models.asset_price import AssetPrice
 from database.models.investment import Asset, InvestmentOperation
 from utils.money import to_money2, to_qty8
 
@@ -629,9 +630,9 @@ class InvestmentService:
     def get_position_summary(self, user_id: int) -> dict[str, Any]:
         """Resume carteira por valor atual sem gerar queries N+1.
 
-        O dashboard consome este método para consolidar patrimônio. Como a P1
-        ainda não possui cotação externa, o preço atual usa o último preço
-        operacional do ativo (após ajuste por splits).
+        O dashboard consome este método para consolidar patrimônio. A valoração
+        usa primeiro o cache local de mercado (`asset_prices`), depois o último
+        preço operacional do ativo como fallback.
         """
         assets = self.db.query(Asset).filter(Asset.user_id == user_id).all()
         if not assets:
@@ -655,6 +656,19 @@ class InvestmentService:
         ops_by_asset = defaultdict(list)
         for op in operations:
             ops_by_asset[op.asset_id].append(op)
+
+        asset_tickers = [asset.ticker for asset in assets]
+        cached_prices = (
+            self.db.query(AssetPrice)
+            .filter(AssetPrice.ticker.in_(asset_tickers))
+            .order_by(AssetPrice.ticker.asc(), AssetPrice.date.desc(), AssetPrice.id.desc())
+            .all()
+        )
+        latest_cached_price = {}
+        for price_row in cached_prices:
+            latest_cached_price.setdefault(
+                price_row.ticker, Decimal(str(price_row.close_price or 0))
+            )
 
         positions = []
         total_current_value = Decimal("0")
@@ -694,7 +708,10 @@ class InvestmentService:
 
             if qty > 0:
                 avg_price = (cost / qty).quantize(Q8)
-                if current_price <= 0:
+                cached_price = latest_cached_price.get(asset.ticker)
+                if cached_price is not None:
+                    current_price = cached_price.quantize(Q8)
+                elif current_price <= 0:
                     current_price = avg_price
                 market_value = to_money2(qty * current_price, where="investment.summary.value")
                 total_current_value += market_value

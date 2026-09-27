@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from database.base import Base
 from database.models.account import Account
+from database.models.asset_price import AssetPrice  # noqa: F401
 from database.models.category import Category, TransactionType
 from database.models.goal import Goal, GoalCategory, GoalStatus  # noqa: F401
 from database.models.password_reset_token import PasswordResetToken  # noqa: F401

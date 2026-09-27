@@ -84,6 +84,7 @@ def init_db():
     try:
         # Importar modelos aqui para garantir que o SQLAlchemy os conheça antes do create_all
         import database.models.account
+        import database.models.asset_price
         import database.models.budget
         import database.models.category
         import database.models.goal

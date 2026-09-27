@@ -3,6 +3,7 @@ Exporta todos os models para registro no SQLAlchemy.
 """
 
 from database.models.account import Account, AccountType
+from database.models.asset_price import AssetPrice
 from database.models.budget import Budget
 from database.models.category import Category, TransactionType
 from database.models.goal import Goal, GoalCategory, GoalStatus
@@ -20,6 +21,7 @@ __all__ = [
     "User",
     "Account",
     "AccountType",
+    "AssetPrice",
     "Category",
     "TransactionType",
     "Transaction",
