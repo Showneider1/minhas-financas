@@ -215,6 +215,27 @@ def layout():
                     dbc.Col(
                         [
                             dbc.Button(
+                                [
+                                    html.I(className="bi bi-arrow-repeat me-2"),
+                                    "Atualizar Cotações",
+                                ],
+                                id="btn-update-prices",
+                                color="primary",
+                                outline=True,
+                                className="fw-bold",
+                            ),
+                            dcc.Loading(
+                                html.Div(id="invest-price-feedback"),
+                                type="dot",
+                                parent_style={"height": "24px"},
+                            ),
+                        ],
+                        width="auto",
+                        className="d-flex flex-column align-items-end",
+                    ),
+                    dbc.Col(
+                        [
+                            dbc.Button(
                                 [html.I(className="bi bi-plus-circle me-2"), "Nova Operação"],
                                 id="invest-btn-new",
                                 color="success",

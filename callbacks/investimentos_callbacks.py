@@ -18,6 +18,7 @@ from services.investment_service import (
     InvestmentService,
     InvestmentValidationError,
 )
+from services.market_data_service import MarketDataService
 from utils.exceptions import AuthenticationError
 
 
@@ -92,7 +93,66 @@ def load_portfolio(auth_data, _reload):
         return dbc.Alert("Não foi possível carregar a carteira.", color="danger", dismissable=True)
 
 
-# ─── 2. Abrir/fechar modal ────────────────────────────────────────────────────
+# ─── 2. Atualizar cotações manualmente ────────────────────────────────────────
+
+
+@app.callback(
+    Output("invest-price-feedback", "children"),
+    Input("btn-update-prices", "n_clicks"),
+    State("auth-store", "data"),
+    prevent_initial_call=True,
+)
+def update_market_prices(n_clicks, auth_data):
+    """Busca cotações da carteira do usuário e atualiza o cache local."""
+    if not n_clicks:
+        return no_update
+
+    try:
+        user_id = resolve_user(auth_data)
+        with get_db_session() as db:
+            positions = InvestmentService(db).get_portfolio_position(user_id)
+            tickers = sorted({position.ticker for position in positions})
+
+            if not tickers:
+                return dbc.Alert(
+                    "Nenhuma posição encontrada para atualizar.",
+                    color="info",
+                    dismissable=True,
+                )
+
+            result = MarketDataService(db).update_prices_for_tickers(tickers)
+
+        updated_count = len(result["updated"])
+        failed_count = len(result["failed"])
+        skipped_count = len(result["skipped"])
+
+        if failed_count:
+            color = "danger"
+        elif updated_count == 0:
+            color = "warning"
+        else:
+            color = "success"
+
+        message = f"Cotações atualizadas: {updated_count} ativos."
+        if skipped_count:
+            message += f" Ignorados: {skipped_count}."
+        if failed_count:
+            message += f" Falhas: {failed_count}."
+
+        return dbc.Alert(message, color=color, dismissable=True)
+
+    except AuthenticationError as e:
+        return dbc.Alert(str(e), color="warning", dismissable=True)
+    except Exception as e:
+        app_logger.error(f"Erro ao atualizar cotações: {e}")
+        return dbc.Alert(
+            "Não foi possível atualizar as cotações.",
+            color="danger",
+            dismissable=True,
+        )
+
+
+# ─── 3. Abrir/fechar modal ────────────────────────────────────────────────────
 
 
 @app.callback(
