@@ -61,11 +61,12 @@ class InvestmentOperation(Base):
     operation_type = Column(Enum(OperationType, native_enum=False), nullable=False)
     date           = Column(Date, nullable=False, index=True)
 
-    # Quantidades/preços (Numeric 14,4 — nunca Float; ADR-002)
-    quantity       = Column(Numeric(14, 4), nullable=False)  # Quantidade
-    price_per_unit = Column(Numeric(14, 4), nullable=False)  # Preço na data
-    fees           = Column(Numeric(14, 4), default=0)     # Taxas (B3, Corretagem)
-    total_amount   = Column(Numeric(14, 4), nullable=False)  # (Qtd * Preço) + Taxas
+    # Quantidades/preços (Numeric 18,8 — cotas fracionárias cripto/fundos;
+    # nunca Float; ADR-002 + P1 investimentos).
+    quantity       = Column(Numeric(18, 8), nullable=False)  # Quantidade
+    price_per_unit = Column(Numeric(18, 8), nullable=False)  # Preço na data
+    fees           = Column(Numeric(18, 8), default=0)     # Taxas (B3, Corretagem)
+    total_amount   = Column(Numeric(18, 8), nullable=False)  # BUY: qtd*preço+taxas
 
     notes      = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=True), default=_utcnow)  # FIX: timezone-aware

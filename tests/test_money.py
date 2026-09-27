@@ -35,6 +35,15 @@ def test_to_qty4_scale():
         to_qty4(1.5)
 
 
+def test_to_qty8_crypto_scale():
+    from utils.money import to_qty8
+
+    assert to_qty8("0.123456789") == Decimal("0.12345679")
+    assert to_qty8("0.12345678") == Decimal("0.12345678")
+    with pytest.raises(TypeError):
+        to_qty8(0.1)
+
+
 def test_split_money_exact_cases():
     assert split_money("100.00", 3) == [Decimal("33.34"), Decimal("33.33"), Decimal("33.33")]
     assert split_money("1200.00", 6) == [Decimal("200.00")] * 6

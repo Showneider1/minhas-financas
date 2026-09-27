@@ -18,6 +18,7 @@ from typing import List, Union
 
 Q2 = Decimal("0.01")
 Q4 = Decimal("0.0001")
+Q8 = Decimal("0.00000001")
 
 MoneyLike = Union[Decimal, int, str]
 
@@ -71,6 +72,11 @@ def to_money2(value: MoneyLike, *, where: str = "to_money2") -> Decimal:
 def to_qty4(value: MoneyLike, *, where: str = "to_qty4") -> Decimal:
     """Normaliza quantidade/preço para Decimal com 4 casas."""
     return _coerce(value, where).quantize(Q4, rounding=ROUND_HALF_UP)
+
+
+def to_qty8(value: MoneyLike, *, where: str = "to_qty8") -> Decimal:
+    """Normaliza quantidade/preço/taxa para Decimal com 8 casas (cripto/fundos)."""
+    return _coerce(value, where).quantize(Q8, rounding=ROUND_HALF_UP)
 
 
 def split_money(total: MoneyLike, n: int) -> List[Decimal]:
