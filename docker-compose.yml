@@ -8,8 +8,9 @@ services:
     environment:
       PYTHONUNBUFFERED: "1"
       PYTHONUTF8: "1"
-    ports:
-      - "8050:8050"
+    # Somente serviços da rede interna do Compose podem acessar a app.
+    expose:
+      - "8050"
     volumes:
       # SQLite persistente fora do contêiner.
       # Se o contêiner for recriado, o banco continua aqui.
@@ -26,6 +27,23 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  caddy:
+    image: caddy:latest
+    container_name: finance-os-caddy
+    env_file:
+      - .env
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+    restart: unless-stopped
 
   # Postgres opcional para staging/local.
   # Não sobe por padrão; use: docker compose --profile postgres up -d
@@ -52,3 +70,5 @@ services:
 
 volumes:
   postgres_data:
+  caddy_data:
+  caddy_config:
