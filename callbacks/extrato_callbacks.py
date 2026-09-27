@@ -2,7 +2,8 @@
 Callbacks do Extrato v4 — corrige salvar edição e comportamento de despesas pendentes.
 """
 
-from datetime import date, datetime
+from calendar import monthrange
+from datetime import date
 
 import dash_bootstrap_components as dbc
 from dash import ALL, Input, Output, State, ctx, html, no_update
@@ -10,13 +11,13 @@ from dash import ALL, Input, Output, State, ctx, html, no_update
 from app import app
 from config.logging_config import app_logger
 from database.connection import get_db_session
+from database.enums import TransactionType
 from database.repositories.transaction_repo import TransactionRepository
 from middleware.auth_context import resolve_user
 from services.account_service import AccountService
 from services.category_service import CategoryService
 from services.finance_service import FinanceService
 from utils.exceptions import AuthenticationError
-from utils.money import money_sum
 
 PAGE_SIZE = 30
 
@@ -89,6 +90,8 @@ def load_filter_options(pathname, auth_data):
 # ─── Limpar filtros ───────────────────────────────────────────────────────────
 @app.callback(
     Output("extrato-filter-search", "value"),
+    Output("extrato-filter-month", "value"),
+    Output("extrato-filter-year", "value"),
     Output("extrato-filter-account", "value"),
     Output("extrato-filter-category", "value"),
     Output("extrato-filter-type", "value"),
@@ -100,14 +103,14 @@ def load_filter_options(pathname, auth_data):
 def clear_filters(n):
     if not n:
         return no_update
-    return "", "", "", "ALL", "ALL", 1
+    return "", date.today().month, date.today().year, "", "", "ALL", "ALL", 1
 
 
 # ─── Reset página ao mudar filtros ───────────────────────────────────────────
 @app.callback(
     Output("extrato-page-current", "data", allow_duplicate=True),
-    Input("extrato-filter-date", "start_date"),
-    Input("extrato-filter-date", "end_date"),
+    Input("extrato-filter-month", "value"),
+    Input("extrato-filter-year", "value"),
     Input("extrato-filter-search", "value"),
     Input("extrato-filter-account", "value"),
     Input("extrato-filter-category", "value"),
@@ -125,8 +128,8 @@ def reset_page(*_):
     Output("extrato-summary-cards", "children"),
     Output("extrato-result-count", "children"),
     Output("extrato-pagination", "children"),
-    Input("extrato-filter-date", "start_date"),
-    Input("extrato-filter-date", "end_date"),
+    Input("extrato-filter-month", "value"),
+    Input("extrato-filter-year", "value"),
     Input("extrato-filter-search", "value"),
     Input("extrato-filter-account", "value"),
     Input("extrato-filter-category", "value"),
@@ -136,57 +139,63 @@ def reset_page(*_):
     Input("extrato-page-current", "data"),
     State("auth-store", "data"),
 )
-def update_extrato(
-    start_date, end_date, search, acc_id, cat_id, type_, status, _reload, page, auth_data
-):
+def update_extrato(month, year, search, acc_id, cat_id, type_, status, _reload, page, auth_data):
     try:
-        # P0 (IDOR): usuário derivado do JWT; sessão inválida bloqueia leitura.
         user_id = resolve_user(auth_data)
     except AuthenticationError:
         return html.Div("Sessão expirada — faça login novamente."), [], "", ""
 
     try:
-        dt_start = datetime.fromisoformat(start_date).date() if start_date else None
-        dt_end = datetime.fromisoformat(end_date).date() if end_date else None
+        month = int(month or date.today().month)
+        year = int(year or date.today().year)
+        dt_start = date(year, month, 1)
+        dt_end = date(year, month, monthrange(year, month)[1])
+
         acc_id = int(acc_id) if acc_id else None
         cat_id = int(cat_id) if cat_id else None
-        type_f = type_ if type_ != "ALL" else None
-        # OVERDUE é filtrado pós-query; no repo passa PENDING para já excluir os pagos
-        status_f = "PENDING" if status == "OVERDUE" else (status if status != "ALL" else None)
+        type_f = None if type_ == "ALL" else TransactionType(type_)
+        status_f = "PENDING" if status == "OVERDUE" else (None if status == "ALL" else status)
 
         with get_db_session() as db:
             repo = TransactionRepository(db)
-            raw_txs = repo.get_filtered(
+            page = int(page or 1)
+            txs, total = repo.filter_transactions(
                 user_id=user_id,
                 start_date=dt_start,
                 end_date=dt_end,
-                account_id=acc_id,
-                category_id=cat_id,
+                transaction_type=type_f,
                 status=status_f,
-                type_=type_f,
+                account_ids=[acc_id] if acc_id else None,
+                category_ids=[cat_id] if cat_id else None,
+                search=search,
+                page=page,
+                page_size=PAGE_SIZE,
             )
-            # ⚠️ Serializar DENTRO da sessão antes de fechar
-            txs = [_tx_to_dict(t) for t in raw_txs]
+            summary = repo.get_filtered_summary(
+                user_id=user_id,
+                start_date=dt_start,
+                end_date=dt_end,
+                transaction_type=type_f,
+                status=status_f,
+                account_ids=[acc_id] if acc_id else None,
+                category_ids=[cat_id] if cat_id else None,
+                search=search,
+            )
+            rows_data = [_tx_to_dict(t) for t in txs]
 
-        # Filtros pós-query
-        if search:
-            q = search.lower()
-            txs = [t for t in txs if q in t["description"].lower() or q in t["cat_name"].lower()]
         if status == "OVERDUE":
-            txs = [t for t in txs if t["is_overdue"]]
+            rows_data = [t for t in rows_data if t["is_overdue"]]
 
-        # Totais (Decimal; TRANSFER fora de receita/despesa por construção)
-        total_rec = money_sum(t["base_amount"] for t in txs if t["type"] == "INCOME")
-        total_desp = money_sum(t["base_amount"] for t in txs if t["type"] == "EXPENSE")
-        total_pend = money_sum(
-            t["base_amount"] for t in txs if not t["is_paid"] and t["type"] == "EXPENSE"
+        total_p = (summary["total"] + PAGE_SIZE - 1) // PAGE_SIZE
+        cards = _build_summary_cards(
+            summary["income"],
+            summary["expense"],
+            summary["income"] - summary["expense"],
+            summary["pending_expense"],
         )
-        saldo = total_rec - total_desp
+        count_label = f"{summary['total']} lançamento(s) encontrado(s)"
 
-        cards = _build_summary_cards(total_rec, total_desp, saldo, total_pend)
-        count_label = f"{len(txs)} lançamento(s) encontrado(s)"
-
-        if not txs:
+        if not rows_data:
             empty = html.Div(
                 [
                     html.I(className="bi bi-search display-4 text-muted mb-3"),
@@ -197,16 +206,16 @@ def update_extrato(
             )
             return empty, cards, count_label, ""
 
-        # Paginação
-        page = page or 1
-        total_p = (len(txs) + PAGE_SIZE - 1) // PAGE_SIZE
-        page_txs = txs[(page - 1) * PAGE_SIZE : page * PAGE_SIZE]
-
         rows = []
-        for t in page_txs:
+        for t in rows_data:
             is_income = t["type"] == "INCOME"
-            val_cls = "text-success fw-bold" if is_income else "text-danger fw-bold"
-            signal = "+" if is_income else "-"
+            is_transfer = t["type"] == "TRANSFER"
+            val_cls = (
+                "text-primary fw-bold"
+                if is_transfer
+                else ("text-success fw-bold" if is_income else "text-danger fw-bold")
+            )
+            signal = "" if is_transfer else ("+" if is_income else "-")
 
             if t["is_paid"]:
                 badge = dbc.Badge("Pago", color="success", className="rounded-pill")
@@ -224,7 +233,10 @@ def update_extrato(
                 label_data = "Vencimento"
 
             notes_icon = (
-                html.I(className="bi bi-chat-left-text-fill text-info ms-1 small", title=t["notes"])
+                html.I(
+                    className="bi bi-chat-left-text-fill text-info ms-1 small",
+                    title=t["notes"],
+                )
                 if t["notes"]
                 else ""
             )

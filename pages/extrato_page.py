@@ -60,16 +60,83 @@ layout = dbc.Container(
                             [
                                 dbc.Col(
                                     [
-                                        dbc.Label("Periodo", className="fw-bold small"),
-                                        dcc.DatePickerRange(
-                                            id="extrato-filter-date",
-                                            display_format="DD/MM/YYYY",
-                                            start_date=date.today().replace(day=1),
-                                            end_date=date.today(),
+                                        dbc.Label("Mês", className="fw-bold small"),
+                                        dbc.Select(
+                                            id="extrato-filter-month",
+                                            options=[
+                                                {
+                                                    "label": "Janeiro",
+                                                    "value": 1,
+                                                },
+                                                {
+                                                    "label": "Fevereiro",
+                                                    "value": 2,
+                                                },
+                                                {
+                                                    "label": "Março",
+                                                    "value": 3,
+                                                },
+                                                {
+                                                    "label": "Abril",
+                                                    "value": 4,
+                                                },
+                                                {
+                                                    "label": "Maio",
+                                                    "value": 5,
+                                                },
+                                                {
+                                                    "label": "Junho",
+                                                    "value": 6,
+                                                },
+                                                {
+                                                    "label": "Julho",
+                                                    "value": 7,
+                                                },
+                                                {
+                                                    "label": "Agosto",
+                                                    "value": 8,
+                                                },
+                                                {
+                                                    "label": "Setembro",
+                                                    "value": 9,
+                                                },
+                                                {
+                                                    "label": "Outubro",
+                                                    "value": 10,
+                                                },
+                                                {
+                                                    "label": "Novembro",
+                                                    "value": 11,
+                                                },
+                                                {
+                                                    "label": "Dezembro",
+                                                    "value": 12,
+                                                },
+                                            ],
+                                            value=date.today().month,
                                         ),
                                     ],
-                                    width=12,
-                                    md=3,
+                                    width=6,
+                                    md=2,
+                                    className="mb-2",
+                                ),
+                                dbc.Col(
+                                    [
+                                        dbc.Label("Ano", className="fw-bold small"),
+                                        dbc.Select(
+                                            id="extrato-filter-year",
+                                            options=[
+                                                {"label": str(year), "value": year}
+                                                for year in range(
+                                                    date.today().year - 5,
+                                                    date.today().year + 2,
+                                                )
+                                            ],
+                                            value=date.today().year,
+                                        ),
+                                    ],
+                                    width=6,
+                                    md=2,
                                     className="mb-2",
                                 ),
                                 dbc.Col(
@@ -121,6 +188,7 @@ layout = dbc.Container(
                                                 {"label": "Todos", "value": "ALL"},
                                                 {"label": "Receitas", "value": "INCOME"},
                                                 {"label": "Despesas", "value": "EXPENSE"},
+                                                {"label": "Transferências", "value": "TRANSFER"},
                                             ],
                                             value="ALL",
                                         ),

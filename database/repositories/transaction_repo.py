@@ -11,7 +11,7 @@ Repository de transações — contrato canônico (P0 — ADR-002).
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import and_, asc, desc, func, or_
+from sqlalchemy import and_, asc, case, desc, func, or_
 from sqlalchemy.orm import Session, joinedload
 
 from database.models.category import Category, TransactionType
@@ -50,11 +50,7 @@ class TransactionRepository(BaseRepository[Transaction]):
         user_id: int,
         paid_date: date | None = None,
     ) -> bool:
-        """Marca como paga sincronizando status + paid_date (idempotente).
-
-        P0: antes só setava paid_date (sem status, sem dono, sem commit).
-        Saldos são recalculados pelo chamador (FinanceService/BalanceService).
-        """
+        """Marca como paga sincronizando status + paid_date (idempotente)."""
         transaction = self.get_owned(transaction_id, user_id)
         if not transaction:
             return False
@@ -65,57 +61,37 @@ class TransactionRepository(BaseRepository[Transaction]):
         self.db.flush()
         return True
 
-    def filter_transactions(
+    def _build_filtered_query(
         self,
+        *,
         user_id: int,
-        start_date: date | None = None,
-        end_date: date | None = None,
-        transaction_type: TransactionType | None = None,
-        status: str | None = None,  # 'PAID', 'PENDING' ou None (ALL)
-        category_ids: list[int] | None = None,
-        account_ids: list[int] | None = None,
-        min_amount=None,
-        max_amount=None,
-        search: str | None = None,
-        is_recurring: bool | None = None,
-        page: int = 1,
-        page_size: int = 50,
-    ) -> tuple[list[Transaction], int]:
-        """
-        Motor de busca principal para listagens (Extrato, Relatórios).
-        """
-        query = (
-            self.db.query(Transaction)
-            .options(
-                joinedload(Transaction.category),
-                joinedload(Transaction.account),
-            )
-            .filter(Transaction.user_id == user_id)
-        )
+        start_date: date | None,
+        end_date: date | None,
+        transaction_type: TransactionType | None,
+        status: str | None,
+        category_ids: list[int] | None,
+        account_ids: list[int] | None,
+        min_amount,
+        max_amount,
+        search: str | None,
+        is_recurring: bool | None,
+    ):
+        query = self.db.query(Transaction).filter(Transaction.user_id == user_id)
 
-        # ── 1. Filtro de Data ────────────────────────────────────────────────
-        # CORREÇÃO: no modo ALL (status=None) retorna PAGOS com paid_date no
-        # período OU PENDENTES com due_date no período.
-        # Antes, o modo ALL filtrava só por due_date, fazendo transações pagas
-        # cujo due_date caía fora do período sumirem.
+        s_val = status.value if hasattr(status, "value") else (status or "")
+
         if start_date and end_date:
-            s_val = status.value if hasattr(status, "value") else (status or "")
-
             if s_val == "PAID":
-                # Apenas pagos: data de referência = paid_date
                 query = query.filter(
                     Transaction.paid_date >= start_date,
                     Transaction.paid_date <= end_date,
                 )
             elif s_val == "PENDING":
-                # Apenas pendentes: data de referência = due_date
                 query = query.filter(
                     Transaction.due_date >= start_date,
                     Transaction.due_date <= end_date,
                 )
             else:
-                # ALL: mostra PAGOS no período (pela paid_date)
-                #       OU PENDENTES no período (pela due_date)
                 query = query.filter(
                     or_(
                         and_(
@@ -131,7 +107,6 @@ class TransactionRepository(BaseRepository[Transaction]):
                     )
                 )
 
-        # ── 2. Filtros Diretos ───────────────────────────────────────────────
         if transaction_type:
             query = query.filter(Transaction.transaction_type == transaction_type)
 
@@ -141,23 +116,19 @@ class TransactionRepository(BaseRepository[Transaction]):
         if account_ids:
             query = query.filter(Transaction.account_id.in_(account_ids))
 
-        # ── 3. Filtros de Valor (canônico: base_amount) ───────────────────
         if min_amount is not None:
             query = query.filter(
                 Transaction.base_amount >= to_money2(min_amount, where="tx_repo.filter")
             )
+
         if max_amount is not None:
             query = query.filter(
                 Transaction.base_amount <= to_money2(max_amount, where="tx_repo.filter")
             )
 
-        # ── 4. Filtro de Recorrência ─────────────────────────────────────────
         if is_recurring is not None:
             query = query.filter(Transaction.is_recurring == is_recurring)
 
-        # ── 5. Filtro de Status (paid_date) ──────────────────────────────────
-        # Aplicado separadamente do filtro de data para não conflitar com o
-        # bloco OR do modo ALL acima.
         if status:
             s_val = status.value if hasattr(status, "value") else status
             if s_val == "PAID":
@@ -165,7 +136,6 @@ class TransactionRepository(BaseRepository[Transaction]):
             elif s_val == "PENDING":
                 query = query.filter(Transaction.paid_date.is_(None))
 
-        # ── 6. Busca Textual (limitada — anti-DoS) ─────────────────────────
         if search:
             term = f"%{search[:100]}%"
             query = query.filter(
@@ -175,7 +145,42 @@ class TransactionRepository(BaseRepository[Transaction]):
                 )
             )
 
-        # ── Paginação e Ordenação ────────────────────────────────────────────
+        return query
+
+    def filter_transactions(
+        self,
+        user_id: int,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        transaction_type: TransactionType | None = None,
+        status: str | None = None,
+        category_ids: list[int] | None = None,
+        account_ids: list[int] | None = None,
+        min_amount=None,
+        max_amount=None,
+        search: str | None = None,
+        is_recurring: bool | None = None,
+        page: int = 1,
+        page_size: int = 50,
+    ) -> tuple[list[Transaction], int]:
+        """Busca paginada com eager loading de Category/Account (sem N+1)."""
+        query = self._build_filtered_query(
+            user_id=user_id,
+            start_date=start_date,
+            end_date=end_date,
+            transaction_type=transaction_type,
+            status=status,
+            category_ids=category_ids,
+            account_ids=account_ids,
+            min_amount=min_amount,
+            max_amount=max_amount,
+            search=search,
+            is_recurring=is_recurring,
+        ).options(
+            joinedload(Transaction.category),
+            joinedload(Transaction.account),
+        )
+
         total = query.count()
         query = query.order_by(desc(Transaction.due_date))
 
@@ -184,6 +189,84 @@ class TransactionRepository(BaseRepository[Transaction]):
             query = query.offset(offset).limit(page_size)
 
         return query.all(), total
+
+    def get_filtered_summary(
+        self,
+        *,
+        user_id: int,
+        start_date: date | None,
+        end_date: date | None,
+        transaction_type: TransactionType | None,
+        status: str | None,
+        category_ids: list[int] | None,
+        account_ids: list[int] | None,
+        search: str | None,
+        is_recurring: bool | None = None,
+    ) -> dict[str, Decimal | int]:
+        """Totais agregados no banco (evita carregar todas as transações)."""
+        query = self._build_filtered_query(
+            user_id=user_id,
+            start_date=start_date,
+            end_date=end_date,
+            transaction_type=transaction_type,
+            status=status,
+            category_ids=category_ids,
+            account_ids=account_ids,
+            min_amount=None,
+            max_amount=None,
+            search=search,
+            is_recurring=is_recurring,
+        )
+
+        subquery = query.subquery()
+        income_sum = func.sum(
+            case(
+                (subquery.c.transaction_type == TransactionType.INCOME, subquery.c.base_amount),
+                else_=Decimal("0"),
+            )
+        )
+        expense_sum = func.sum(
+            case(
+                (
+                    subquery.c.transaction_type == TransactionType.EXPENSE,
+                    subquery.c.base_amount,
+                ),
+                else_=Decimal("0"),
+            )
+        )
+        pending_expense_sum = func.sum(
+            case(
+                (
+                    and_(
+                        subquery.c.transaction_type == TransactionType.EXPENSE,
+                        subquery.c.paid_date.is_(None),
+                    ),
+                    subquery.c.base_amount,
+                ),
+                else_=Decimal("0"),
+            )
+        )
+
+        row = (
+            self.db.query(
+                func.count(subquery.c.id),
+                func.coalesce(income_sum, Decimal("0")),
+                func.coalesce(expense_sum, Decimal("0")),
+                func.coalesce(pending_expense_sum, Decimal("0")),
+            )
+            .select_from(subquery)
+            .one()
+        )
+
+        total, income, expense, pending_expense = row
+        return {
+            "total": int(total or 0),
+            "income": to_money2(income or 0, where="tx_repo.summary.income"),
+            "expense": to_money2(expense or 0, where="tx_repo.summary.expense"),
+            "pending_expense": to_money2(
+                pending_expense or 0, where="tx_repo.summary.pending_expense"
+            ),
+        }
 
     def get_filtered(
         self,
@@ -207,9 +290,6 @@ class TransactionRepository(BaseRepository[Transaction]):
             category_ids=cat_ids,
             status=status,
             transaction_type=type_,
-            # NOTA: paginação em memória no chamador (P3: LIMIT/OFFSET SQL).
-            # Teto 10000 alinha com relatórios; acima disso os totais do
-            # extrato ficam parciais (documentado — ver CODE_AUDIT A12).
             page_size=10000,
         )
         return txs
