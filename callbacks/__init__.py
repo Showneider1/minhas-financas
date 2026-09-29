@@ -91,3 +91,11 @@ try:
     print("✓ Investimentos/Recorrência callbacks carregados")
 except Exception as _e:
     print(f"⚠ Aviso investimentos/recorrencia_callbacks: {_e}")
+
+# ── Cartões de Crédito (UI P1) ─────────────────────────────────────
+try:
+    import callbacks.cartoes_callbacks  # noqa: F401
+
+    print("✓ Cartões callbacks carregados")
+except Exception as _e:
+    print(f"⚠ Aviso cartoes_callbacks: {_e}")

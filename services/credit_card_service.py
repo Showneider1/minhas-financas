@@ -10,6 +10,7 @@ Regras de domínio:
 
 from __future__ import annotations
 
+from calendar import monthrange
 from collections.abc import Iterable
 from datetime import date
 from decimal import ROUND_DOWN, Decimal
@@ -59,10 +60,10 @@ class CreditCardService:
         limit = to_money2(credit_limit, where="credit_card.create.limit")
         if limit <= ZERO:
             raise CreditCardError("Limite do cartão deve ser maior que zero.")
-        if not (1 <= int(closing_day) <= 28):
-            raise CreditCardError("Dia de fechamento deve estar entre 1 e 28.")
-        if not (1 <= int(due_day) <= 28):
-            raise CreditCardError("Dia de vencimento deve estar entre 1 e 28.")
+        if not (1 <= int(closing_day) <= 31):
+            raise CreditCardError("Dia de fechamento deve estar entre 1 e 31.")
+        if not (1 <= int(due_day) <= 31):
+            raise CreditCardError("Dia de vencimento deve estar entre 1 e 31.")
         if not (name or "").strip():
             raise CreditCardError("Nome do cartão é obrigatório.")
 
@@ -242,13 +243,19 @@ class CreditCardService:
             closing_year = next_month.year
             closing_month = next_month.month
 
-        closing_date = date(closing_year, closing_month, card.closing_day)
+        closing_date = self._safe_date(closing_year, closing_month, card.closing_day)
 
         if card.due_day > card.closing_day:
-            return date(closing_year, closing_month, card.due_day)
+            return self._safe_date(closing_year, closing_month, card.due_day)
 
         due_month = closing_date + relativedelta(months=1)
-        return date(due_month.year, due_month.month, card.due_day)
+        return self._safe_date(due_month.year, due_month.month, card.due_day)
+
+    @staticmethod
+    def _safe_date(year: int, month: int, day: int) -> date:
+        """Cria uma data válida, ajustando dias acima do último dia do mês."""
+        last_day = monthrange(year, month)[1]
+        return date(year, month, min(day, last_day))
 
     @staticmethod
     def _split_installments(total: Decimal, installments: int) -> list[Decimal]:

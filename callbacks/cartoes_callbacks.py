@@ -1,0 +1,288 @@
+"""Callbacks da página de Cartões de Crédito."""
+
+from decimal import Decimal, InvalidOperation
+
+import dash_bootstrap_components as dbc
+from dash import Input, Output, State, ctx, html, no_update
+
+from app import app
+from config.logging_config import app_logger
+from database.connection import get_db_session
+from database.models.credit_card import CreditCard
+from middleware.auth_context import resolve_user
+from services.credit_card_service import CreditCardError, CreditCardService
+from utils.exceptions import AuthenticationError
+
+
+def _fmt_brl(value) -> str:
+    amount = value if isinstance(value, Decimal) else Decimal(str(value or 0))
+    return f"R$ {amount:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+@app.callback(
+    Output("cartoes-list-container", "children"),
+    Input("auth-store", "data"),
+    Input("cartoes-reload-trigger", "data"),
+    prevent_initial_call=True,
+)
+def load_credit_cards(auth_data, _reload):
+    """Carrega os cartões do usuário logado."""
+    try:
+        user_id = resolve_user(auth_data)
+    except AuthenticationError:
+        return dbc.Alert("Sessão expirada — faça login novamente.", color="warning")
+
+    try:
+        with get_db_session() as db:
+            service = CreditCardService(db)
+            cards = (
+                db.query(CreditCard)
+                .filter(CreditCard.user_id == user_id, CreditCard.is_active.is_(True))
+                .order_by(CreditCard.name.asc())
+                .all()
+            )
+
+            if not cards:
+                return html.Div(
+                    [
+                        html.I(
+                            className=(
+                                "bi bi-credit-card display-4 text-muted "
+                                "d-block text-center mb-3 mt-4"
+                            )
+                        ),
+                        html.P(
+                            "Nenhum cartão cadastrado.",
+                            className="text-center text-muted",
+                        ),
+                    ],
+                    className="py-4",
+                )
+
+            items = []
+            for card in cards:
+                available = service.get_available_limit(user_id, card.id)
+                used = Decimal(str(card.credit_limit or 0)) - available
+                progress = (
+                    float(used / Decimal(str(card.credit_limit or 1)) * 100)
+                    if Decimal(str(card.credit_limit or 0)) > 0
+                    else 0
+                )
+                items.append(
+                    dbc.Col(
+                        dbc.Card(
+                            [
+                                dbc.CardHeader(
+                                    [
+                                        html.I(
+                                            className=("bi bi-credit-card-fill text-primary me-2")
+                                        ),
+                                        html.Span(card.name, className="fw-bold"),
+                                    ],
+                                    className="bg-white border-0 pb-0",
+                                ),
+                                dbc.CardBody(
+                                    [
+                                        html.P(
+                                            [
+                                                html.Small(
+                                                    "Limite disponível",
+                                                    className="text-muted d-block",
+                                                ),
+                                                html.Strong(
+                                                    _fmt_brl(available),
+                                                    className="text-success fs-5",
+                                                ),
+                                            ],
+                                            className="mb-2",
+                                        ),
+                                        dbc.Progress(
+                                            value=progress,
+                                            color="warning",
+                                            className="mb-3",
+                                            style={"height": "6px"},
+                                        ),
+                                        dbc.Row(
+                                            [
+                                                dbc.Col(
+                                                    [
+                                                        html.Small(
+                                                            "Limite total",
+                                                            className="text-muted d-block",
+                                                        ),
+                                                        html.Strong(_fmt_brl(card.credit_limit)),
+                                                    ],
+                                                    width=4,
+                                                ),
+                                                dbc.Col(
+                                                    [
+                                                        html.Small(
+                                                            "Fechamento",
+                                                            className="text-muted d-block",
+                                                        ),
+                                                        html.Strong(f"Dia {card.closing_day}"),
+                                                    ],
+                                                    width=4,
+                                                ),
+                                                dbc.Col(
+                                                    [
+                                                        html.Small(
+                                                            "Vencimento",
+                                                            className="text-muted d-block",
+                                                        ),
+                                                        html.Strong(f"Dia {card.due_day}"),
+                                                    ],
+                                                    width=4,
+                                                ),
+                                            ],
+                                            className="text-center",
+                                        ),
+                                    ],
+                                    className="pt-2",
+                                ),
+                            ],
+                            className="shadow-sm border-0 h-100",
+                        ),
+                        width=12,
+                        lg=4,
+                        className="mb-3",
+                    )
+                )
+
+            return dbc.Row(items)
+    except Exception as exc:
+        app_logger.error(f"Erro ao carregar cartões: {exc}")
+        return dbc.Alert(
+            "Não foi possível carregar os cartões.",
+            color="danger",
+            dismissable=True,
+        )
+
+
+@app.callback(
+    Output("modal-credit-card", "is_open"),
+    Output("credit-card-nome", "value"),
+    Output("credit-card-limite", "value"),
+    Output("credit-card-fechamento", "value"),
+    Output("credit-card-vencimento", "value"),
+    Output("credit-card-feedback", "children"),
+    Input("btn-open-credit-card-modal", "n_clicks"),
+    Input("btn-cancel-credit-card-modal", "n_clicks"),
+    prevent_initial_call=True,
+)
+def toggle_credit_card_modal(n_open, n_cancel):
+    """Abre e fecha o modal de novo cartão."""
+    triggered = ctx.triggered_id
+
+    if triggered == "btn-open-credit-card-modal" and n_open:
+        return True, "", "", None, None, ""
+
+    if triggered == "btn-cancel-credit-card-modal" and n_cancel:
+        return False, no_update, no_update, no_update, no_update, ""
+
+    return no_update, no_update, no_update, no_update, no_update, no_update
+
+
+@app.callback(
+    Output("credit-card-feedback", "children", allow_duplicate=True),
+    Output("cartoes-feedback", "children"),
+    Output("cartoes-feedback", "is_open"),
+    Output("cartoes-reload-trigger", "data", allow_duplicate=True),
+    Output("modal-credit-card", "is_open", allow_duplicate=True),
+    Input("btn-save-credit-card-modal", "n_clicks"),
+    State("credit-card-nome", "value"),
+    State("credit-card-limite", "value"),
+    State("credit-card-fechamento", "value"),
+    State("credit-card-vencimento", "value"),
+    State("auth-store", "data"),
+    State("cartoes-reload-trigger", "data"),
+    prevent_initial_call=True,
+)
+def create_credit_card(
+    n_clicks,
+    name,
+    limit,
+    closing_day,
+    due_day,
+    auth_data,
+    reload_counter,
+):
+    """Cria um novo cartão de crédito."""
+    if not n_clicks:
+        return no_update, no_update, no_update, no_update, no_update
+
+    try:
+        user_id = resolve_user(auth_data)
+
+        if not (name or "").strip():
+            raise CreditCardError("Informe o nome do cartão.")
+        if limit in (None, ""):
+            raise CreditCardError("Informe o limite do cartão.")
+        if closing_day in (None, ""):
+            raise CreditCardError("Informe o dia de fechamento.")
+        if due_day in (None, ""):
+            raise CreditCardError("Informe o dia de vencimento.")
+
+        try:
+            limit_decimal = Decimal(str(limit))
+        except (InvalidOperation, ValueError):
+            raise CreditCardError("Limite inválido.")
+
+        closing_day_int = int(closing_day)
+        due_day_int = int(due_day)
+        if not (1 <= closing_day_int <= 31):
+            raise CreditCardError("Dia de fechamento deve estar entre 1 e 31.")
+        if not (1 <= due_day_int <= 31):
+            raise CreditCardError("Dia de vencimento deve estar entre 1 e 31.")
+
+        with get_db_session() as db:
+            CreditCardService(db).create_credit_card(
+                user_id=user_id,
+                name=name.strip(),
+                credit_limit=limit_decimal,
+                closing_day=closing_day_int,
+                due_day=due_day_int,
+            )
+
+        return (
+            "",
+            dbc.Alert(
+                f'Cartão "{name.strip()}" criado com sucesso!',
+                color="success",
+                dismissable=True,
+                duration=4000,
+            ),
+            True,
+            (reload_counter or 0) + 1,
+            False,
+        )
+
+    except AuthenticationError as exc:
+        return (
+            dbc.Alert(str(exc), color="warning", dismissable=True),
+            no_update,
+            no_update,
+            no_update,
+            True,
+        )
+    except CreditCardError as exc:
+        return (
+            dbc.Alert(str(exc), color="warning", dismissable=True),
+            no_update,
+            no_update,
+            no_update,
+            True,
+        )
+    except Exception as exc:
+        app_logger.error(f"Erro ao criar cartão: {exc}")
+        return (
+            dbc.Alert(
+                "Não foi possível criar o cartão.",
+                color="danger",
+                dismissable=True,
+            ),
+            no_update,
+            no_update,
+            no_update,
+            True,
+        )

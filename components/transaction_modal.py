@@ -5,6 +5,7 @@ Suporta:
 - Receita
 - Despesa
 - Transferência entre contas
+- Despesa no cartão de crédito
 """
 
 from datetime import date
@@ -126,6 +127,47 @@ def create_transaction_modal():
                     html.Div(
                         id="standard-section",
                         children=[
+                            html.Div(
+                                id="payment-method-section",
+                                children=[
+                                    dbc.Label("Pagar com", className="fw-bold"),
+                                    dbc.RadioItems(
+                                        id="metodo-pagamento",
+                                        options=[
+                                            {
+                                                "label": html.Span(
+                                                    [
+                                                        html.I(
+                                                            className=(
+                                                                "bi bi-bank me-1 text-primary"
+                                                            )
+                                                        ),
+                                                        " Conta",
+                                                    ]
+                                                ),
+                                                "value": "CONTA",
+                                            },
+                                            {
+                                                "label": html.Span(
+                                                    [
+                                                        html.I(
+                                                            className=(
+                                                                "bi bi-credit-card-fill "
+                                                                "me-1 text-warning"
+                                                            )
+                                                        ),
+                                                        " Cartão de Crédito",
+                                                    ]
+                                                ),
+                                                "value": "CARTAO",
+                                            },
+                                        ],
+                                        value="CONTA",
+                                        inline=True,
+                                        className="mb-3",
+                                    ),
+                                ],
+                            ),
                             dbc.Row(
                                 [
                                     dbc.Col(
@@ -136,67 +178,119 @@ def create_transaction_modal():
                                                 placeholder="Selecione...",
                                             ),
                                         ],
-                                        width=6,
-                                    ),
-                                    dbc.Col(
-                                        [
-                                            dbc.Label("Conta / Cartão", className="fw-bold"),
-                                            dbc.Select(
-                                                id="select-conta",
-                                                placeholder="Selecione...",
-                                            ),
-                                        ],
-                                        width=6,
+                                        width=12,
                                     ),
                                 ],
                                 className="mb-3",
                             ),
-                            dbc.Row(
-                                [
-                                    dbc.Col(
+                            html.Div(
+                                id="conta-section",
+                                children=[
+                                    dbc.Row(
                                         [
-                                            dbc.Label(
-                                                "Parcela Atual",
-                                                className="fw-bold small",
-                                            ),
-                                            dbc.Input(
-                                                id="input-parcela-atual",
-                                                type="number",
-                                                value=1,
-                                                min=1,
+                                            dbc.Col(
+                                                [
+                                                    dbc.Label(
+                                                        "Conta",
+                                                        className="fw-bold",
+                                                    ),
+                                                    dbc.Select(
+                                                        id="select-conta",
+                                                        placeholder="Selecione...",
+                                                    ),
+                                                ],
+                                                width=12,
                                             ),
                                         ],
-                                        width=6,
+                                        className="mb-3",
                                     ),
-                                    dbc.Col(
-                                        [
-                                            dbc.Label(
-                                                "Total de Parcelas",
-                                                className="fw-bold small",
-                                            ),
-                                            dbc.Input(
-                                                id="input-total-parcelas",
-                                                type="number",
-                                                value=1,
-                                                min=1,
+                                    html.Div(
+                                        id="parcelas-section",
+                                        children=[
+                                            dbc.Row(
+                                                [
+                                                    dbc.Col(
+                                                        [
+                                                            dbc.Label(
+                                                                "Parcela Atual",
+                                                                className=("fw-bold small"),
+                                                            ),
+                                                            dbc.Input(
+                                                                id="input-parcela-atual",
+                                                                type="number",
+                                                                value=1,
+                                                                min=1,
+                                                            ),
+                                                        ],
+                                                        width=6,
+                                                    ),
+                                                    dbc.Col(
+                                                        [
+                                                            dbc.Label(
+                                                                "Total de Parcelas",
+                                                                className=("fw-bold small"),
+                                                            ),
+                                                            dbc.Input(
+                                                                id="input-total-parcelas",
+                                                                type="number",
+                                                                value=1,
+                                                                min=1,
+                                                            ),
+                                                        ],
+                                                        width=6,
+                                                    ),
+                                                ],
+                                                className="mb-3",
                                             ),
                                         ],
-                                        width=6,
                                     ),
                                 ],
-                                className="mb-3",
                             ),
-                            dbc.Checklist(
-                                options=[
-                                    {
-                                        "label": " É assinatura/despesa fixa?",
-                                        "value": "recorrente",
-                                    }
+                            html.Div(
+                                id="cartao-section",
+                                style={"display": "none"},
+                                children=[
+                                    dbc.Row(
+                                        [
+                                            dbc.Col(
+                                                [
+                                                    dbc.Label(
+                                                        "Cartão de Crédito",
+                                                        className="fw-bold",
+                                                    ),
+                                                    dbc.Select(
+                                                        id="select-cartao",
+                                                        placeholder="Selecione o cartão...",
+                                                    ),
+                                                ],
+                                                width=6,
+                                            ),
+                                            dbc.Col(
+                                                [
+                                                    dbc.Label(
+                                                        "Parcelas",
+                                                        className="fw-bold",
+                                                    ),
+                                                    dbc.Input(
+                                                        id="input-cartao-parcelas",
+                                                        type="number",
+                                                        value=1,
+                                                        min=1,
+                                                        max=48,
+                                                        step=1,
+                                                    ),
+                                                ],
+                                                width=6,
+                                            ),
+                                        ],
+                                        className="mb-3",
+                                    ),
+                                    html.Small(
+                                        "O vencimento é calculado automaticamente pelo "
+                                        "fechamento do cartão.",
+                                        className="text-muted",
+                                    ),
                                 ],
-                                value=[],
-                                id="check-recorrencia",
-                                switch=True,
-                                className="mb-3",
                             ),
                         ],
                     ),
@@ -213,7 +307,7 @@ def create_transaction_modal():
                                                 className="fw-bold",
                                             ),
                                             dbc.Select(
-                                                id="select-conta",
+                                                id="select-conta-origem",
                                                 placeholder="Selecione a conta de origem",
                                             ),
                                         ],
@@ -249,47 +343,39 @@ def create_transaction_modal():
                                         className="d-block",
                                     ),
                                 ],
-                                width=4,
+                                width=6,
                             ),
                             dbc.Col(
                                 [
-                                    dbc.Label("Vencimento", className="fw-bold small"),
-                                    dcc.DatePickerSingle(
-                                        id="data-vencimento",
-                                        display_format="DD/MM/YYYY",
-                                        date=date.today(),
-                                        className="d-block",
+                                    html.Div(
+                                        id="data-vencimento-section",
+                                        children=[
+                                            dbc.Label(
+                                                "Vencimento",
+                                                className="fw-bold small",
+                                            ),
+                                            dcc.DatePickerSingle(
+                                                id="data-vencimento",
+                                                display_format="DD/MM/YYYY",
+                                                date=date.today(),
+                                                className="d-block",
+                                            ),
+                                        ],
                                     ),
                                 ],
-                                width=4,
-                            ),
-                            dbc.Col(
-                                [
-                                    dbc.Label("Data Pagamento", className="fw-bold small"),
-                                    dcc.DatePickerSingle(
-                                        id="data-pagamento",
-                                        display_format="DD/MM/YYYY",
-                                        date=date.today(),
-                                        className="d-block",
-                                    ),
-                                ],
-                                width=4,
+                                width=6,
                             ),
                         ],
                         className="mb-3",
                     ),
-                    dbc.Row(
-                        [
-                            dbc.Col(
-                                [
-                                    dbc.Switch(
-                                        id="switch-pago",
-                                        label="Lançamento já foi pago/recebido",
-                                        value=True,
-                                    ),
-                                ],
-                                width=12,
-                            )
+                    html.Div(
+                        id="switch-pago-section",
+                        children=[
+                            dbc.Switch(
+                                id="switch-pago",
+                                label="Lançamento já foi pago/recebido",
+                                value=True,
+                            ),
                         ],
                         className="mb-3",
                     ),
