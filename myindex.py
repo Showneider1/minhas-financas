@@ -13,6 +13,7 @@ from middleware.auth_middleware import check_auth
 from middleware.http_rate_limit import init_http_rate_limit
 from pages import (
     analytics_page,
+    budgets_page,
     cartoes_page,
     configuracoes_page,
     dashboard_page,
@@ -123,6 +124,11 @@ def display_page(pathname, auth_data):
         return wrap_private(configuracoes_page.layout), SHOW_SIDEBAR
 
     if pathname == "/metas":
+        if not is_authenticated:
+            return render_layout(login_page.layout), HIDE_SIDEBAR
+        return wrap_private(budgets_page.layout), SHOW_SIDEBAR
+
+    if pathname == "/objetivos":
         if not is_authenticated:
             return render_layout(login_page.layout), HIDE_SIDEBAR
         return wrap_private(goals_page.layout), SHOW_SIDEBAR

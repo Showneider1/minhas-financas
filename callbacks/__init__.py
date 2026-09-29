@@ -69,7 +69,7 @@ except Exception as e:
 print("\n📊 Callbacks registrados com sucesso!\n")
 
 try:
-    import callbacks.budget_callbacks
+    import callbacks.budget_callbacks  # noqa: F401
 
     print("✓ Budget callbacks carregados")
 except Exception as e:

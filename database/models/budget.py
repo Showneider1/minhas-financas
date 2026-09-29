@@ -28,7 +28,7 @@ class Budget(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     category_id = Column(Integer, ForeignKey("categories.id", ondelete="CASCADE"), nullable=False)
-    amount = Column(Numeric(12, 2), nullable=False)  # Valor limite (nunca Float)
+    amount_limit = Column(Numeric(12, 2), nullable=False)  # Valor limite (nunca Float)
 
     # Controle Temporal (Meta Mensal)
     month = Column(Integer, nullable=False)  # 1 a 12
@@ -44,5 +44,5 @@ class Budget(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "category_id", "month", "year", name="unique_budget_per_month"),
         CheckConstraint("month >= 1 AND month <= 12", name="ck_budget_month"),
-        CheckConstraint("amount > 0", name="ck_budget_amount_positive"),
+        CheckConstraint("amount_limit > 0", name="ck_budget_amount_positive"),
     )
