@@ -12,6 +12,7 @@ from config.logging_config import app_logger
 from middleware.auth_middleware import check_auth
 from middleware.http_rate_limit import init_http_rate_limit
 from pages import (
+    analytics_page,
     cartoes_page,
     configuracoes_page,
     dashboard_page,
@@ -134,6 +135,11 @@ def display_page(pathname, auth_data):
         if not is_authenticated:
             return render_layout(login_page.layout), HIDE_SIDEBAR
         return wrap_private(cartoes_page.layout), SHOW_SIDEBAR
+
+    if pathname == "/analytics":
+        if not is_authenticated:
+            return render_layout(login_page.layout), HIDE_SIDEBAR
+        return wrap_private(analytics_page.layout), SHOW_SIDEBAR
 
     if pathname == "/recorrencia":
         if not is_authenticated:

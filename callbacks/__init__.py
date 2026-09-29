@@ -99,3 +99,11 @@ try:
     print("✓ Cartões callbacks carregados")
 except Exception as _e:
     print(f"⚠ Aviso cartoes_callbacks: {_e}")
+
+# ── Analytics (UI P1) ──────────────────────────────────────────────
+try:
+    import callbacks.analytics_callbacks  # noqa: F401
+
+    print("✓ Analytics callbacks carregados")
+except Exception as _e:
+    print(f"⚠ Aviso analytics_callbacks: {_e}")
