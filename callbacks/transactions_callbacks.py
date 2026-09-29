@@ -52,16 +52,20 @@ def resetar_modal_ao_mudar_pagina(pathname):
     Output("modal-novo-lancamento", "is_open", allow_duplicate=True),
     Output("store-transacao-id-editar", "data", allow_duplicate=True),
     Input("btn-novo-lancamento", "n_clicks"),
+    Input("btn-novo-lancamento-extrato", "n_clicks"),
     Input("btn-cancelar-modal", "n_clicks"),
     State("modal-novo-lancamento", "is_open"),
     prevent_initial_call=True,
 )
-def toggle_modal(n_novo, n_cancelar, is_open):
+def toggle_modal(n_novo, n_novo_extrato, n_cancelar, is_open):
     """Abre o modal no botão global e fecha no cancelar."""
     trigger_id = ctx.triggered_id
 
-    if trigger_id == "btn-novo-lancamento" and n_novo:
-        return True, None
+    if trigger_id in ("btn-novo-lancamento", "btn-novo-lancamento-extrato"):
+        if trigger_id == "btn-novo-lancamento" and n_novo:
+            return True, None
+        if trigger_id == "btn-novo-lancamento-extrato" and n_novo_extrato:
+            return True, None
 
     if trigger_id == "btn-cancelar-modal" and n_cancelar:
         return False, None

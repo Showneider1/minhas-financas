@@ -37,10 +37,10 @@ layout = dbc.Container(
                 ),
                 dbc.Col(
                     [
-                        # CORRECAO: mesmo id do modal global
+                        # CORRECAO: ID único do Extrato, ligado ao modal global via callback
                         dbc.Button(
-                            [html.I(className="bi bi-plus-lg me-2"), "Novo Lancamento"],
-                            id="btn-novo-lancamento",
+                            [html.I(className="bi bi-plus-lg me-2"), "Novo Lançamento"],
+                            id="btn-novo-lancamento-extrato",
                             color="success",
                             className="mt-2 w-100",
                         ),

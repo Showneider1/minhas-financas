@@ -2,6 +2,8 @@
 
 from decimal import Decimal
 
+import pytest
+
 from database.models.account import Account
 from database.models.transaction import Transaction
 from database.models.user import User
@@ -99,6 +101,39 @@ def test_import_csv_end_to_end_and_idempotent(db, sample_user, sample_account):
     assert r2["imported"] == 0
     assert r2["skipped"] == 2
     assert db.query(Transaction).filter(Transaction.user_id == sample_user.id).count() == 2
+
+
+def test_import_empty_csv_is_rejected(db, sample_user, sample_account):
+    service = ImportService(db)
+    with pytest.raises(ValueError):
+        service.parse_file(
+            b"",
+            filename="extrato.csv",
+            account_id=sample_account.id,
+            user_id=sample_user.id,
+        )
+
+
+def test_import_unsupported_format_is_rejected(db, sample_user, sample_account):
+    service = ImportService(db)
+    with pytest.raises(ValueError):
+        service.parse_file(
+            b"dados",
+            filename="extrato.txt",
+            account_id=sample_account.id,
+            user_id=sample_user.id,
+        )
+
+
+def test_import_process_with_no_rows_returns_empty_result(db, sample_user, sample_account):
+    service = ImportService(db)
+    result = service.process_import(
+        [],
+        category_ids=[],
+        account_id=sample_account.id,
+        user_id=sample_user.id,
+    )
+    assert result == {"imported": 0, "skipped": 0, "errors": []}
 
 
 def test_parse_ofx_and_detect_duplicates(db, sample_user, sample_account):

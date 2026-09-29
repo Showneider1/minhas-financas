@@ -82,7 +82,7 @@ layout = dbc.Container(
                             ),
                             dbc.Button(
                                 [html.I(className="bi bi-filetype-csv me-1"), "CSV"],
-                                id="btn-export-csv",
+                                id="btn-export-csv-relatorios",
                                 color="secondary",
                                 outline=True,
                                 size="sm",

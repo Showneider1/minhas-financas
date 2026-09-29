@@ -54,9 +54,13 @@ def _toast(msg, color="success", icon="check-circle-fill"):
 @app.callback(
     Output("config-action-buttons", "children"),
     Input("tabs-configuracoes", "active_tab"),
+    Input("url", "pathname"),
 )
-def render_action_button(active_tab):
+def render_action_button(active_tab, pathname):
     """Renderiza o botão correto para cada aba no header — estático, sem recriar listas."""
+    if pathname != "/configuracoes":
+        return ""
+
     buttons = {
         "tab-categorias": dbc.Button(
             [html.I(className="bi bi-plus-lg me-2"), "Nova Categoria"],

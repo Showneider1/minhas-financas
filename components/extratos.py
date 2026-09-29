@@ -50,7 +50,7 @@ layout = dbc.Container(
                                 color="light",
                                 size="sm",
                                 className="border",
-                                id="btn-export-excel",
+                                id="legacy-btn-export-excel",
                             ),
                         ]
                     ),
@@ -272,7 +272,10 @@ layout = dbc.Container(
                                 className="bg-white border-0",
                             ),
                             dbc.CardBody(
-                                dcc.Graph(id="grafico-categorias", config={"displayModeBar": False})
+                                dcc.Graph(
+                                    id="legacy-grafico-categorias-extratos",
+                                    config={"displayModeBar": False},
+                                )
                             ),
                         ],
                         className="shadow-sm border-0",

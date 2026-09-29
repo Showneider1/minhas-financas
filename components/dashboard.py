@@ -33,7 +33,7 @@ layout = dbc.Container(
                             html.I(className="bi bi-download me-2"),
                             "Exportar Relatório",
                         ],
-                        id="btn-export-dashboard",
+                        id="legacy-btn-export-dashboard",
                         color="primary",
                         outline=True,
                         size="sm",
@@ -166,7 +166,7 @@ layout = dbc.Container(
                                             className="small fw-bold text-muted",
                                         ),
                                         dcc.DatePickerRange(
-                                            id="dashboard-periodo",
+                                            id="legacy-dashboard-periodo",
                                             start_date=date.today().replace(day=1),
                                             end_date=date.today(),
                                             display_format="DD/MM/YYYY",
@@ -296,7 +296,7 @@ layout = dbc.Container(
                             ),
                             dbc.CardBody(
                                 dcc.Graph(
-                                    id="grafico-fluxo-caixa",
+                                    id="legacy-grafico-fluxo-caixa",
                                     config={"displayModeBar": False},
                                     style={"height": "350px"},
                                 ),
@@ -323,7 +323,7 @@ layout = dbc.Container(
                             ),
                             dbc.CardBody(
                                 dcc.Graph(
-                                    id="grafico-categorias",
+                                    id="legacy-grafico-categorias",
                                     config={"displayModeBar": False},
                                     style={"height": "350px"},
                                 ),
