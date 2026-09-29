@@ -343,11 +343,10 @@ def _render_contas(db, user_id, tipo="bank"):
     Output("cat-modal-feedback", "children"),
     Input("btn-open-cat-modal", "n_clicks"),
     Input("btn-cancel-cat", "n_clicks"),
-    Input("btn-save-cat", "n_clicks"),
     State("auth-store", "data"),
     prevent_initial_call=True,
 )
-def toggle_modal_categoria(n_open, n_cancel, n_save, auth_data):
+def toggle_modal_categoria(n_open, n_cancel, auth_data):
     triggered = ctx.triggered_id
 
     if triggered == "btn-open-cat-modal" and n_open and n_open > 0:
@@ -362,7 +361,7 @@ def toggle_modal_categoria(n_open, n_cancel, n_save, auth_data):
             options = [{"label": c.name, "value": c.id} for c in cats if not c.parent_id]
         return True, options, "", "EXPENSE", "#3498db", ""
 
-    if triggered in ("btn-cancel-cat", "btn-save-cat"):
+    if triggered == "btn-cancel-cat":
         return False, no_update, "", no_update, no_update, ""
 
     return no_update, no_update, no_update, no_update, no_update, no_update
@@ -375,14 +374,13 @@ def toggle_modal_categoria(n_open, n_cancel, n_save, auth_data):
     Output("acc-modal-feedback", "children"),
     Input("btn-open-acc-modal", "n_clicks"),
     Input("btn-cancel-acc", "n_clicks"),
-    Input("btn-save-acc", "n_clicks"),
     prevent_initial_call=True,
 )
-def toggle_modal_conta(n_open, n_cancel, n_save):
+def toggle_modal_conta(n_open, n_cancel):
     triggered = ctx.triggered_id
     if triggered == "btn-open-acc-modal" and n_open and n_open > 0:
         return True, "", 0, ""
-    if triggered in ("btn-cancel-acc", "btn-save-acc"):
+    if triggered == "btn-cancel-acc":
         return False, no_update, no_update, ""
     return no_update, no_update, no_update, no_update
 
@@ -393,14 +391,13 @@ def toggle_modal_conta(n_open, n_cancel, n_save):
     Output("card-modal-feedback", "children"),
     Input("btn-open-card-modal", "n_clicks"),
     Input("btn-cancel-card", "n_clicks"),
-    Input("btn-save-card", "n_clicks"),
     prevent_initial_call=True,
 )
-def toggle_modal_cartao(n_open, n_cancel, n_save):
+def toggle_modal_cartao(n_open, n_cancel):
     triggered = ctx.triggered_id
     if triggered == "btn-open-card-modal" and n_open and n_open > 0:
         return True, "", ""
-    if triggered in ("btn-cancel-card", "btn-save-card"):
+    if triggered == "btn-cancel-card":
         return False, no_update, ""
     return no_update, no_update, no_update
 
@@ -414,6 +411,9 @@ def toggle_modal_cartao(n_open, n_cancel, n_save):
     Output("cat-modal-feedback", "children", allow_duplicate=True),
     Output("acc-modal-feedback", "children", allow_duplicate=True),
     Output("card-modal-feedback", "children", allow_duplicate=True),
+    Output("modal-categoria", "is_open", allow_duplicate=True),
+    Output("modal-conta", "is_open", allow_duplicate=True),
+    Output("modal-cartao", "is_open", allow_duplicate=True),
     Input("btn-save-cat", "n_clicks"),
     Input("btn-save-acc", "n_clicks"),
     Input("btn-save-card", "n_clicks"),
@@ -455,6 +455,9 @@ def save_data(
         # P0 (IDOR): escrita só com dono do JWT.
         user_id = resolve_user(auth_data)
     except AuthenticationError:
+        modal_cat = True if triggered == "btn-save-cat" else no_update
+        modal_acc = True if triggered == "btn-save-acc" else no_update
+        modal_card = True if triggered == "btn-save-card" else no_update
         return (
             no_update,
             _toast(
@@ -463,6 +466,9 @@ def save_data(
             no_update,
             no_update,
             no_update,
+            modal_cat,
+            modal_acc,
+            modal_card,
         )
 
     def _inline(msg):
@@ -476,6 +482,9 @@ def save_data(
                         no_update,
                         no_update,
                         _inline("Informe o nome da categoria."),
+                        no_update,
+                        no_update,
+                        True,
                         no_update,
                         no_update,
                     )
@@ -496,6 +505,9 @@ def save_data(
                     "",
                     no_update,
                     no_update,
+                    False,
+                    no_update,
+                    no_update,
                 )
 
             elif triggered == "btn-save-acc":
@@ -506,15 +518,23 @@ def save_data(
                         no_update,
                         _inline("Informe o nome da conta."),
                         no_update,
+                        no_update,
+                        True,
+                        no_update,
                     )
                 try:
                     initial = Decimal(str(acc_balance or 0))
+                    if not initial.is_finite():
+                        raise InvalidOperation
                 except (InvalidOperation, ValueError):
                     return (
                         no_update,
                         no_update,
                         no_update,
                         _inline("Saldo inicial inválido."),
+                        no_update,
+                        no_update,
+                        True,
                         no_update,
                     )
                 AccountService(db).create_account(
@@ -532,6 +552,9 @@ def save_data(
                     no_update,
                     "",
                     no_update,
+                    no_update,
+                    False,
+                    no_update,
                 )
 
             elif triggered == "btn-save-card":
@@ -542,11 +565,25 @@ def save_data(
                         no_update,
                         no_update,
                         _inline("Informe o nome do cartão."),
+                        no_update,
+                        no_update,
+                        True,
                     )
                 try:
                     limit = Decimal(str(card_limit or 0))
+                    if not limit.is_finite():
+                        raise InvalidOperation
                 except (InvalidOperation, ValueError):
-                    return no_update, no_update, no_update, no_update, _inline("Limite inválido.")
+                    return (
+                        no_update,
+                        no_update,
+                        no_update,
+                        no_update,
+                        _inline("Limite inválido."),
+                        no_update,
+                        no_update,
+                        True,
+                    )
                 AccountService(db).create_account(
                     user_id,
                     AccountCreate(
@@ -565,18 +602,30 @@ def save_data(
                     no_update,
                     no_update,
                     "",
+                    no_update,
+                    no_update,
+                    False,
                 )
 
     except ValueError as e:
+        modal_cat = True if triggered == "btn-save-cat" else no_update
+        modal_acc = True if triggered == "btn-save-acc" else no_update
+        modal_card = True if triggered == "btn-save-card" else no_update
         return (
             no_update,
             _toast(str(e), "danger", "exclamation-triangle-fill"),
             no_update,
             no_update,
             no_update,
+            modal_cat,
+            modal_acc,
+            modal_card,
         )
     except Exception as e:
         app_logger.error(f"Erro ao salvar configuração: {e}")
+        modal_cat = True if triggered == "btn-save-cat" else no_update
+        modal_acc = True if triggered == "btn-save-acc" else no_update
+        modal_card = True if triggered == "btn-save-card" else no_update
         return (
             no_update,
             _toast(
@@ -585,9 +634,21 @@ def save_data(
             no_update,
             no_update,
             no_update,
+            modal_cat,
+            modal_acc,
+            modal_card,
         )
 
-    return no_update, no_update, no_update, no_update, no_update
+    return (
+        no_update,
+        no_update,
+        no_update,
+        no_update,
+        no_update,
+        no_update,
+        no_update,
+        no_update,
+    )
 
 
 # ─── 5. Excluir categoria ────────────────────────────────────────────────────

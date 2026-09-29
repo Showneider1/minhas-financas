@@ -195,3 +195,68 @@ def test_salvar_transferencia_com_saldo_insuficiente(db, monkeypatch, sample_use
         .count()
         == 0
     )
+
+
+def test_salvar_transacao_sem_conta_retorna_alerta(db, monkeypatch, sample_user, sample_category):
+    _patch_runtime(monkeypatch, db, sample_user.id)
+    hoje = date.today()
+
+    resultado = transaction_callbacks.salvar_transacao(
+        1,
+        {"token": "teste"},
+        None,
+        "EXPENSE",
+        "10,00",
+        "Supermercado",
+        str(sample_category.id),
+        None,
+        None,
+        hoje.isoformat(),
+        hoje.isoformat(),
+        hoje.isoformat(),
+        True,
+        [],
+        1,
+        1,
+        0,
+    )
+
+    alerta, _reload, modal_aberto = resultado
+    assert isinstance(alerta, dbc.Alert)
+    assert alerta.color == "warning"
+    assert "Selecione uma conta" in alerta.children
+    assert modal_aberto is True
+
+
+def test_salvar_transacao_com_valor_negativo_retorna_alerta(
+    db, monkeypatch, sample_user, sample_category, sample_account
+):
+    _patch_runtime(monkeypatch, db, sample_user.id)
+    hoje = date.today()
+
+    resultado = transaction_callbacks.salvar_transacao(
+        1,
+        {"token": "teste"},
+        None,
+        "EXPENSE",
+        "-10,00",
+        "Supermercado",
+        str(sample_category.id),
+        str(sample_account.id),
+        None,
+        hoje.isoformat(),
+        hoje.isoformat(),
+        hoje.isoformat(),
+        True,
+        [],
+        1,
+        1,
+        0,
+    )
+
+    alerta, _reload, modal_aberto = resultado
+    assert isinstance(alerta, dbc.Alert)
+    assert alerta.color == "warning"
+    assert "Valor deve ser maior que zero" in alerta.children
+    assert modal_aberto is True
+    assert db.query(Transaction).count() == 0

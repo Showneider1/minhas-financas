@@ -7,6 +7,8 @@ disparo automático de modais ao re-renderizar conteúdo dinâmico.
 import dash_bootstrap_components as dbc
 from dash import dcc, html
 
+from database.enums import AccountType
+
 COLORS = [
     {"label": "🟢 Verde", "value": "#2ecc71"},
     {"label": "🔵 Azul", "value": "#3498db"},
@@ -158,12 +160,24 @@ modal_conta = dbc.Modal(
                                 dbc.Select(
                                     id="acc-tipo",
                                     options=[
-                                        {"label": "🏦 Conta Corrente", "value": "CHECKING"},
-                                        {"label": "🐷 Poupança", "value": "SAVINGS"},
-                                        {"label": "💵 Dinheiro", "value": "CASH"},
-                                        {"label": "📈 Investimento", "value": "INVESTMENT"},
+                                        {
+                                            "label": "🏦 Conta Corrente",
+                                            "value": AccountType.CHECKING.value,
+                                        },
+                                        {
+                                            "label": "🐷 Poupança",
+                                            "value": AccountType.SAVINGS.value,
+                                        },
+                                        {
+                                            "label": "💵 Dinheiro",
+                                            "value": AccountType.CASH.value,
+                                        },
+                                        {
+                                            "label": "📈 Investimento",
+                                            "value": AccountType.INVESTMENT.value,
+                                        },
                                     ],
-                                    value="CHECKING",
+                                    value=AccountType.CHECKING.value,
                                 ),
                             ],
                             width=6,

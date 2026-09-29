@@ -122,6 +122,40 @@ def test_save_buy_success_returns_success_alert(db, monkeypatch, sample_user, sa
     assert result[3] is True
 
 
+def test_save_investment_with_zero_quantity_returns_warning_alert(
+    db, monkeypatch, sample_user, sample_account
+):
+    _patch_runtime(monkeypatch, db, user_id=sample_user.id)
+    asset = InvestmentService(db).register_asset(
+        user_id=sample_user.id,
+        ticker="PETR4",
+        name="Petrobras",
+        asset_type=AssetType.STOCK,
+    )
+
+    result = _call_save(
+        asset_id=str(asset.id),
+        account_id=str(sample_account.id),
+        qty=0,
+        price=100,
+        fees=0,
+        op_date="2027-01-10",
+    )
+
+    assert isinstance(result[0], dbc.Alert)
+    assert result[0].color == "warning"
+    assert "Preencha todos os campos obrigatórios." in result[0].children
+    assert result[1] is True
+
+
+def test_position_summary_empty_portfolio_returns_zero(db, sample_user):
+    summary = InvestmentService(db).get_position_summary(sample_user.id)
+
+    assert summary["total_current_value"] == 0
+    assert summary["total_cost"] == 0
+    assert summary["positions"] == []
+
+
 def _patch_market_service(monkeypatch, result):
     class _FakeMarketDataService:
         last_tickers = []

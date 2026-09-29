@@ -6,6 +6,7 @@ from decimal import Decimal
 from database.enums import AssetType, BillRecurrence, BillType
 from database.models.account import Account
 from database.models.scheduled_bill import ScheduledBill
+from services.bill_recurrence_service import next_business_day
 from services.dashboard_service import DashboardService
 from services.investment_service import InvestmentService
 from services.scheduled_bill_service import ScheduledBillService
@@ -66,9 +67,10 @@ def test_dashboard_lists_upcoming_recurrent_bills(db, sample_user, sample_accoun
 
     bills = DashboardService(db).get_upcoming_recurring_bills(sample_user.id, days_ahead=30)
 
+    projected_due = next_business_day(due)
     assert len(bills) == 1
     assert bills[0]["name"] == "Streaming"
-    assert bills[0]["due_date"] == due.isoformat()
+    assert bills[0]["due_date"] == projected_due.isoformat()
     assert bills[0]["bill_type"] == BillType.PAYABLE.value
 
     persisted = (
