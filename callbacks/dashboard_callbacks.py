@@ -45,32 +45,84 @@ def _fim_do_mes(d: date) -> date:
     return d.replace(day=monthrange(d.year, d.month)[1])
 
 
-# ─── KPIs patrimoniais ────────────────────────────────────────────────────────
+# ─── KPIs executivos (Visão 360) ─────────────────────────────────────────────
 @app.callback(
     Output("kpi-investimentos", "children"),
     Output("kpi-patrimonio", "children"),
     Output("kpi-patrimonio-info", "children"),
+    Output("kpi-faturas-abertas", "children"),
+    Output("dashboard-budget-alerts", "children"),
     Input("dashboard-periodo", "start_date"),
     Input("dashboard-periodo", "end_date"),
     Input("store-reload-dashboard", "data"),
     Input("btn-update-dashboard", "n_clicks"),
     State("auth-store", "data"),
 )
-def update_wealth_cards(_start_date, _end_date, _reload, _btn, auth_data):
+def update_executive_summary(start_date, end_date, _reload, _btn, auth_data):
     try:
         user_id = resolve_user(auth_data)
+        ds, de = _parse_dates(start_date, end_date)
         with get_db_session() as db:
-            wealth = DashboardService(db).get_wealth_summary(user_id)
+            summary = DashboardService(db).get_executive_summary(
+                user_id,
+                month=de.month,
+                year=de.year,
+            )
+        if not summary["budget_alerts"]:
+            alerts = html.Div(
+                [
+                    html.I(className="bi bi-check-circle-fill text-success fs-4"),
+                    html.P(
+                        "Nenhum orçamento acima de 80%.",
+                        className="text-muted mb-0 mt-2",
+                    ),
+                ],
+                className="text-center py-3",
+            )
+        else:
+            alert_items = []
+            for alert in summary["budget_alerts"]:
+                color = "danger" if alert["percentage"] >= 100 else "warning"
+                alert_items.append(
+                    dbc.ListGroupItem(
+                        [
+                            html.Div(
+                                [
+                                    html.Strong(
+                                        f"{alert['category_icon']} {alert['category_name']}",
+                                        className="me-2",
+                                    ),
+                                    dbc.Badge(
+                                        f"{alert['percentage']:.1f}%",
+                                        color=color,
+                                        pill=True,
+                                    ),
+                                ],
+                                className="d-flex justify-content-between align-items-center",
+                            ),
+                            html.Small(
+                                f"Limite: {_fmt_brl(alert['amount_limit'])} | "
+                                f"Gasto: {_fmt_brl(alert['spent'])}",
+                                className="text-muted",
+                            ),
+                        ],
+                        className="border-0 bg-light mb-1",
+                    )
+                )
+            alerts = dbc.ListGroup(alert_items, flush=True)
         return (
-            _fmt_brl(wealth["investments_total"]),
-            _fmt_brl(wealth["net_worth"]),
-            f"Caixa: {_fmt_brl(wealth['cash_balance'])}",
+            _fmt_brl(summary["total_invested"]),
+            _fmt_brl(summary["net_worth"]),
+            f"Caixa: {_fmt_brl(summary['cash_balance'])} | "
+            f"Faturas: {_fmt_brl(summary['open_invoices'])}",
+            _fmt_brl(summary["open_invoices"]),
+            alerts,
         )
     except AuthenticationError:
-        return "R$ 0,00", "R$ 0,00", ""
+        return "R$ 0,00", "R$ 0,00", "", "R$ 0,00", html.Div()
     except Exception as e:
-        app_logger.error(f"Patrimônio: {e}")
-        return "Erro", "Erro", "Erro"
+        app_logger.error(f"Dashboard executivo: {e}")
+        return "Erro", "Erro", "Erro", "Erro", html.Div()
 
 
 # ─── KPIs do período ──────────────────────────────────────────────────────────

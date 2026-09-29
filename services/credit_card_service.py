@@ -16,6 +16,7 @@ from datetime import date
 from decimal import ROUND_DOWN, Decimal
 
 from dateutil.relativedelta import relativedelta
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from config.logging_config import app_logger
@@ -211,6 +212,20 @@ class CreditCardService:
         if available < ZERO:
             return ZERO
         return available
+
+    def get_open_invoices_total(self, user_id: int) -> Decimal:
+        """Total de faturas em aberto (todas as transações de cartão não pagas)."""
+        total = (
+            self.db.query(func.sum(Transaction.base_amount))
+            .filter(
+                Transaction.user_id == user_id,
+                Transaction.credit_card_id.isnot(None),
+                Transaction.status != TransactionStatus.CANCELLED,
+                Transaction.paid_date.is_(None),
+            )
+            .scalar()
+        )
+        return to_money2(total or 0, where="credit_card.invoices.open_total")
 
     def _unpaid_card_transactions(self, credit_card_id: int, user_id: int) -> Iterable[Transaction]:
         return (

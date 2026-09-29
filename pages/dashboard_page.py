@@ -87,36 +87,66 @@ def layout():
                 align="center",
                 className="mb-4",
             ),
-            # Linha 1: KPIs patrimoniais + fluxo do período
+            # Linha 1: KPIs executivos (Visão 360)
             dbc.Row(
                 [
                     dbc.Col(
-                        _kpi_card("Saldo em Caixa", "kpi-saldo", "text-primary", icon="🏦"),
+                        _kpi_card(
+                            "Patrimônio Líquido",
+                            "kpi-patrimonio",
+                            "text-dark",
+                            "kpi-patrimonio-info",
+                            icon="💼",
+                        ),
                         width=12,
                         sm=6,
-                        lg=4,
+                        lg=3,
                         className="mb-3",
                     ),
                     dbc.Col(
                         _kpi_card(
-                            "Investimentos",
+                            "Total Investido",
                             "kpi-investimentos",
                             "text-info",
                             icon="📊",
                         ),
                         width=12,
                         sm=6,
-                        lg=4,
+                        lg=3,
                         className="mb-3",
                     ),
                     dbc.Col(
                         _kpi_card(
-                            "Patrimônio Total",
-                            "kpi-patrimonio",
-                            "text-dark",
-                            "kpi-patrimonio-info",
-                            icon="💼",
+                            "Faturas Abertas",
+                            "kpi-faturas-abertas",
+                            "text-danger",
+                            icon="💳",
                         ),
+                        width=12,
+                        sm=6,
+                        lg=3,
+                        className="mb-3",
+                    ),
+                    dbc.Col(
+                        _kpi_card(
+                            "Balanço do Mês",
+                            "kpi-resultado",
+                            "text-secondary",
+                            "kpi-resultado-info",
+                            icon="⚖️",
+                        ),
+                        width=12,
+                        sm=6,
+                        lg=3,
+                        className="mb-3",
+                    ),
+                ]
+            ),
+            # Linha 2: KPIs operacionais
+            dbc.Row(
+                [
+                    dbc.Col(
+                        _kpi_card("Saldo em Caixa", "kpi-saldo", "text-primary", icon="🏦"),
                         width=12,
                         sm=6,
                         lg=4,
@@ -140,17 +170,37 @@ def layout():
                         lg=4,
                         className="mb-3",
                     ),
+                ]
+            ),
+            # Linha 3: Alertas de orçamento
+            dbc.Row(
+                [
                     dbc.Col(
-                        _kpi_card(
-                            "Resultado do Período",
-                            "kpi-resultado",
-                            "text-secondary",
-                            "kpi-resultado-info",
-                            icon="⚖️",
-                        ),
+                        [
+                            dbc.Card(
+                                [
+                                    dbc.CardHeader(
+                                        [
+                                            html.I(
+                                                className="bi bi-exclamation-triangle-fill me-2 "
+                                                "text-warning"
+                                            ),
+                                            "Alertas de Orçamento",
+                                        ],
+                                        className="bg-white fw-bold border-0 pb-0",
+                                    ),
+                                    dbc.CardBody(
+                                        dcc.Loading(
+                                            html.Div(id="dashboard-budget-alerts"),
+                                            type="dot",
+                                        ),
+                                        className="pt-2",
+                                    ),
+                                ],
+                                className="shadow-sm border-0",
+                            ),
+                        ],
                         width=12,
-                        sm=6,
-                        lg=4,
                         className="mb-3",
                     ),
                 ]

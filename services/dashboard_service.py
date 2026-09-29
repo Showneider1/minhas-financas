@@ -18,7 +18,10 @@ from database.models.category import Category, TransactionType
 from database.models.transaction import Transaction, TransactionStatus
 from services.balance_service import BalanceService
 from services.bill_recurrence_service import BillRecurrenceService
+from services.budget_service import BudgetService
+from services.credit_card_service import CreditCardService
 from services.investment_service import InvestmentService
+from utils.date_helpers import get_month_range
 from utils.money import to_money2
 
 ZERO = Decimal("0.00")
@@ -79,6 +82,62 @@ class DashboardService:
             "cash_balance": cash_balance,
             "investments_total": investments_total,
             "net_worth": net_worth,
+        }
+
+    def get_executive_summary(self, user_id: int, month: int, year: int) -> dict[str, Any]:
+        """Visão 360: caixa, investimentos, cartões, fluxo e orçamentos."""
+        if not (1 <= int(month) <= 12):
+            raise ValueError("Mês deve estar entre 1 e 12.")
+        if int(year) < 2000:
+            raise ValueError("Ano inválido.")
+
+        start_date, end_date = get_month_range(int(year), int(month))
+
+        cash_balance = self.balances.get_total_balance(user_id)
+        portfolio = InvestmentService(self.db).get_position_summary(user_id)
+        investments_total = to_money2(
+            portfolio["total_current_value"], where="dashboard.executive.investments"
+        )
+        open_invoices = CreditCardService(self.db).get_open_invoices_total(user_id)
+        net_worth = to_money2(
+            cash_balance + investments_total - open_invoices,
+            where="dashboard.executive.net_worth",
+        )
+
+        period = self.balances.get_period_summary(user_id, start_date, end_date)
+        cash_flow = {
+            "income_paid": period["income_paid"],
+            "expense_paid": period["expense_paid"],
+            "income_pending": period["income_pending"],
+            "expense_pending": period["expense_pending"],
+            "balance_paid": period["balance_paid"],
+            "balance_forecast": period["balance_forecast"],
+        }
+
+        budget_progress = BudgetService(self.db).get_budget_progress(user_id, int(month), int(year))
+        budget_alerts = [
+            {
+                "category_id": item.category_id,
+                "category_name": item.category_name,
+                "category_icon": item.category_icon,
+                "amount_limit": item.amount_limit,
+                "spent": item.spent,
+                "percentage": item.percentage,
+                "status": item.status,
+            }
+            for item in budget_progress
+            if item.percentage >= 80
+        ]
+
+        return {
+            "month": int(month),
+            "year": int(year),
+            "cash_balance": cash_balance,
+            "total_invested": investments_total,
+            "open_invoices": open_invoices,
+            "net_worth": net_worth,
+            "cash_flow": cash_flow,
+            "budget_alerts": budget_alerts,
         }
 
     def get_upcoming_recurring_bills(
