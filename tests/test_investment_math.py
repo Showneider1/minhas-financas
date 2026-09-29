@@ -15,6 +15,7 @@ import pytest
 
 from database.enums import AssetType
 from database.models.account import Account
+from database.models.investment import Asset
 from services.balance_service import BalanceService
 from services.investment_service import (
     InsufficientFundsError,
@@ -88,6 +89,73 @@ def test_mandatory_scenario_pm_with_fees(db, sample_user, petr, broker):
     assert pos.avg_price == Decimal("10.68666667")
     # Caixa: 100000 − 1002 − 601.
     assert _balance(db, sample_user.id, broker.id) == Decimal("98397.00")
+
+
+def test_register_asset_buy_by_ticker_and_exact_pm(db, sample_user, broker):
+    """Cenário da missão: 100×10 + 50×13 → PM exato 11,00."""
+    svc = InvestmentService(db)
+    svc.register_asset_buy(
+        user_id=sample_user.id,
+        ticker="SNEL11",
+        account_id=broker.id,
+        quantity="100",
+        price="10.00",
+        operation_date=date(2026, 1, 10),
+        asset_type=AssetType.FII,
+        name="FII SENNE",
+    )
+    svc.register_asset_buy(
+        user_id=sample_user.id,
+        ticker="SNEL11",
+        account_id=broker.id,
+        quantity="50",
+        price="13.00",
+        operation_date=date(2026, 2, 10),
+    )
+
+    asset = (
+        svc.db.query(Asset)
+        .filter(
+            Asset.user_id == sample_user.id,
+            Asset.ticker == "SNEL11",
+        )
+        .one()
+    )
+    pos = svc.get_position(asset.id, sample_user.id)
+    assert pos.quantity == Decimal("150.00000000")
+    assert pos.avg_price == Decimal("11.00000000")
+    assert pos.total_cost == Decimal("1650.00000000")
+
+
+def test_register_dividend_by_ticker_does_not_change_pm(db, sample_user, broker):
+    svc = InvestmentService(db)
+    svc.register_asset_buy(
+        user_id=sample_user.id,
+        ticker="RURA11",
+        account_id=broker.id,
+        quantity="100",
+        price="10.00",
+        operation_date=date(2026, 1, 10),
+        asset_type=AssetType.FII,
+        name="FII RURA",
+    )
+    asset = (
+        svc.db.query(Asset).filter(Asset.user_id == sample_user.id, Asset.ticker == "RURA11").one()
+    )
+    before = svc.get_position(asset.id, sample_user.id)
+
+    svc.register_dividend(
+        user_id=sample_user.id,
+        ticker="RURA11",
+        account_id=broker.id,
+        amount="120.00",
+        operation_date=date(2026, 3, 10),
+    )
+
+    after = svc.get_position(asset.id, sample_user.id)
+    assert after.quantity == before.quantity
+    assert after.avg_price == before.avg_price
+    assert after.total_dividends == Decimal("120.00")
 
 
 def test_sell_keeps_pm_reduces_qty_returns_pnl(db, sample_user, petr, broker):

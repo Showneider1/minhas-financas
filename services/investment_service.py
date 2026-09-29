@@ -170,6 +170,69 @@ class InvestmentService:
         app_logger.info(f"Ativo cadastrado: {code} (usuário {user_id})")
         return asset
 
+    def register_asset_buy(
+        self,
+        *,
+        user_id: int,
+        ticker: str,
+        account_id: int,
+        quantity,
+        price,
+        operation_date: date | None = None,
+        fees=0,
+        asset_type: AssetType = AssetType.STOCK,
+        name: str | None = None,
+        sector: str | None = None,
+        notes: str | None = None,
+    ) -> InvestmentOperation:
+        """Compra por ticker, criando o ativo quando ainda não existir."""
+        code = (ticker or "").strip().upper()
+        if not code:
+            raise InvestmentValidationError("Ticker é obrigatório.")
+        asset = self.db.query(Asset).filter(Asset.user_id == user_id, Asset.ticker == code).first()
+        if asset is None:
+            asset = self.register_asset(
+                user_id=user_id,
+                ticker=code,
+                name=(name or code).strip(),
+                asset_type=asset_type,
+                sector=sector,
+            )
+        return self.buy(
+            asset_id=asset.id,
+            user_id=user_id,
+            quantity=quantity,
+            price_per_unit=price,
+            account_id=account_id,
+            operation_date=operation_date,
+            fees=fees,
+            notes=notes,
+        )
+
+    def register_dividend(
+        self,
+        *,
+        user_id: int,
+        ticker: str,
+        account_id: int,
+        amount,
+        operation_date: date | None = None,
+        notes: str | None = None,
+    ) -> InvestmentOperation:
+        """Registra provento por ticker, sem alterar quantidade nem PM."""
+        code = (ticker or "").strip().upper()
+        asset = self.db.query(Asset).filter(Asset.user_id == user_id, Asset.ticker == code).first()
+        if asset is None:
+            raise InvestmentValidationError("Ativo não encontrado para este usuário.")
+        return self.record_dividend(
+            asset_id=asset.id,
+            user_id=user_id,
+            amount=amount,
+            account_id=account_id,
+            operation_date=operation_date,
+            notes=notes,
+        )
+
     def _owned_asset(self, asset_id: int, user_id: int) -> Asset:
         asset = self.db.query(Asset).filter(Asset.id == asset_id, Asset.user_id == user_id).first()
         if not asset:
