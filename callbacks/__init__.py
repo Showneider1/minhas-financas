@@ -115,3 +115,11 @@ try:
     print("✓ Importação callbacks carregados")
 except Exception as _e:
     print(f"⚠ Aviso importacao_callbacks: {_e}")
+
+# ── Relatórios (UI P2) ─────────────────────────────────────────────
+try:
+    import callbacks.relatorios_callbacks  # noqa: F401
+
+    print("✓ Relatórios callbacks carregados")
+except Exception as _e:
+    print(f"⚠ Aviso relatorios_callbacks: {_e}")

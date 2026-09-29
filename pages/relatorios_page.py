@@ -103,33 +103,28 @@ layout = dbc.Container(
                     [
                         dbc.Col(
                             [
-                                html.Label("Periodo", className="fw-semibold small"),
-                                dcc.DatePickerRange(
-                                    id="relatorio-date-range",
-                                    display_format="DD/MM/YYYY",
-                                    start_date=date.today().replace(day=1),
-                                    end_date=date.today(),
-                                    className="w-100",
-                                ),
-                            ],
-                            width=12,
-                            md=5,
-                        ),
-                        dbc.Col(
-                            [
-                                html.Label("Tipo de Relatorio", className="fw-semibold small"),
+                                html.Label("Mês", className="fw-semibold small"),
                                 dbc.Select(
-                                    id="relatorio-tipo",
+                                    id="relatorio-mes",
                                     options=[
-                                        {"label": "Mensal", "value": "monthly"},
-                                        {"label": "Anual", "value": "annual"},
-                                        {"label": "Personalizado", "value": "custom"},
+                                        {"label": "Janeiro", "value": "1"},
+                                        {"label": "Fevereiro", "value": "2"},
+                                        {"label": "Março", "value": "3"},
+                                        {"label": "Abril", "value": "4"},
+                                        {"label": "Maio", "value": "5"},
+                                        {"label": "Junho", "value": "6"},
+                                        {"label": "Julho", "value": "7"},
+                                        {"label": "Agosto", "value": "8"},
+                                        {"label": "Setembro", "value": "9"},
+                                        {"label": "Outubro", "value": "10"},
+                                        {"label": "Novembro", "value": "11"},
+                                        {"label": "Dezembro", "value": "12"},
                                     ],
-                                    value="monthly",
+                                    value=str(date.today().month),
                                 ),
                             ],
                             width=12,
-                            md=3,
+                            md=2,
                         ),
                         dbc.Col(
                             [
@@ -148,16 +143,46 @@ layout = dbc.Container(
                         ),
                         dbc.Col(
                             [
+                                html.Label("Tipo de Relatório", className="fw-semibold small"),
+                                dbc.Select(
+                                    id="relatorio-tipo",
+                                    options=[
+                                        {"label": "Extrato Mensal", "value": "extract"},
+                                        {"label": "Fechamento Orçamentário", "value": "budget"},
+                                    ],
+                                    value="extract",
+                                ),
+                            ],
+                            width=12,
+                            md=3,
+                        ),
+                        dbc.Col(
+                            [
+                                html.Label("Formato", className="fw-semibold small"),
+                                dbc.Select(
+                                    id="relatorio-formato",
+                                    options=[
+                                        {"label": "CSV", "value": "csv"},
+                                        {"label": "Excel", "value": "xlsx"},
+                                    ],
+                                    value="csv",
+                                ),
+                            ],
+                            width=12,
+                            md=2,
+                        ),
+                        dbc.Col(
+                            [
                                 html.Label("\u00a0", className="d-block"),
                                 dbc.Button(
-                                    [html.I(className="bi bi-search me-1"), "Gerar"],
+                                    [html.I(className="bi bi-download me-1"), "Gerar Relatório"],
                                     id="btn-gerar-relatorio",
                                     color="primary",
                                     className="w-100",
                                 ),
                             ],
                             width=12,
-                            md=2,
+                            md=3,
                         ),
                     ],
                     className="g-3",
@@ -326,7 +351,7 @@ layout = dbc.Container(
             )
         ),
         # Download invisivel para exportacao
-        dcc.Download(id="rel-download"),
+        dcc.Download(id="download-report"),
     ],
     fluid=True,
     className="py-4",

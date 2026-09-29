@@ -11,10 +11,13 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
+import pandas as pd
+from sqlalchemy import extract
 from sqlalchemy.orm import Session
 
-from database.models.category import TransactionType
-from database.models.transaction import TransactionStatus
+from database.models.account import Account
+from database.models.category import Category, TransactionType
+from database.models.transaction import Transaction, TransactionStatus
 from database.repositories.transaction_repo import TransactionRepository
 from schemas.transaction_schema import TransactionFilter
 from services.balance_service import BalanceService
@@ -29,6 +32,107 @@ class ReportService:
         self.db = db
         self.transaction_repo = TransactionRepository(db)
         self.balances = BalanceService(db)
+
+    # ------------------------------------------------------------------
+    # Exportação mensal
+    # ------------------------------------------------------------------
+    def generate_monthly_extract(self, user_id: int, month: int, year: int) -> pd.DataFrame:
+        """Extrai o consolidado mensal em DataFrame pronto para exportação.
+
+        - Isolamento estrito por `user_id`
+        - Filtra competência por `due_date`
+        - Exclui apenas transações canceladas
+        - Preserva valores com `Decimal` até a borda de serialização
+        """
+        if not (1 <= int(month) <= 12):
+            raise ValueError("Mês deve estar entre 1 e 12.")
+
+        rows = (
+            self.db.query(
+                Transaction,
+                Category.name.label("category_name"),
+                Category.icon.label("category_icon"),
+                Account.name.label("account_name"),
+            )
+            .join(Category, Transaction.category_id == Category.id)
+            .join(Account, Transaction.account_id == Account.id)
+            .filter(
+                Transaction.user_id == user_id,
+                Transaction.status != TransactionStatus.CANCELLED,
+                extract("month", Transaction.due_date) == int(month),
+                extract("year", Transaction.due_date) == int(year),
+            )
+            .order_by(Transaction.due_date.asc(), Transaction.id.asc())
+            .all()
+        )
+
+        records = []
+        for transaction, category_name, category_icon, account_name in rows:
+            category_label = f"{category_icon or ''} {category_name or 'Sem categoria'}".strip()
+            records.append(
+                {
+                    "Data": transaction.due_date.strftime("%d/%m/%Y"),
+                    "Descrição": transaction.description,
+                    "Categoria": category_label,
+                    "Tipo": self._transaction_type_label(transaction.transaction_type),
+                    "Conta Origem": account_name or "Sem conta",
+                    "Valor": f"{transaction.base_amount:.2f}".replace(".", ","),
+                    "Status": self._status_label(transaction.status),
+                }
+            )
+
+        return pd.DataFrame(
+            records,
+            columns=[
+                "Data",
+                "Descrição",
+                "Categoria",
+                "Tipo",
+                "Conta Origem",
+                "Valor",
+                "Status",
+            ],
+        )
+
+    def generate_budget_closing(self, user_id: int, month: int, year: int) -> pd.DataFrame:
+        """Extrai o fechamento orçamentário do mês em DataFrame."""
+        if not (1 <= int(month) <= 12):
+            raise ValueError("Mês deve estar entre 1 e 12.")
+
+        from services.budget_service import BudgetService
+
+        progress = BudgetService(self.db).get_budget_progress(user_id, month, year)
+        records = [
+            {
+                "Categoria": f"{item.category_icon} {item.category_name}".strip(),
+                "Limite": f"{item.amount_limit:.2f}".replace(".", ","),
+                "Gasto": f"{item.spent:.2f}".replace(".", ","),
+                "% Usado": f"{item.percentage:.1f}".replace(".", ","),
+                "Status": item.status,
+            }
+            for item in progress
+        ]
+
+        return pd.DataFrame(
+            records,
+            columns=["Categoria", "Limite", "Gasto", "% Usado", "Status"],
+        )
+
+    @staticmethod
+    def _transaction_type_label(transaction_type) -> str:
+        return {
+            TransactionType.INCOME: "Receita",
+            TransactionType.EXPENSE: "Despesa",
+            TransactionType.TRANSFER: "Transferência",
+        }.get(transaction_type, "Outro")
+
+    @staticmethod
+    def _status_label(status) -> str:
+        return {
+            TransactionStatus.PAID: "Pago",
+            TransactionStatus.PENDING: "Pendente",
+            TransactionStatus.CANCELLED: "Cancelado",
+        }.get(status, "Outro")
 
     # ------------------------------------------------------------------
     # Helpers
