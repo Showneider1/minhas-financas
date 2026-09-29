@@ -99,6 +99,14 @@ class Transaction(Base):
     import_hash = Column(String(64), nullable=True, unique=True, index=True)
     categorization_source = Column(String(20), nullable=True, default="manual")
 
+    # Cartão de crédito: transação vinculada ao cartão/fatura.
+    credit_card_id = Column(
+        Integer,
+        ForeignKey("credit_cards.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     # Timestamps
     created_at = Column(DateTime(timezone=True), default=_utcnow)
     updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
@@ -109,6 +117,7 @@ class Transaction(Base):
     destination_account = relationship("Account", foreign_keys=[destination_account_id])
     category = relationship("Category", back_populates="transactions")
     scheduled_bill = relationship("ScheduledBill", back_populates="transactions")
+    credit_card = relationship("CreditCard", back_populates="transactions")
 
     __table_args__ = (
         Index("ix_transactions_user_paid", "user_id", "paid_date"),

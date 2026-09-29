@@ -23,7 +23,7 @@ from decimal import Decimal
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from database.models.account import Account
+from database.models.account import Account, AccountType
 from database.models.category import TransactionType
 from database.models.transaction import Transaction, TransactionStatus
 from utils.money import to_money2
@@ -115,6 +115,7 @@ class BalanceService:
             .filter(
                 Account.user_id == user_id,
                 Account.is_active.is_(True),
+                Account.account_type != AccountType.CREDIT_CARD,
             )
             .all()
         )

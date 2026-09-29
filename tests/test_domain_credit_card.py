@@ -1,0 +1,142 @@
+"""Domínio de Cartão de Crédito — fatura, parcelas e limite."""
+
+from datetime import date
+from decimal import Decimal
+
+import pytest
+
+from database.enums import TransactionStatus, TransactionType
+from database.models.transaction import Transaction
+from services.balance_service import BalanceService
+from services.credit_card_service import CreditCardError, CreditCardService
+
+
+@pytest.fixture
+def credit_card(db, sample_user):
+    return CreditCardService(db).create_credit_card(
+        user_id=sample_user.id,
+        name="Nubank",
+        credit_limit=Decimal("5000.00"),
+        closing_day=3,
+        due_day=10,
+    )
+
+
+def test_installment_purchase_generates_exact_amounts_and_consumes_limit(
+    db, sample_user, sample_category, credit_card
+):
+    service = CreditCardService(db)
+    balance_before = BalanceService(db).get_total_balance(sample_user.id)
+
+    transactions = service.register_purchase(
+        user_id=sample_user.id,
+        credit_card_id=credit_card.id,
+        amount=Decimal("1200.00"),
+        purchase_date=date(2026, 10, 1),
+        description="Notebook",
+        category_id=sample_category.id,
+        installments=3,
+    )
+
+    assert len(transactions) == 3
+    assert [t.base_amount for t in transactions] == [
+        Decimal("400.00"),
+        Decimal("400.00"),
+        Decimal("400.00"),
+    ]
+    assert [t.installment_number for t in transactions] == [1, 2, 3]
+    assert all(t.total_installments == 3 for t in transactions)
+    assert all(t.status == TransactionStatus.PENDING for t in transactions)
+    assert all(t.paid_date is None for t in transactions)
+    assert all(t.transaction_type == TransactionType.EXPENSE for t in transactions)
+    assert all(t.credit_card_id == credit_card.id for t in transactions)
+
+    assert service.get_available_limit(sample_user.id, credit_card.id) == Decimal("3800.00")
+
+    balance_after = BalanceService(db).get_total_balance(sample_user.id)
+    assert balance_after == balance_before
+
+
+def test_installment_split_handles_exact_remainder(db, sample_user, sample_category, credit_card):
+    service = CreditCardService(db)
+
+    transactions = service.register_purchase(
+        user_id=sample_user.id,
+        credit_card_id=credit_card.id,
+        amount=Decimal("100.00"),
+        purchase_date=date(2026, 10, 1),
+        description="Dízima",
+        category_id=sample_category.id,
+        installments=3,
+    )
+
+    values = [t.base_amount for t in transactions]
+    assert values == [Decimal("33.33"), Decimal("33.33"), Decimal("33.34")]
+    assert sum(values) == Decimal("100.00")
+    assert service.get_available_limit(sample_user.id, credit_card.id) == Decimal("4900.00")
+
+
+def test_closing_day_routes_purchase_to_correct_invoice(
+    db, sample_user, sample_category, credit_card
+):
+    service = CreditCardService(db)
+
+    before_closing = service.register_purchase(
+        user_id=sample_user.id,
+        credit_card_id=credit_card.id,
+        amount=Decimal("100.00"),
+        purchase_date=date(2026, 10, 2),
+        description="Antes do fechamento",
+        category_id=sample_category.id,
+        installments=1,
+    )
+    on_closing = service.register_purchase(
+        user_id=sample_user.id,
+        credit_card_id=credit_card.id,
+        amount=Decimal("200.00"),
+        purchase_date=date(2026, 10, 3),
+        description="No fechamento",
+        category_id=sample_category.id,
+        installments=1,
+    )
+
+    assert before_closing[0].due_date == date(2026, 10, 10)
+    assert on_closing[0].due_date == date(2026, 11, 10)
+
+
+def test_purchase_on_day_after_closing_goes_to_next_invoice(
+    db, sample_user, sample_category, credit_card
+):
+    service = CreditCardService(db)
+
+    transactions = service.register_purchase(
+        user_id=sample_user.id,
+        credit_card_id=credit_card.id,
+        amount=Decimal("300.00"),
+        purchase_date=date(2026, 10, 4),
+        description="Depois do fechamento",
+        category_id=sample_category.id,
+        installments=1,
+    )
+
+    assert transactions[0].due_date == date(2026, 11, 10)
+
+
+def test_invalid_purchase_is_rejected_and_persists_nothing(
+    db, sample_user, sample_category, credit_card
+):
+    service = CreditCardService(db)
+
+    with pytest.raises(CreditCardError):
+        service.register_purchase(
+            user_id=sample_user.id,
+            credit_card_id=credit_card.id,
+            amount=Decimal("0.00"),
+            purchase_date=date(2026, 10, 1),
+            description="Compra inválida",
+            category_id=sample_category.id,
+            installments=1,
+        )
+
+    assert db.query(Transaction).filter(Transaction.credit_card_id == credit_card.id).count() == 0
+    assert service.get_available_limit(sample_user.id, credit_card.id) == Decimal("5000.00")

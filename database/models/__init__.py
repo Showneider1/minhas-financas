@@ -6,6 +6,7 @@ from database.models.account import Account, AccountType
 from database.models.asset_price import AssetPrice
 from database.models.budget import Budget
 from database.models.category import Category, TransactionType
+from database.models.credit_card import CreditCard
 from database.models.goal import Goal, GoalCategory, GoalStatus
 
 # Importando o novo módulo de investimentos
@@ -22,6 +23,7 @@ __all__ = [
     "Account",
     "AccountType",
     "AssetPrice",
+    "CreditCard",
     "Category",
     "TransactionType",
     "Transaction",

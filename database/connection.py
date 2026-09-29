@@ -87,6 +87,7 @@ def init_db():
         import database.models.asset_price
         import database.models.budget
         import database.models.category
+        import database.models.credit_card  # noqa: F401 — registra o model no metadata
         import database.models.goal
         import database.models.investment
         import database.models.password_reset_token  # noqa: F401 — registro no metadata
