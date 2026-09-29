@@ -22,6 +22,7 @@ from sqlalchemy import (
     Integer,
     Numeric,
     String,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 
@@ -98,6 +99,7 @@ class Transaction(Base):
     # Importacao bancaria em lote
     import_hash = Column(String(64), nullable=True, unique=True, index=True)
     categorization_source = Column(String(20), nullable=True, default="manual")
+    external_id = Column(String(128), nullable=True, index=True)
 
     # Cartão de crédito: transação vinculada ao cartão/fatura.
     credit_card_id = Column(
@@ -122,4 +124,5 @@ class Transaction(Base):
     __table_args__ = (
         Index("ix_transactions_user_paid", "user_id", "paid_date"),
         Index("ix_transactions_user_due", "user_id", "due_date"),
+        UniqueConstraint("user_id", "external_id", name="uq_transactions_user_external_id"),
     )

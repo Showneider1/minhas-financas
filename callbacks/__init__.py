@@ -107,3 +107,11 @@ try:
     print("✓ Analytics callbacks carregados")
 except Exception as _e:
     print(f"⚠ Aviso analytics_callbacks: {_e}")
+
+# ── Importação Bancária (UI P1) ─────────────────────────────────────
+try:
+    import callbacks.importacao_callbacks  # noqa: F401
+
+    print("✓ Importação callbacks carregados")
+except Exception as _e:
+    print(f"⚠ Aviso importacao_callbacks: {_e}")

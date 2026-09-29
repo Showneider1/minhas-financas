@@ -18,6 +18,7 @@ from pages import (
     dashboard_page,
     extrato_page,
     goals_page,
+    importacao_page,
     investimentos_page,
     login_page,
     recorrencia_page,
@@ -140,6 +141,11 @@ def display_page(pathname, auth_data):
         if not is_authenticated:
             return render_layout(login_page.layout), HIDE_SIDEBAR
         return wrap_private(analytics_page.layout), SHOW_SIDEBAR
+
+    if pathname == "/importacao":
+        if not is_authenticated:
+            return render_layout(login_page.layout), HIDE_SIDEBAR
+        return wrap_private(importacao_page.layout), SHOW_SIDEBAR
 
     if pathname == "/recorrencia":
         if not is_authenticated:

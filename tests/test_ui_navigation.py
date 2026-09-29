@@ -25,8 +25,24 @@ def test_recorrencia_route_renders_page_when_authenticated():
     assert sidebar_style == {"display": "block"}
 
 
+def test_importacao_route_renders_page_when_authenticated():
+    content, sidebar_style = display_page("/importacao", _auth_data())
+
+    assert content is not login_page.layout
+    assert content.children is not None
+    assert sidebar_style == {"display": "block"}
+
+
+def test_analytics_route_renders_page_when_authenticated():
+    content, sidebar_style = display_page("/analytics", _auth_data())
+
+    assert content is not login_page.layout
+    assert content.children is not None
+    assert sidebar_style == {"display": "block"}
+
+
 def test_new_routes_are_protected_without_token():
-    for pathname in ("/investimentos", "/recorrencia"):
+    for pathname in ("/investimentos", "/recorrencia", "/importacao", "/analytics"):
         content, sidebar_style = display_page(pathname, None)
         assert content is login_page.layout
         assert sidebar_style == {"display": "none"}
