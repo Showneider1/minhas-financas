@@ -63,10 +63,13 @@ def update_executive_summary(start_date, end_date, _reload, _btn, auth_data):
         user_id = resolve_user(auth_data)
         ds, de = _parse_dates(start_date, end_date)
         with get_db_session() as db:
+            from services.market_data_service import MarketDataService
+
             summary = DashboardService(db).get_executive_summary(
                 user_id,
                 month=de.month,
                 year=de.year,
+                market_data_service=MarketDataService(db),
             )
         if not summary["budget_alerts"]:
             alerts = html.Div(
@@ -111,10 +114,10 @@ def update_executive_summary(start_date, end_date, _reload, _btn, auth_data):
                 )
             alerts = dbc.ListGroup(alert_items, flush=True)
         return (
-            _fmt_brl(summary["total_invested"]),
+            _fmt_brl(summary["investments_market_value"]),
             _fmt_brl(summary["net_worth"]),
             f"Caixa: {_fmt_brl(summary['cash_balance'])} | "
-            f"Faturas: {_fmt_brl(summary['open_invoices'])}",
+            f"Valorização: {_fmt_brl(summary['market_gain'])}",
             _fmt_brl(summary["open_invoices"]),
             alerts,
         )

@@ -105,7 +105,7 @@ def layout():
                     ),
                     dbc.Col(
                         _kpi_card(
-                            "Total Investido",
+                            "Valor de Mercado",
                             "kpi-investimentos",
                             "text-info",
                             icon="📊",

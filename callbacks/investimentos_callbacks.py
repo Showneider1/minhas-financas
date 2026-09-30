@@ -44,7 +44,11 @@ def load_portfolio(auth_data, _reload):
         user_id = resolve_user(auth_data)
         with get_db_session() as db:
             svc = InvestmentService(db)
-            positions = svc.get_portfolio_position(user_id)
+            summary = svc.get_position_summary(
+                user_id,
+                market_data_service=MarketDataService(db),
+            )
+            positions = summary["positions"]
 
         if not positions:
             return html.Div(
@@ -54,14 +58,21 @@ def load_portfolio(auth_data, _reload):
 
         rows = []
         for p in positions:
+            profitability = p["profitability_pct"]
+            profit_class = "text-success" if profitability >= 0 else "text-danger"
             rows.append(
                 html.Tr(
                     [
-                        html.Td(p.ticker),
-                        html.Td(p.name),
-                        html.Td(f"{p.quantity:.8f}"),
-                        html.Td(_fmt_brl(p.avg_price)),
-                        html.Td(_fmt_brl(p.total_cost)),
+                        html.Td(p["ticker"]),
+                        html.Td(p["name"]),
+                        html.Td(f"{p['quantity']:.8f}"),
+                        html.Td(_fmt_brl(p["average_price"])),
+                        html.Td(_fmt_brl(p["current_price"])),
+                        html.Td(_fmt_brl(p["current_market_value"])),
+                        html.Td(
+                            f"{profitability:+.2f}%",
+                            className=f"fw-bold {profit_class}",
+                        ),
                     ]
                 )
             )
@@ -75,7 +86,9 @@ def load_portfolio(auth_data, _reload):
                             html.Th("Ativo"),
                             html.Th("Qtd"),
                             html.Th("PM"),
-                            html.Th("Custo"),
+                            html.Th("Cotação Atual"),
+                            html.Th("Saldo (R$)"),
+                            html.Th("Rentabilidade (%)"),
                         ]
                     )
                 ),

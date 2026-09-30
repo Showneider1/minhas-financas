@@ -66,25 +66,40 @@ class DashboardService:
         """
         return self.balances.get_total_balance(user_id)
 
-    def get_wealth_summary(self, user_id: int) -> dict[str, Decimal]:
+    def get_wealth_summary(
+        self,
+        user_id: int,
+        market_data_service=None,
+    ) -> dict[str, Decimal]:
         """Consolida caixa e investimentos para o dashboard principal.
 
         Regra matemática:
-            Patrimônio Líquido = Saldo de Caixa + Valor Atual da Carteira.
+            Patrimônio Líquido = Saldo de Caixa + Valor de Mercado da Carteira.
         """
         cash_balance = self.get_saldo_calculado(user_id)
-        portfolio = InvestmentService(self.db).get_position_summary(user_id)
-        investments_total = to_money2(
+        portfolio = InvestmentService(self.db).get_position_summary(
+            user_id,
+            market_data_service=market_data_service,
+        )
+        investments_market_value = to_money2(
             portfolio["total_current_value"], where="dashboard.wealth.investments"
         )
-        net_worth = to_money2(cash_balance + investments_total, where="dashboard.wealth.net")
+        invested_cost = to_money2(portfolio["total_cost"], where="dashboard.wealth.cost")
+        net_worth = to_money2(cash_balance + investments_market_value, where="dashboard.wealth.net")
         return {
             "cash_balance": cash_balance,
-            "investments_total": investments_total,
+            "investments_total": investments_market_value,
+            "invested_cost": invested_cost,
             "net_worth": net_worth,
         }
 
-    def get_executive_summary(self, user_id: int, month: int, year: int) -> dict[str, Any]:
+    def get_executive_summary(
+        self,
+        user_id: int,
+        month: int,
+        year: int,
+        market_data_service=None,
+    ) -> dict[str, Any]:
         """Visão 360: caixa, investimentos, cartões, fluxo e orçamentos."""
         if not (1 <= int(month) <= 12):
             raise ValueError("Mês deve estar entre 1 e 12.")
@@ -94,13 +109,19 @@ class DashboardService:
         start_date, end_date = get_month_range(int(year), int(month))
 
         cash_balance = self.balances.get_total_balance(user_id)
-        portfolio = InvestmentService(self.db).get_position_summary(user_id)
-        investments_total = to_money2(
+        portfolio = InvestmentService(self.db).get_position_summary(
+            user_id,
+            market_data_service=market_data_service,
+        )
+        investments_market_value = to_money2(
             portfolio["total_current_value"], where="dashboard.executive.investments"
+        )
+        invested_cost = to_money2(
+            portfolio["total_cost"], where="dashboard.executive.invested_cost"
         )
         open_invoices = CreditCardService(self.db).get_open_invoices_total(user_id)
         net_worth = to_money2(
-            cash_balance + investments_total - open_invoices,
+            cash_balance + investments_market_value - open_invoices,
             where="dashboard.executive.net_worth",
         )
 
@@ -133,7 +154,9 @@ class DashboardService:
             "month": int(month),
             "year": int(year),
             "cash_balance": cash_balance,
-            "total_invested": investments_total,
+            "total_invested": invested_cost,
+            "investments_market_value": investments_market_value,
+            "market_gain": investments_market_value - invested_cost,
             "open_invoices": open_invoices,
             "net_worth": net_worth,
             "cash_flow": cash_flow,

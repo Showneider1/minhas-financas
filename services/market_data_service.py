@@ -1,16 +1,23 @@
 """Serviço de cotações de mercado com cache local em banco."""
 
 import re
+import threading
 from datetime import date
 from decimal import Decimal
 
 import yfinance as yf
+from cachetools import TTLCache
 from sqlalchemy.orm import Session
 
 from config.logging_config import app_logger
 from database.models.asset_price import AssetPrice
 
 B3_TICKER_PATTERN = re.compile(r"^[A-Z]{4}\d{1,2}$")
+
+# Cache em memória: evita bater no Yahoo Finance a cada render da UI.
+# TTL de 15 minutos, limite de 100 tickers.
+_PRICE_CACHE: TTLCache = TTLCache(maxsize=100, ttl=900)
+_PRICE_CACHE_LOCK = threading.Lock()
 
 
 class MarketDataError(ValueError):
@@ -34,6 +41,49 @@ class MarketDataService:
         if B3_TICKER_PATTERN.match(normalized):
             return f"{normalized}.SA"
         return normalized
+
+    def get_current_price(self, ticker: str, fallback_price=None) -> Decimal | None:
+        """Retorna a cotação atual com cache TTL de 15 minutos.
+
+        Fallback seguro:
+        - Se o provider falhar, retornar `fallback_price` (normalmente o PM).
+        - Se não houver fallback, retorna `None`.
+        """
+        normalized = self.normalize_symbol(ticker)
+
+        with _PRICE_CACHE_LOCK:
+            cached_price = _PRICE_CACHE.get(normalized)
+        if cached_price is not None:
+            return cached_price
+
+        candidates = [normalized]
+        raw_ticker = ticker.strip().upper()
+        if raw_ticker != normalized:
+            candidates.append(raw_ticker)
+
+        for symbol in candidates:
+            try:
+                history = self.provider.Ticker(symbol).history(
+                    period="1d",
+                    interval="1d",
+                    timeout=3,
+                )
+                history = history.dropna(subset=["Close"])
+                if history.empty:
+                    continue
+                close_price = Decimal(str(history["Close"].iloc[-1])).quantize(
+                    Decimal("0.00000001")
+                )
+                with _PRICE_CACHE_LOCK:
+                    _PRICE_CACHE[normalized] = close_price
+                return close_price
+            except Exception as exc:  # noqa: BLE001
+                app_logger.warning(f"MarketData falhou para {symbol}: {exc}")
+                continue
+
+        if fallback_price is not None:
+            return Decimal(str(fallback_price))
+        return None
 
     def fetch_latest_price(self, ticker: str) -> tuple[date, Decimal, str]:
         """Consulta o preço mais recente do ticker no provider externo."""

@@ -690,7 +690,11 @@ class InvestmentService:
         positions = [self.get_position(a.id, user_id) for a in assets]
         return sorted((p for p in positions if p.quantity > 0), key=lambda p: p.ticker)
 
-    def get_position_summary(self, user_id: int) -> dict[str, Any]:
+    def get_position_summary(
+        self,
+        user_id: int,
+        market_data_service=None,
+    ) -> dict[str, Any]:
         """Resume carteira por valor atual sem gerar queries N+1.
 
         O dashboard consome este método para consolidar patrimônio. A valoração
@@ -772,12 +776,27 @@ class InvestmentService:
             if qty > 0:
                 avg_price = (cost / qty).quantize(Q8)
                 cached_price = latest_cached_price.get(asset.ticker)
-                if cached_price is not None:
+                if market_data_service is not None:
+                    current_price = market_data_service.get_current_price(
+                        asset.ticker,
+                        fallback_price=avg_price,
+                    )
+                elif cached_price is not None:
                     current_price = cached_price.quantize(Q8)
                 elif current_price <= 0:
                     current_price = avg_price
-                market_value = to_money2(qty * current_price, where="investment.summary.value")
-                total_current_value += market_value
+                if current_price is None:
+                    current_price = avg_price
+                current_price = Decimal(str(current_price)).quantize(Q8)
+                current_market_value = to_money2(
+                    qty * current_price, where="investment.summary.value"
+                )
+                profitability_pct = (
+                    float((current_market_value - cost) / cost * Decimal("100"))
+                    if cost > 0
+                    else 0.0
+                )
+                total_current_value += current_market_value
                 total_cost += cost
                 positions.append(
                     {
@@ -787,8 +806,10 @@ class InvestmentService:
                         "asset_type": asset.asset_type.value,
                         "quantity": qty.quantize(Q8),
                         "average_price": avg_price,
-                        "current_price": current_price.quantize(Q8),
-                        "current_value": market_value,
+                        "current_price": current_price,
+                        "current_market_value": current_market_value,
+                        "current_value": current_market_value,
+                        "profitability_pct": profitability_pct,
                         "total_cost": cost.quantize(Q8),
                         "total_fees": fees.quantize(Q8),
                         "dividends": dividends.quantize(Q2),
