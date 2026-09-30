@@ -1,125 +1,30 @@
-"""
-Importa todos os callbacks para registrá-los no app.
-"""
+"""Registra todos os callbacks do Dash no app."""
 
-# Auth callbacks SEMPRE primeiro
-try:
-    import callbacks.auth_callbacks
+from config.logging_config import app_logger
 
-    print("✓ Auth callbacks carregados")
-except Exception as e:
-    print(f"✗ Erro ao carregar auth_callbacks: {e}")
+_CALLBACK_MODULES = [
+    "callbacks.auth_callbacks",
+    "callbacks.sidebar_callbacks",
+    "callbacks.config_callbacks",
+    "callbacks.dashboard_callbacks",
+    "callbacks.extrato_callbacks",
+    "callbacks.transactions_callbacks",
+    "callbacks.account_callbacks",
+    "callbacks.category_callbacks",
+    "callbacks.export_callbacks",
+    "callbacks.budget_callbacks",
+    "callbacks.goal_callbacks",
+    "callbacks.investimentos_callbacks",
+    "callbacks.recorrencia_callbacks",
+    "callbacks.cartoes_callbacks",
+    "callbacks.analytics_callbacks",
+    "callbacks.importacao_callbacks",
+    "callbacks.relatorios_callbacks",
+]
 
-try:
-    import callbacks.sidebar_callbacks
-
-    print("✓ Sidebar callbacks carregados")
-except Exception as e:
-    print(f"⚠ Aviso sidebar_callbacks: {e}")
-
-try:
-    import callbacks.config_callbacks
-
-    print("✓ Config callbacks carregados")
-except Exception as e:
-    print(f"⚠ Aviso config_callbacks: {e}")
-
-try:
-    import callbacks.dashboard_callbacks
-
-    print("✓ Dashboard callbacks carregados")
-except Exception as e:
-    print(f"⚠ Aviso dashboard_callbacks: {e}")
-
-try:
-    import callbacks.extrato_callbacks
-
-    print("✓ Extrato callbacks carregados")
-except Exception as e:
-    print(f"⚠ Aviso extrato_callbacks: {e}")
-
-try:
-    import callbacks.transactions_callbacks
-
-    print("✓ Transactions callbacks carregados")
-except Exception as e:
-    print(f"⚠ Aviso transactions_callbacks: {e}")
-
-try:
-    import callbacks.account_callbacks
-
-    print("✓ Account callbacks carregados")
-except Exception as e:
-    print(f"⚠ Aviso account_callbacks: {e}")
-
-try:
-    import callbacks.category_callbacks
-
-    print("✓ Category callbacks carregados")
-except Exception as e:
-    print(f"⚠ Aviso category_callbacks: {e}")
-
-try:
-    import callbacks.export_callbacks
-
-    print("✓ Export callbacks carregados")
-except Exception as e:
-    print(f"⚠ Aviso export_callbacks: {e}")
-
-print("\n📊 Callbacks registrados com sucesso!\n")
-
-try:
-    import callbacks.budget_callbacks  # noqa: F401
-
-    print("✓ Budget callbacks carregados")
-except Exception as e:
-    print(f"⚠ Aviso budget_callbacks: {e}")
-
-# ── Metas Financeiras ──────────────────────────────────────────────
-try:
-    import callbacks.goal_callbacks  # noqa: F401
-
-    print("✓ Goal callbacks carregados")
-except Exception as _e:
-    print(f"⚠ Aviso goal_callbacks: {_e}")
-
-# ── Investimentos / Recorrências (UI P1) ──────────────────────────
-try:
-    import callbacks.investimentos_callbacks  # noqa: F401
-    import callbacks.recorrencia_callbacks  # noqa: F401
-
-    print("✓ Investimentos/Recorrência callbacks carregados")
-except Exception as _e:
-    print(f"⚠ Aviso investimentos/recorrencia_callbacks: {_e}")
-
-# ── Cartões de Crédito (UI P1) ─────────────────────────────────────
-try:
-    import callbacks.cartoes_callbacks  # noqa: F401
-
-    print("✓ Cartões callbacks carregados")
-except Exception as _e:
-    print(f"⚠ Aviso cartoes_callbacks: {_e}")
-
-# ── Analytics (UI P1) ──────────────────────────────────────────────
-try:
-    import callbacks.analytics_callbacks  # noqa: F401
-
-    print("✓ Analytics callbacks carregados")
-except Exception as _e:
-    print(f"⚠ Aviso analytics_callbacks: {_e}")
-
-# ── Importação Bancária (UI P1) ─────────────────────────────────────
-try:
-    import callbacks.importacao_callbacks  # noqa: F401
-
-    print("✓ Importação callbacks carregados")
-except Exception as _e:
-    print(f"⚠ Aviso importacao_callbacks: {_e}")
-
-# ── Relatórios (UI P2) ─────────────────────────────────────────────
-try:
-    import callbacks.relatorios_callbacks  # noqa: F401
-
-    print("✓ Relatórios callbacks carregados")
-except Exception as _e:
-    print(f"⚠ Aviso relatorios_callbacks: {_e}")
+for _module_name in _CALLBACK_MODULES:
+    try:
+        __import__(_module_name)
+        app_logger.info(f"Callback registrado: {_module_name}")
+    except Exception as _exc:  # noqa: BLE001
+        app_logger.warning(f"Falha ao registrar callback {_module_name}: {_exc}")
