@@ -51,6 +51,8 @@ class InvestmentValidationError(ValueError):
 Q8 = Decimal("0.00000001")
 Q2 = Decimal("0.01")
 ZERO = Decimal("0")
+ZERO_2 = Decimal("0.00")
+HUNDRED = Decimal("100.00")
 
 
 # ---------------------------------------------------------------------------
@@ -169,6 +171,84 @@ class InvestmentService:
             raise
         app_logger.info(f"Ativo cadastrado: {code} (usuário {user_id})")
         return asset
+
+    # ------------------------------------------------------------------
+    # Estratégia de alocação (Buy & Hold)
+    # ------------------------------------------------------------------
+    def set_target_allocation(
+        self,
+        user_id: int,
+        asset_id: int,
+        target_pct,
+    ) -> Asset:
+        """Define a meta de alocação (%) de um ativo.
+
+        Trava estrutural: a SOMA das metas de um usuário não pode passar de
+        100%. O cálculo considera todos os ativos do usuário (inclusive os
+        sem posição) e substitui o valor do próprio ativo na soma, de modo que
+        editar o mesmo ativo duas vezes não acumula.
+        """
+        asset = self._owned_asset(asset_id, user_id)
+        pct = to_money2(target_pct, where="invest.target.pct")
+        if pct < 0:
+            raise InvestmentValidationError("Alvo de alocação não pode ser negativo.")
+        if pct > Decimal("100.00"):
+            raise InvestmentValidationError("Alvo de alocação não pode superar 100%.")
+
+        others = (
+            self.db.query(Asset.target_allocation_pct)
+            .filter(
+                Asset.user_id == user_id,
+                Asset.id != asset_id,
+            )
+            .all()
+        )
+        others_total = sum(
+            (to_money2(row[0] or 0, where="invest.target.sum") for row in others),
+            ZERO_2,
+        )
+        new_total = (others_total + pct).quantize(Q2)
+        if new_total > HUNDRED:
+            raise InvestmentValidationError(
+                f"Soma dos alvos excederia 100%: {new_total}% (limite já usado: {others_total}%)."
+            )
+
+        asset.target_allocation_pct = pct
+        try:
+            self.db.commit()
+            self.db.refresh(asset)
+        except Exception:
+            self.db.rollback()
+            raise
+        app_logger.info(
+            f"Alvo de {asset.ticker} definido para {pct}% (usuário {user_id}, total {new_total}%)"
+        )
+        return asset
+
+    def get_target_allocations(self, user_id: int) -> list[dict[str, Any]]:
+        """Metas por ativo + somatório da estratégia do usuário."""
+        rows = (
+            self.db.query(Asset).filter(Asset.user_id == user_id).order_by(Asset.ticker.asc()).all()
+        )
+        items: list[dict[str, Any]] = []
+        total = ZERO_2
+        for asset in rows:
+            pct = to_money2(asset.target_allocation_pct or 0, where="invest.target.read")
+            total += pct
+            items.append(
+                {
+                    "asset_id": asset.id,
+                    "ticker": asset.ticker,
+                    "name": asset.name,
+                    "target_pct": pct,
+                }
+            )
+        return {
+            "items": items,
+            "total_target_pct": total.quantize(Q2),
+            "is_complete": total == HUNDRED,
+            "remaining_pct": (HUNDRED - total).quantize(Q2),
+        }
 
     def register_asset_buy(
         self,

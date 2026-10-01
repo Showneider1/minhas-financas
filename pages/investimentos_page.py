@@ -191,6 +191,114 @@ modal_investimento = dbc.Modal(
 )
 
 
+def _rebalance_tab():
+    """Aba de Rebalanceamento Buy & Hold: metas + aporte + plano de compras."""
+    return dbc.Tab(
+        [
+            dbc.Alert(
+                [
+                    html.I(className="bi bi-info-circle me-2"),
+                    "Rebalanceamento por aportes: a estratégia é Buy & Hold, então só "
+                    "compras são sugeridas. Ativos acima da meta não geram venda — "
+                    "o excedente é direcionado aos ativos deficitários.",
+                ],
+                color="light",
+                className="border",
+            ),
+            html.Div(id="rebalance-estrategia-alerta", className="mt-3"),
+            dbc.Row(
+                [
+                    dbc.Col(
+                        [
+                            dbc.Label("Valor do Aporte do Mês (R$)", className="fw-bold"),
+                            dbc.Input(
+                                id="rebalance-aporte",
+                                type="number",
+                                min=0,
+                                step=0.01,
+                                value=0,
+                                placeholder="0,00",
+                            ),
+                            html.Small(
+                                "O plano é recalculado enquanto você digita.",
+                                className="text-muted",
+                            ),
+                        ],
+                        width=12,
+                        sm=6,
+                        md=4,
+                    ),
+                    dbc.Col(
+                        [
+                            html.Label(
+                                "Alvos por Ativo (%)",
+                                className="fw-bold d-block",
+                            ),
+                            html.Div(id="rebalance-targets-container"),
+                        ],
+                        width=12,
+                        md=8,
+                    ),
+                ],
+                className="my-3",
+                align="start",
+            ),
+            dbc.Row(
+                [
+                    dbc.Col(
+                        dbc.Button(
+                            [
+                                html.I(className="bi bi-check2-circle me-2"),
+                                "Salvar Estratégia",
+                            ],
+                            id="rebalance-btn-salvar",
+                            color="success",
+                            className="fw-bold",
+                        ),
+                        width="auto",
+                        className="mb-3",
+                    ),
+                    dbc.Col(
+                        html.Div(id="rebalance-save-feedback"),
+                        width=True,
+                    ),
+                ],
+                align="center",
+            ),
+            html.Hr(),
+            dbc.Row(
+                [
+                    dbc.Col(
+                        [
+                            dbc.Card(
+                                [
+                                    dbc.CardHeader(
+                                        [
+                                            html.I(className="bi bi-bullseye me-2"),
+                                            "Sugestão de Compras",
+                                        ],
+                                        className="bg-white fw-bold border-0 pb-0",
+                                    ),
+                                    dbc.CardBody(
+                                        dcc.Loading(
+                                            html.Div(id="rebalance-plano-tabela"),
+                                            type="dot",
+                                        ),
+                                        className="pt-2",
+                                    ),
+                                ],
+                                className="shadow-sm border-0",
+                            ),
+                        ],
+                        width=12,
+                    ),
+                ]
+            ),
+        ],
+        label="Rebalanceamento",
+    )
+
+
 def layout():
     return dbc.Container(
         [
@@ -249,33 +357,45 @@ def layout():
                 align="center",
                 className="mb-4",
             ),
-            dbc.Row(
+            dbc.Tabs(
                 [
-                    dbc.Col(
-                        [
-                            dbc.Card(
-                                [
-                                    dbc.CardHeader(
-                                        [html.I(className="bi bi-wallet2 me-2"), "Carteira"],
-                                        className="bg-white fw-bold border-0 pb-0",
-                                    ),
-                                    dbc.CardBody(
-                                        [
-                                            dcc.Loading(
-                                                html.Div(id="invest-portfolio-table"),
-                                                type="dot",
-                                            ),
-                                        ],
-                                        className="pt-2",
-                                    ),
-                                ],
-                                className="shadow-sm border-0",
-                            ),
-                        ],
-                        width=12,
+                    dbc.Tab(
+                        dbc.Row(
+                            [
+                                dbc.Col(
+                                    [
+                                        dbc.Card(
+                                            [
+                                                dbc.CardHeader(
+                                                    [
+                                                        html.I(className="bi bi-wallet2 me-2"),
+                                                        "Carteira",
+                                                    ],
+                                                    className="bg-white fw-bold border-0 pb-0",
+                                                ),
+                                                dbc.CardBody(
+                                                    dcc.Loading(
+                                                        html.Div(id="invest-portfolio-table"),
+                                                        type="dot",
+                                                    ),
+                                                    className="pt-2",
+                                                ),
+                                            ],
+                                            className="shadow-sm border-0",
+                                        ),
+                                    ],
+                                    width=12,
+                                ),
+                            ],
+                            className="mb-3",
+                        ),
+                        label="Carteira Atual",
+                        id="carteira-tab",
                     ),
+                    _rebalance_tab(),
                 ],
-                className="mb-3",
+                id="invest-tabs",
+                active_tab="carteira-tab",
             ),
             modal_investimento,
         ],

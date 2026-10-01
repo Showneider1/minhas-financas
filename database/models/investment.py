@@ -46,6 +46,12 @@ class Asset(Base):
     asset_type = Column(Enum(AssetType, native_enum=False), nullable=False)
     sector = Column(String(50), nullable=True)  # Setor (Bancos, Energia...)
 
+    # Meta de alocação da estratégia (Buy & Hold), em % do patrimônio.
+    # Decimal(5,2): 0,00–100,00. A soma dos alvos do usuário é validada
+    # em código (<= 100) por InvestmentService.set_target_allocation —
+    # CHECK no banco não é possível (agrega outra tabela).
+    target_allocation_pct = Column(Numeric(5, 2), nullable=False, default=0, server_default="0")
+
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
 
     # Relacionamentos
