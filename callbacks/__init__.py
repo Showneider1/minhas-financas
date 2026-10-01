@@ -20,6 +20,7 @@ _CALLBACK_MODULES = [
     "callbacks.analytics_callbacks",
     "callbacks.importacao_callbacks",
     "callbacks.relatorios_callbacks",
+    "callbacks.dashboard_projection_callback",
 ]
 
 for _module_name in _CALLBACK_MODULES:

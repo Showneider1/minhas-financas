@@ -32,6 +32,60 @@ def _kpi_card(title, kpi_id, color_class, info_id=None, icon=""):
     )
 
 
+def _cash_flow_projection_card():
+    """Card de Projeção de Fluxo de Caixa (Predictive Analytics)."""
+    return dbc.Card(
+        [
+            dbc.CardHeader(
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                html.I(className="bi bi-graph-up-arrow me-2"),
+                                "Projeção de Fluxo de Caixa",
+                            ],
+                            width=True,
+                            className="fw-bold",
+                        ),
+                        dbc.Col(
+                            dcc.RadioItems(
+                                id="projecao-caixa-horizonte",
+                                options=[
+                                    {"label": "3 meses", "value": "3"},
+                                    {"label": "6 meses", "value": "6"},
+                                ],
+                                value="3",
+                                inline=True,
+                                className="small",
+                                inputClassName="me-1",
+                                labelClassName="me-2",
+                            ),
+                            width="auto",
+                            className="d-flex align-items-center",
+                        ),
+                    ],
+                    align="center",
+                ),
+                className="bg-white border-0 pb-0",
+            ),
+            dbc.CardBody(
+                [
+                    dcc.Loading(html.Div(id="projecao-caixa-alerta"), type="dot"),
+                    dcc.Loading(
+                        dcc.Graph(
+                            id="grafico-projecao-caixa",
+                            config={"displayModeBar": False},
+                            style={"height": "320px"},
+                        ),
+                    ),
+                ],
+                className="pt-2",
+            ),
+        ],
+        className="shadow-sm border-0 h-100",
+    )
+
+
 def layout():
     return dbc.Container(
         [
@@ -490,6 +544,12 @@ def layout():
                         lg=7,
                         className="mb-3",
                     ),
+                ]
+            ),
+            # Linha 5: Projeção de Fluxo de Caixa (Predictive Analytics)
+            dbc.Row(
+                [
+                    dbc.Col(_cash_flow_projection_card(), width=12, className="mb-3"),
                 ]
             ),
         ],
