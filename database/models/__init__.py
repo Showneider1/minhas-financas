@@ -16,6 +16,7 @@ from database.models.rate_limit import RateLimitHit
 from database.models.refresh_token import RefreshToken
 from database.models.scheduled_bill import BillRecurrence, BillStatus, BillType, ScheduledBill
 from database.models.transaction import Transaction, TransactionStatus
+from database.models.vault import Vault
 from database.models.user import User
 
 __all__ = [
@@ -43,4 +44,5 @@ __all__ = [
     "PasswordResetToken",
     "RateLimitHit",
     "RefreshToken",
+    "Vault",
 ]

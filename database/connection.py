@@ -82,7 +82,9 @@ def init_db():
     Nunca chamar `drop_all` aqui. Importações locais para evitar ciclos.
     """
     try:
-        # Importar modelos aqui para garantir que o SQLAlchemy os conheça antes do create_all
+        # Recriar tabelas se migration pendente (vaults) não estiver aplicada.
+        from database.base import Base
+        Base.metadata.create_all(bind=engine, checkfirst=True)  # safe idempotent
         import database.models.account
         import database.models.asset_price
         import database.models.budget

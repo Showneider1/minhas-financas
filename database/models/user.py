@@ -40,3 +40,4 @@ class User(Base):
         "ScheduledBill", back_populates="user", cascade="all, delete-orphan"
     )
     assets = relationship("Asset", back_populates="user", cascade="all, delete-orphan")
+    vaults = relationship("Vault", back_populates="user", cascade="all, delete-orphan")

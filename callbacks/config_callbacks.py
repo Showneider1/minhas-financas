@@ -1,33 +1,6 @@
 """
 Callbacks da página de configurações.
 Arquitetura correta: botões de ação ficam no layout estático (configuracoes_page.py),
-eliminando o bug de modal abrindo sozinho ao trocar de aba.
-"""
-
-from decimal import Decimal, InvalidOperation
-
-import dash_bootstrap_components as dbc
-from dash import ALL, Input, Output, State, ctx, html, no_update
-
-from app import app
-from config.logging_config import app_logger
-from database.connection import get_db_session
-from middleware.auth_context import resolve_user
-from schemas.account_schema import AccountCreate, AccountType
-from schemas.category_schema import CategoryCreate
-from services.account_service import AccountService
-from services.category_service import CategoryService
-from utils.exceptions import AuthenticationError
-
-# ─── Helper de Toast ────────────────────────────────────────────────────────
-
-
-def _fmt_brl(value) -> str:
-    # Borda de exibição pt-BR (sem aritmética aqui).
-    from decimal import Decimal as _D
-
-    amount = value if isinstance(value, _D) else _D(str(value or 0))
-    return f"R$ {amount:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
 def _toast(msg, color="success", icon="check-circle-fill"):
@@ -701,7 +674,10 @@ def delete_categoria(n_clicks, auth_data, trigger_val):
     prevent_initial_call=True,
 )
 def delete_conta(n_clicks, auth_data, trigger_val):
-    """Exclusão de conta (o botão existia sem callback — P0 C2)."""
+    """Exclusão de conta (blindada contra disparo fantasma — P0 corrigido)."""
+    # P0 CORRIGIDO: Blindagem contra n_clicks == 0 ou None (botões renderizados na UI sem clique)
+    if not isinstance(n_clicks, int) or n_clicks <= 0:
+        return no_update, no_update
     triggered = ctx.triggered_id
     if not isinstance(triggered, dict) or triggered.get("type") != "btn-del-acc":
         return no_update, no_update

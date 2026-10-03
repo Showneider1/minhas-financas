@@ -24,6 +24,7 @@ from pages import (
     login_page,
     recorrencia_page,
     relatorios_page,
+    vaults_page,
 )
 
 # P1 segurança: rajadas no endpoint de escrita retornam HTTP 429 por IP.
@@ -147,6 +148,11 @@ def display_page(pathname, auth_data):
         if not is_authenticated:
             return render_layout(login_page.layout), HIDE_SIDEBAR
         return wrap_private(analytics_page.layout), SHOW_SIDEBAR
+
+    if pathname == "/caixinhas":
+        if not is_authenticated:
+            return render_layout(login_page.layout), HIDE_SIDEBAR
+        return wrap_private(vaults_page.layout), SHOW_SIDEBAR
 
     if pathname == "/importacao":
         if not is_authenticated:

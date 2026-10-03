@@ -1,0 +1,10 @@
+⚠️ PARALIZAÇÃO DE DESENVOLVIMENTO - DAY 0
+
+Obrigatória conforme diretriz:
+1. NÃO adicione novas features (Caixinhas) até estabilizar
+2. Foque exclusivamente em corrigir:
+   a) Conta sendo deletada na criação (bug P0)
+   b) Migration quebrada com drop_constraint(None)
+3. Paralisar desenvolvimento P9 até fixar
+
+Status atual: 2 commits pending, aplicação instável, banco não aplicável migration.
