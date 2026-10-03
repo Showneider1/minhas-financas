@@ -1,31 +1,63 @@
-"""Callbacks placeholders para Vault (Caixinhas) — UI mock temporário até deploy."
+"""
+Callback Vault — Blindagem P0 garantida. Tratar VaultInsufficientFundsError no modal.
+"""
 
-from dash import no_update, Input, Output, State, ctx
+
+from dash import Input, Output, State, ctx, html, no_update
 import dash_bootstrap_components as dbc
-
-# Placeholder para evitar falha de importação durante testes e deploy.
-# Implementação real com modais guardar/resgar será adicionada após push bem sucedido.
-
-@app.callback(
-    Output("vault-modal", "is_open"),
-    Input("vault-btn-new", "n_clicks"),
-    prevent_initial_call=True,
-)
-def toggle_vault_modal(n_clicks, **_):
-    return True if n_clicks else no_update
+from decimal import Decimal
+from services.vault_service import VaultService, VaultInsufficientFundsError
+from config.logging_config import app_logger
+from middleware.auth_context import resolve_user
 
 
 @app.callback(
-    Output("config-modals-feedback", "children", allow_duplicate=True),
-    Input({"type": "vault-btn-act", "index": ALL}, "n_clicks"),
+    Output("vault-modal-alert", "children"),
+    Output("vault-alert", "children", allow_duplicate=True),
+    Input({"type": "vault-btn-keep", "index": ALL}, "n_clicks"),
+    Input({"type": "vault-btn-take", "index": ALL}, "n_clicks"),
     State("auth-store", "data"),
+    State("vault-select", "value"),
+    State("vault-amount", "value"),
     prevent_initial_call=True,
 )
-def handle_vault_action(n_clicks, auth_data):
-    # Placeholder: validar n_clicks > 0 — P0 blindagem igual delete_conta.
-    if not isinstance(getattr(n_clicks, "value", True), int) or (getattr(n_clicks, "value", None) <= 0):
-        return no_update
-    triggered = ctx.triggered_id
-    # Fallback de validação — apenas placeholder para deploy.
-    return dbc.Alert("Ação de Vault realizada.", color="success")
+def handle_vault_actions(btn_keep, btn_take, auth_data, vault_id, amount):
+    # P0 Blindagem: ignora n_clicks <= 0 (botões renderizados na UI sem clique)
+    if not isinstance(btn_keep, (list, tuple)) or not all(isinstance(x, int) for x in btn_keep):
+        return no_update, no_update
+    
+    triggered_keep = next((b for b in btn_keep), None) if btn_keep else None
+    triggered_take = next((b for b in btn_take), None) if btn_take else None
+    
+    # Se nenhum botão foi clicado (>0), não atualiza
+    if not (triggered_keep or triggered_take):
+        return no_update, no_update
+    
+    vault_clicked_id = int(triggered_keep["index"]) if triggered_keep else int(triggered_take["index"])
+    
+    try:
+        with get_db_session() as db:
+            service = VaultService(db)
+            
+            # Ação de guardar ou resgatar conforme botão clicado
+            if triggered_keep is not None:
+                new_amount = Decimal(amount or "0") if amount else ZERO
+                service.allocate_funds(vault_clicked_id, resolve_user(auth_data), new_amount)
+                return html.Alert(f"Guardado R$ {amount}!", color="success"), no_update
+            
+            elif triggered_take is not None:
+                current_saved = Decimal(str(service.get_vaults(resolve_user(auth_data))[vault_clicked_id].saved_amount or 0)) if hasattr(service, 'get_vaults') else ZERO
+                amount_to_withdraw = Decimal(amount or "0") if amount else current_saved
+                service.withdraw_funds(vault_clicked_id, resolve_user(auth_data), amount_to_withdraw)
+                return html.Alert(f"Resgatado R$ {amount}!", color="success"), no_update
+    
+    except VaultInsufficientFundsError as ex:
+        # Erro de saldo insuficiente — UI mostra alerta vermelho sem crashar
+        return html.Alert(str(ex), color="warning"), no_update
+    
+    except Exception as ex:
+        app_logger.error(f"Erro vault callback: {ex}", exc_info=True)
+        return html.Alert("Erro ao processar.", color="danger"), no_update
 
+
+ZERO = Decimal("0.00")
