@@ -15,14 +15,10 @@ from sqlalchemy.orm import Session
 from config.logging_config import app_logger
 from database.models.vault import Vault
 from services.balance_service import BalanceService
-from utils.exceptions import ValidationError
+from utils.exceptions import ValidationError, VaultInsufficientFundsError
 from utils.money import to_money2
 
 ZERO = Decimal("0.00")
-
-
-class VaultInsufficientFundsError(ValueError):
-    """Tentativa de alocar mais dinheiro do que o saldo livre disponível."""
 
 
 class VaultService:

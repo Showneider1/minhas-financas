@@ -3,12 +3,16 @@ Callback Vault — Blindagem P0 garantida. Tratar VaultInsufficientFundsError no
 """
 
 
-from dash import Input, Output, State, ctx, html, no_update
-import dash_bootstrap_components as dbc
 from decimal import Decimal
-from services.vault_service import VaultService, VaultInsufficientFundsError
+
+from dash import ALL, Input, Output, State, ctx, no_update
+import dash_bootstrap_components as dbc
+
+from app import app
 from config.logging_config import app_logger
+from database.connection import get_db_session
 from middleware.auth_context import resolve_user
+from services.vault_service import VaultService, VaultInsufficientFundsError
 
 
 @app.callback(
@@ -43,21 +47,21 @@ def handle_vault_actions(btn_keep, btn_take, auth_data, vault_id, amount):
             if triggered_keep is not None:
                 new_amount = Decimal(amount or "0") if amount else ZERO
                 service.allocate_funds(vault_clicked_id, resolve_user(auth_data), new_amount)
-                return html.Alert(f"Guardado R$ {amount}!", color="success"), no_update
+                return dbc.Alert(f"Guardado R$ {amount}!", color="success"), no_update
             
             elif triggered_take is not None:
                 current_saved = Decimal(str(service.get_vaults(resolve_user(auth_data))[vault_clicked_id].saved_amount or 0)) if hasattr(service, 'get_vaults') else ZERO
                 amount_to_withdraw = Decimal(amount or "0") if amount else current_saved
                 service.withdraw_funds(vault_clicked_id, resolve_user(auth_data), amount_to_withdraw)
-                return html.Alert(f"Resgatado R$ {amount}!", color="success"), no_update
+                return dbc.Alert(f"Resgatado R$ {amount}!", color="success"), no_update
     
     except VaultInsufficientFundsError as ex:
         # Erro de saldo insuficiente — UI mostra alerta vermelho sem crashar
-        return html.Alert(str(ex), color="warning"), no_update
+        return dbc.Alert(str(ex), color="warning"), no_update
     
     except Exception as ex:
         app_logger.error(f"Erro vault callback: {ex}", exc_info=True)
-        return html.Alert("Erro ao processar.", color="danger"), no_update
+        return dbc.Alert("Erro ao processar.", color="danger"), no_update
 
 
 ZERO = Decimal("0.00")

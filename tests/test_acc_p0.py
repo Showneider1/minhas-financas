@@ -70,9 +70,12 @@ def test_create_account_with_non_zero_initial_balance_persists(db, sample_user):
     assert account.is_deleted is False
     # Check via query raw não filtrando deleted — se existir soft-deleted, aparecerá como row com flag True
     rows = db.query(Account).filter(Account.user_id == sample_user.id)
-    deleted_count = len(rows.filter(Account.is_deleted == True).all()) if hasattr(type(rows), 'filter') else 0
+    deleted_rows = rows.filter(Account.is_deleted.is_(True)).all()
+    deleted_count = len(deleted_rows)
     # Não deveria ter conta soft-deleted para este usuário (exceto se já existiam antes, mas não é o caso do P0 reportado)
-    assert deleted_count == 0 or all(a.name not in ("Conta Saldo Zero", "Nova Conta P0") for a in accounts)
+    assert deleted_count == 0 or all(
+        a.name not in ("Conta Saldo Zero", "Nova Conta P0") for a in deleted_rows
+    )
 
 
 @pytest.mark.xfail(strict=False, reason="P0 bug: conta recém-criada tem is_deleted=True — será corrigido no commit após fix.")
