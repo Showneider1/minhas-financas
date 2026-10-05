@@ -14,6 +14,11 @@ class AppException(Exception):
         super().__init__(self.message)
 
 
+# ─── Vault / Caixinhas ───────────────────────────────────────────────────────
+class VaultInsufficientFundsError(ValueError):
+    """Tentativa de alocar mais dinheiro do que o saldo livre disponível."""
+
+
 class ValidationError(AppException):
     """Erro de validação de dados."""
 
