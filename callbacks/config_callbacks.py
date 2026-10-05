@@ -10,7 +10,7 @@ import dash_bootstrap_components as dbc
 
 
 def delete_conta(n_clicks, auth_data, trigger_val):
-    """"Exclusão de conta (blindada contra disparo fantasma — P0 corrigido)."""
+    """"Exclusão de conta (blindada contra disparo fantasma - P0 corrigido)."""
     # P0 CORRIGIDO: Blindagem contra n_clicks == 0 ou None (botões renderizados na UI)
     if not isinstance(n_clicks, int):
         return no_update, no_update
@@ -25,7 +25,7 @@ def delete_conta(n_clicks, auth_data, trigger_val):
         user_id = resolve_user(auth_data)
     except AuthenticationError as e:
         return no_update, _toast(
-            "Sessão expirada — faça login novamente.", "danger", "exclamation-triangle-fill"
+            "Sessão expirada - faça login novamente.", "danger", "exclamation-triangle-fill"
         )
 
     try:
