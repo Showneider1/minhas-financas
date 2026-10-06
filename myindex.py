@@ -54,6 +54,10 @@ app.layout = html.Div(
         dcc.Store(id="store-reload-dashboard", data=0),
         dcc.Store(id="store-reload-aux", storage_type="memory"),
         dcc.Store(id="store-transacao-id-editar", data=None, storage_type="memory"),
+        # Store de edição preenchido por callbacks/extrato_callbacks.editar_lancamento.
+        # Componente materializado no DOM para o Output do callback não apontar
+        # para um elemento inexistente (crash silencioso do renderer Dash).
+        dcc.Store(id="store-transacao-editar", data=None, storage_type="memory"),
         dcc.Store(id="store-modal-state", storage_type="memory", data={"is_open": False}),
         # Download components
         dcc.Download(id="download-extrato"),
