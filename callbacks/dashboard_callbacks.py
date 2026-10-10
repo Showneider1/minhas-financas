@@ -19,8 +19,6 @@ from database.models.category import TransactionType
 from middleware.auth_context import resolve_user
 from services.dashboard_service import DashboardService
 from services.finance_service import FinanceService
-from services.investment_rebalance_service import InvestmentRebalanceService
-from services.market_data_service import MarketDataService
 from utils.exceptions import AuthenticationError
 
 

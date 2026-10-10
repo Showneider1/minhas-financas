@@ -1,7 +1,11 @@
 """Teste de integração P0: Criar conta deve persistir e não setar soft-delete."""
+from contextlib import contextmanager
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
+
+import callbacks.config_callbacks as config_callbacks
 from database.models.account import Account
 from services.account_service import AccountService
 from schemas.account_schema import AccountCreate, AccountType
@@ -33,13 +37,16 @@ def test_create_account_persists_no_soft_delete(db, sample_user):
 
 def test_create_account_doesnt_soft_delete_other_accounts(db, sample_user):
     """Criar nova conta não deveria afetar contas existentes com is_deleted=False."""
-    # Seed inicial de algumas contas?
-    initial_count = 0
-    try:
-        first = db.query(Account).filter(Account.user_id == sample_user.id, Account.is_deleted.is_(False)).first()
-        initial_count = initial_count + (1 if first else 0)
-    except Exception:
-        pass
+    serv = AccountService(db)
+
+    existing = serv.create_account(
+        user_id=sample_user.id,
+        data=AccountCreate(
+            name="Conta Existente",
+            account_type=AccountType.CHECKING,
+            initial_balance=Decimal("10.00"),
+        ),
+    )
 
     new_acc = serv.create_account(
         user_id=sample_user.id,
@@ -50,9 +57,10 @@ def test_create_account_doesnt_soft_delete_other_accounts(db, sample_user):
         ),
     )
 
+    assert existing.is_deleted is False
     assert new_acc.is_deleted is False
-    list = AccountService(db).get_user_accounts(sample_user.id)
-    assert len([a for a in list if a.name.startswith(("Conta", "Nova"))]) == 2
+    accounts = AccountService(db).get_user_accounts(sample_user.id)
+    assert len([a for a in accounts if a.name.startswith(("Conta", "Nova"))]) == 2
 
 
 def test_create_account_with_non_zero_initial_balance_persists(db, sample_user):
@@ -78,10 +86,50 @@ def test_create_account_with_non_zero_initial_balance_persists(db, sample_user):
     )
 
 
-@pytest.mark.xfail(strict=False, reason="P0 bug: conta recém-criada tem is_deleted=True — será corrigido no commit após fix.")
 def test_ui_create_account_from_modal_persists(db, monkeypatch, sample_user):
-    """Teste simulando criação via modal UI — deve persistir e não ser soft-deleted."""
-    pass  # Implementação futura com mocking dos inputs/modal se necessário.
+    """Simula a criação de conta via modal da UI — deve persistir sem soft-delete."""
+    @contextmanager
+    def session_ctx():
+        yield db
+
+    monkeypatch.setattr(config_callbacks, "resolve_user", lambda *a, **kw: sample_user.id)
+    monkeypatch.setattr(config_callbacks, "get_db_session", session_ctx)
+    monkeypatch.setattr(
+        config_callbacks,
+        "ctx",
+        SimpleNamespace(triggered_id="btn-save-acc"),
+    )
+
+    result = config_callbacks.save_data(
+        n_cat=0,
+        n_acc=1,
+        n_card=0,
+        cat_name="",
+        cat_type="EXPENSE",
+        cat_color="#3498db",
+        cat_parent=None,
+        acc_name="Conta Modal UI",
+        acc_type=AccountType.SAVINGS.value,
+        acc_balance="250.50",
+        card_name="",
+        card_limit=0,
+        card_close=1,
+        card_due=10,
+        auth_data={"token": "teste"},
+        trigger_val=0,
+    )
+
+    assert result[0] == 1
+    assert result[3] == ""
+    assert result[6] is False
+
+    account = db.query(Account).filter(Account.user_id == sample_user.id).one()
+    assert account.name == "Conta Modal UI"
+    assert account.is_deleted is False
+    assert account.balance == Decimal("250.50")
+
+    listed = AccountService(db).get_user_accounts(sample_user.id)
+    assert any(a.id == account.id and a.is_deleted is False for a in listed)
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@ Callback Vault — Blindagem P0 garantida. Tratar VaultInsufficientFundsError no
 
 from decimal import Decimal
 
-from dash import ALL, Input, Output, State, ctx, no_update
+from dash import ALL, Input, Output, State, no_update
 import dash_bootstrap_components as dbc
 
 from app import app
