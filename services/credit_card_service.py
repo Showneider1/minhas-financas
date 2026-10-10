@@ -432,6 +432,8 @@ class CreditCardService:
                 transaction.paid_date = paid_on
                 transaction.status = TransactionStatus.PAID
 
+            self.db.flush()
+
             balance_service = BalanceService(self.db)
             balance_service.recalculate_and_persist(source_account.id, user_id)
             balance_service.recalculate_and_persist(card.account_id, user_id)

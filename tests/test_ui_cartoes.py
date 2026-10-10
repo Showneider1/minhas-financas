@@ -10,6 +10,7 @@ from dash import no_update
 import callbacks.cartoes_callbacks as cartoes_callbacks
 import callbacks.transactions_callbacks as transactions_callbacks
 from database.enums import TransactionStatus, TransactionType
+from database.models.account import Account
 from database.models.transaction import Transaction
 from services.balance_service import BalanceService
 from services.credit_card_service import CreditCardService
@@ -280,6 +281,13 @@ def test_pay_invoice_button_pays_and_moves_funds(
     db.refresh(purchase)
     assert purchase.status == TransactionStatus.PAID
     assert purchase.paid_date is not None
+
+    db.refresh(sample_account)
+    assert sample_account.balance == Decimal("4700.00")
+
+    anchor = db.get(Account, card.account_id)
+    db.refresh(anchor)
+    assert anchor.balance == Decimal("0.00")
 
     computed_source = BalanceService(db).get_account_balance(
         sample_account.id, sample_user.id
