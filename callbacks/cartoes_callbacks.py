@@ -25,7 +25,6 @@ def _fmt_brl(value) -> str:
     Output("cartoes-list-container", "children"),
     Input("auth-store", "data"),
     Input("cartoes-reload-trigger", "data"),
-    prevent_initial_call=True,
 )
 def load_credit_cards(auth_data, _reload):
     """Carrega os cartões do usuário logado."""

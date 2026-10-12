@@ -40,7 +40,6 @@ def _fmt_brl(value) -> str:
     Output("invest-portfolio-table", "children"),
     Input("auth-store", "data"),
     Input("store-reload-dashboard", "data"),
-    prevent_initial_call=True,
 )
 def load_portfolio(auth_data, _reload):
     """Carrega posições derivadas do InvestmentService com user_id do JWT."""
