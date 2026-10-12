@@ -343,7 +343,7 @@ def create_transaction_modal():
                                         className="d-block",
                                     ),
                                 ],
-                                width=6,
+                                width=4,
                             ),
                             dbc.Col(
                                 [
@@ -363,7 +363,27 @@ def create_transaction_modal():
                                         ],
                                     ),
                                 ],
-                                width=6,
+                                width=4,
+                            ),
+                            dbc.Col(
+                                [
+                                    html.Div(
+                                        id="data-pagamento-section",
+                                        children=[
+                                            dbc.Label(
+                                                "Data Pagamento",
+                                                className="fw-bold small",
+                                            ),
+                                            dcc.DatePickerSingle(
+                                                id="data-pagamento",
+                                                display_format="DD/MM/YYYY",
+                                                date=date.today(),
+                                                className="d-block",
+                                            ),
+                                        ],
+                                    ),
+                                ],
+                                width=4,
                             ),
                         ],
                         className="mb-3",

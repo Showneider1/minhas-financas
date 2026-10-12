@@ -14,6 +14,7 @@ from database.models.account import Account
 from database.models.credit_card import CreditCard
 from database.models.scheduled_bill import ScheduledBill
 from database.models.transaction import Transaction
+from services.bill_recurrence_service import next_business_day
 from services.cash_flow_projection_service import CashFlowProjectionService
 
 
@@ -155,7 +156,7 @@ def test_projection_includes_unmaterialized_recurring_bills(
     )
 
     by_date = {item["date"]: item["projected_balance"] for item in projection}
-    due_key = due.isoformat()
+    due_key = next_business_day(due).isoformat()
     initial_key = date.today().isoformat()
 
     assert due_key in by_date
