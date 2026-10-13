@@ -10,10 +10,13 @@ from dash import ALL, Input, Output, State, ctx, html, no_update
 from app import app
 from config.logging_config import app_logger
 from database.connection import get_db_session
-from database.enums import BillRecurrence, BillType
+from database.enums import AccountType, BillRecurrence, BillType
+from database.models.category import TransactionType
 from middleware.auth_context import resolve_user
 from middleware.rate_limiter import client_ip, hit
+from services.account_service import AccountService
 from services.bill_recurrence_service import BillRecurrenceService
+from services.category_service import CategoryService
 from services.scheduled_bill_service import ScheduledBillService
 from utils.exceptions import AuthenticationError
 
@@ -145,6 +148,57 @@ def toggle_recurrence_modal(n_new, n_cancel, n_save, is_open):
     if trigger in ("rec-btn-cancel", "rec-btn-save"):
         return False, None
     return no_update, no_update
+
+
+# ─── 2.5 Hidratar dropdowns do modal (contas e categorias) ────────────────────
+
+
+@app.callback(
+    Output("rec-input-account", "options"),
+    Output("rec-input-category", "options"),
+    Input("recurrence-modal", "is_open"),
+    Input("rec-input-type", "value"),
+    State("auth-store", "data"),
+    prevent_initial_call=True,
+)
+def carregar_opcoes_recorrencia(is_open, bill_type, auth_data):
+    """Popula contas e categorias do modal ao abri-lo ou trocar o tipo."""
+    if not is_open or not auth_data:
+        return no_update, no_update
+
+    try:
+        user_id = resolve_user(auth_data)
+        with get_db_session() as db:
+            accounts = [
+                acc
+                for acc in AccountService(db).get_user_accounts(user_id)
+                if acc.account_type != AccountType.CREDIT_CARD
+            ]
+            account_options = [
+                {"label": acc.name, "value": acc.id} for acc in accounts
+            ]
+
+            tx_type = (
+                TransactionType.INCOME
+                if bill_type == "receivable"
+                else TransactionType.EXPENSE
+            )
+            categories = CategoryService(db).get_available_categories(user_id, tx_type)
+            category_options = [
+                (
+                    {"label": f"{cat.icon} {cat.name}", "value": cat.id}
+                    if cat.icon
+                    else {"label": cat.name, "value": cat.id}
+                )
+                for cat in categories
+            ]
+
+            return account_options, category_options
+    except AuthenticationError:
+        return [], []
+    except Exception as e:
+        app_logger.error(f"Erro ao carregar opções do modal de recorrência: {e}")
+        return [], []
 
 
 # ─── 3. Pausar / retomar / cancelar recorrência ───────────────────────────────

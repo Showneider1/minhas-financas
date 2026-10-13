@@ -702,11 +702,13 @@ def delete_categoria(n_clicks, auth_data, trigger_val):
 )
 def delete_conta(n_clicks, auth_data, trigger_val):
     """Exclusão de conta (blindada contra disparo fantasma — P0 corrigido)."""
-    # P0 CORRIGIDO: Blindagem contra n_clicks == 0 ou None (botões renderizados na UI sem clique)
-    if not isinstance(n_clicks, int) or n_clicks <= 0:
-        return no_update, no_update
+    # P0 CORRIGIDO: Pattern Matching entrega n_clicks como LISTA (um item por
+    # botão renderizado). Clique real = prop disparada com n_clicks > 0;
+    # montagem/remoção de botões na lista não conta como clique.
     triggered = ctx.triggered_id
     if not isinstance(triggered, dict) or triggered.get("type") != "btn-del-acc":
+        return no_update, no_update
+    if not any(t.get("value") for t in (ctx.triggered or [])):
         return no_update, no_update
     try:
         user_id = resolve_user(auth_data)

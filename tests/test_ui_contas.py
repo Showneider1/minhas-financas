@@ -83,3 +83,55 @@ def test_create_account_with_invalid_balance_keeps_modal_open(db, monkeypatch, s
     assert "Saldo inicial inválido." in result[3].children
     assert result[6] is True
     assert db.query(Account).filter(Account.user_id == sample_user.id).count() == 0
+
+
+def _call_delete(monkeypatch, db, user_id, account_id, click_value=1):
+    monkeypatch.setattr(config_callbacks, "resolve_user", lambda *a, **kw: user_id)
+
+    @contextmanager
+    def session_ctx():
+        yield db
+
+    monkeypatch.setattr(config_callbacks, "get_db_session", session_ctx)
+    monkeypatch.setattr(
+        config_callbacks,
+        "ctx",
+        SimpleNamespace(
+            triggered_id={"type": "btn-del-acc", "index": account_id},
+            triggered=[
+                {
+                    "prop_id": (
+                        '{"index":' + str(account_id) + ',"type":"btn-del-acc"}.n_clicks'
+                    ),
+                    "value": click_value,
+                }
+            ],
+        ),
+    )
+    return config_callbacks.delete_conta([click_value], {"token": "teste"}, 0)
+
+
+def test_delete_conta_aceita_clique_real_do_pattern_matching(
+    db, monkeypatch, sample_user, sample_account
+):
+    """O guard precisa aceitar n_clicks em LISTA (shape real do Dash com ALL)."""
+    result = _call_delete(monkeypatch, db, sample_user.id, sample_account.id)
+
+    trigger, toast = result
+    assert trigger == 1
+    assert isinstance(toast, dbc.Toast)
+
+    db.refresh(sample_account)
+    assert sample_account.is_deleted is True
+    assert sample_account.is_active is False
+
+
+def test_delete_conta_ignora_disparo_fantasma_sem_clique(
+    db, monkeypatch, sample_user, sample_account
+):
+    result = _call_delete(monkeypatch, db, sample_user.id, sample_account.id, click_value=None)
+
+    assert result == (no_update, no_update)
+
+    db.refresh(sample_account)
+    assert sample_account.is_deleted is False

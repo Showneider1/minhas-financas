@@ -109,6 +109,20 @@ class CreditCardService:
         )
         return card
 
+    def get_user_cards(self, user_id: int) -> list[CreditCard]:
+        """Cartões ativos do usuário cuja conta-âncora não está soft-deletada."""
+        return (
+            self.db.query(CreditCard)
+            .join(Account, CreditCard.account_id == Account.id)
+            .filter(
+                CreditCard.user_id == user_id,
+                CreditCard.is_active.is_(True),
+                Account.is_deleted.is_(False),
+            )
+            .order_by(CreditCard.name.asc())
+            .all()
+        )
+
     # ------------------------------------------------------------------
     # Compras
     # ------------------------------------------------------------------

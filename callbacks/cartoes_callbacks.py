@@ -9,7 +9,6 @@ from app import app
 from config.logging_config import app_logger
 from database.connection import get_db_session
 from database.enums import AccountType
-from database.models.credit_card import CreditCard
 from middleware.auth_context import resolve_user
 from services.account_service import AccountService
 from services.credit_card_service import CreditCardError, CreditCardService
@@ -36,12 +35,7 @@ def load_credit_cards(auth_data, _reload):
     try:
         with get_db_session() as db:
             service = CreditCardService(db)
-            cards = (
-                db.query(CreditCard)
-                .filter(CreditCard.user_id == user_id, CreditCard.is_active.is_(True))
-                .order_by(CreditCard.name.asc())
-                .all()
-            )
+            cards = service.get_user_cards(user_id)
 
             if not cards:
                 return html.Div(

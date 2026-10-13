@@ -304,3 +304,18 @@ def test_pay_invoice_rejects_insufficient_balance(db, sample_user, sample_catego
     assert BalanceService(db).get_account_balance(
         low_balance_account.id, sample_user.id
     ) == Decimal("100.00")
+
+
+def test_get_user_cards_exclui_cartao_com_conta_soft_deletada(
+    db, sample_user, credit_card
+):
+    service = CreditCardService(db)
+
+    cards = service.get_user_cards(sample_user.id)
+    assert [c.id for c in cards] == [credit_card.id]
+
+    anchor = db.get(Account, credit_card.account_id)
+    anchor.is_deleted = True
+    db.commit()
+
+    assert service.get_user_cards(sample_user.id) == []

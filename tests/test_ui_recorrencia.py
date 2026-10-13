@@ -2,12 +2,15 @@
 
 from contextlib import contextmanager
 from datetime import date
+from decimal import Decimal
 
 import dash_bootstrap_components as dbc
 from dash import no_update
 
 import callbacks.recorrencia_callbacks as rec_callbacks
-from database.enums import BillRecurrence, BillType
+from database.enums import AccountType, BillRecurrence, BillType
+from database.models.account import Account
+from database.models.category import Category, TransactionType
 from database.models.scheduled_bill import ScheduledBill
 from database.models.user import User
 from services.scheduled_bill_service import ScheduledBillService
@@ -191,3 +194,58 @@ def test_recurrence_action_rejects_cross_user(db, monkeypatch, sample_user):
     assert result[0].color == "danger"
     assert "não encontrada" in result[0].children
     assert result[1] is True
+
+
+def test_carregar_opcoes_recorrencia_popula_contas_e_categorias(
+    db, monkeypatch, sample_user, sample_account, sample_category
+):
+    _patch_runtime(monkeypatch, db, user_id=sample_user.id)
+
+    account_options, category_options = rec_callbacks.carregar_opcoes_recorrencia(
+        True, "payable", {"token": "teste"}
+    )
+
+    assert {"label": "Conta Corrente", "value": sample_account.id} in account_options
+    assert any(opt["value"] == sample_category.id for opt in category_options)
+
+
+def test_carregar_opcoes_recorrencia_exclui_conta_cartao_e_respeita_tipo(
+    db, monkeypatch, sample_user
+):
+    card_account = Account(
+        user_id=sample_user.id,
+        name="Nubank",
+        account_type=AccountType.CREDIT_CARD,
+        balance=Decimal("0"),
+        initial_balance=Decimal("0"),
+        is_active=True,
+    )
+    income_category = Category(
+        user_id=sample_user.id,
+        name="Salário",
+        transaction_type=TransactionType.INCOME,
+        is_system=False,
+    )
+    db.add_all([card_account, income_category])
+    db.commit()
+    db.refresh(card_account)
+    db.refresh(income_category)
+
+    _patch_runtime(monkeypatch, db, user_id=sample_user.id)
+
+    account_options, category_options = rec_callbacks.carregar_opcoes_recorrencia(
+        True, "receivable", {"token": "teste"}
+    )
+
+    assert all(opt["value"] != card_account.id for opt in account_options)
+    assert any(opt["value"] == income_category.id for opt in category_options)
+
+
+def test_carregar_opcoes_recorrencia_modal_fechado_nao_busca(db, monkeypatch, sample_user):
+    _patch_runtime(monkeypatch, db, user_id=sample_user.id)
+
+    result = rec_callbacks.carregar_opcoes_recorrencia(
+        False, "payable", {"token": "teste"}
+    )
+
+    assert result == (no_update, no_update)
