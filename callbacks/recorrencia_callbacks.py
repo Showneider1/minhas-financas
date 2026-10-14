@@ -121,7 +121,7 @@ def load_recurrences(auth_data, _reload):
     except AuthenticationError as e:
         return dbc.Alert(str(e), color="warning", dismissable=True)
     except Exception as e:
-        app_logger.error(f"Erro ao carregar recorrências: {e}")
+        app_logger.error(f"Erro ao carregar recorrências: {e}", exc_info=True)
         return dbc.Alert(
             "Não foi possível carregar recorrências.",
             color="danger",
@@ -197,7 +197,7 @@ def carregar_opcoes_recorrencia(is_open, bill_type, auth_data):
     except AuthenticationError:
         return [], []
     except Exception as e:
-        app_logger.error(f"Erro ao carregar opções do modal de recorrência: {e}")
+        app_logger.error(f"Erro ao carregar opções do modal de recorrência: {e}", exc_info=True)
         return [], []
 
 
@@ -270,7 +270,7 @@ def manage_recurrence_action(_pause_clicks, _resume_clicks, _cancel_clicks, auth
     except ValueError as e:
         return dbc.Alert(str(e), color="danger", dismissable=True), True, no_update
     except Exception as e:
-        app_logger.error(f"Erro ao atualizar recorrência: {e}")
+        app_logger.error(f"Erro ao atualizar recorrência: {e}", exc_info=True)
         return (
             dbc.Alert(
                 "Erro inesperado ao atualizar recorrência.",
@@ -374,7 +374,7 @@ def save_recurrence(
     except ValueError as e:
         return dbc.Alert(str(e), color="warning"), True, no_update, no_update
     except Exception as e:
-        app_logger.error(f"Erro ao salvar recorrência: {e}")
+        app_logger.error(f"Erro ao salvar recorrência: {e}", exc_info=True)
         return (
             dbc.Alert("Erro inesperado ao salvar recorrência.", color="danger"),
             True,

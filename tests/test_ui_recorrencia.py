@@ -249,3 +249,82 @@ def test_carregar_opcoes_recorrencia_modal_fechado_nao_busca(db, monkeypatch, sa
     )
 
     assert result == (no_update, no_update)
+
+
+def test_load_recurrences_resilient_to_null_account_and_category(
+    db, monkeypatch, sample_user
+):
+    """Rows salvas com dropdowns vazios (account_id/category_id None) renderizam."""
+    ScheduledBillService(db).create_bill(
+        user_id=sample_user.id,
+        name="Netflix",
+        amount=Decimal("49.90"),
+        bill_type=BillType.PAYABLE,
+        due_date=date(2026, 11, 10),
+        account_id=None,
+        category_id=None,
+        recurrence=BillRecurrence.MONTHLY,
+    )
+    _patch_runtime(monkeypatch, db, user_id=sample_user.id)
+
+    result = rec_callbacks.load_recurrences({"token": "teste"}, 0)
+
+    rendered = str(result)
+    assert "Netflix" in rendered
+    assert "Não foi possível carregar recorrências." not in rendered
+
+
+def test_save_recurrence_accepts_float_amount_from_dash_input(
+    db, monkeypatch, sample_user, sample_category
+):
+    """dbc.Input(type="number") entrega float nativo; o save precisa aceitar."""
+    _patch_runtime(monkeypatch, db, user_id=sample_user.id)
+
+    result = rec_callbacks.save_recurrence(
+        1,
+        {"token": "teste"},
+        None,
+        "Internet",
+        "payable",
+        99.9,
+        date(2026, 11, 10).isoformat(),
+        "monthly",
+        None,
+        None,
+        None,
+    )
+
+    _modal_alert, _modal_open, page_alert, _page_open = result
+    assert isinstance(page_alert, dbc.Alert)
+    assert page_alert.color == "success"
+    assert "Recorrência criada com sucesso." in page_alert.children
+
+    bill = db.query(ScheduledBill).filter(ScheduledBill.user_id == sample_user.id).one()
+    assert bill.amount == Decimal("99.90")
+
+
+def test_load_recurrences_logs_full_traceback_on_unexpected_error(
+    db, monkeypatch, sample_user
+):
+    """Handler genérico precisa logar com exc_info=True (diagnóstico em VPS)."""
+    _patch_runtime(monkeypatch, db, user_id=sample_user.id)
+
+    captured_exc_info = []
+    original_error = rec_callbacks.app_logger.error
+
+    def spy_error(msg, *args, **kwargs):
+        captured_exc_info.append(kwargs.get("exc_info"))
+        original_error(msg, *args, **kwargs)
+
+    monkeypatch.setattr(rec_callbacks.app_logger, "error", spy_error)
+
+    def explode(*args, **kwargs):
+        raise RuntimeError("boom inesperado")
+
+    monkeypatch.setattr(rec_callbacks, "resolve_user", explode)
+
+    result = rec_callbacks.load_recurrences({"token": "teste"}, 0)
+
+    assert "Não foi possível carregar recorrências." in str(result)
+    assert captured_exc_info, "app_logger.error não foi chamado no except genérico"
+    assert captured_exc_info[0] is True
