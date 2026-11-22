@@ -24,10 +24,17 @@ Sistema completo de controle financeiro desenvolvido em Python com Dash, oferece
 
 1. Clone o repositório
 2. Crie um ambiente virtual: `python -m venv venv`
-3. Ative: `venv\Scripts\activate` (Windows)
+3. Ative: `venv\Scripts\activate` (Windows) ou `source venv/bin/activate` (Linux/macOS)
 4. Instale dependências: `pip install -r requirements.txt`
 5. Configure o `.env` (veja `.env.example`)
-6. Execute: `python myindex.py`
+6. Execute: `gunicorn wsgi:server` (ou `python -m gunicorn wsgi:server`)
+
+> **Entrypoint único:** `wsgi:server` — usado pelo `Dockerfile` e pelo `Procfile`.
+> Ele chama `initialize_application()` (criação de tabelas + seeds idempotentes)
+> antes de expor o servidor. `python myindex.py` inicia apenas o servidor Dash,
+> **sem** inicializar o banco — evite esse caminho em produção.
+>
+> Com Docker: `docker compose up --build`.
 
 ## 📦 Estrutura
 
@@ -39,8 +46,6 @@ MinhasFinanças/
 ├── services/ # Lógica de negócio
 ├── schemas/ # Schemas Pydantic
 └── utils/ # Utilitários
-
-text
 
 ## 🔒 Segurança
 
