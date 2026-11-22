@@ -19,21 +19,21 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _column_names() -> set[str]:
+    """Colunas atuais de budgets (o schema pode vir do baseline ou do create_all)."""
+    return {column["name"] for column in sa.inspect(op.get_bind()).get_columns("budgets")}
+
+
 def upgrade() -> None:
-    with op.batch_alter_table("budgets", schema=None) as batch_op:
-        batch_op.alter_column(
-            "amount",
-            new_column_name="amount_limit",
-            existing_type=sa.Numeric(12, 2),
-            existing_nullable=False,
-        )
+    # ALTER TABLE ... RENAME COLUMN atualiza também o CHECK (amount > 0) para
+    # (amount_limit > 0). O modo batch do Alembic no SQLite não faz isso e
+    # gerava DDL inválida ao recriar a tabela temporária.
+    columns = _column_names()
+    if "amount" in columns and "amount_limit" not in columns:
+        op.execute(sa.text('ALTER TABLE budgets RENAME COLUMN "amount" TO "amount_limit"'))
 
 
 def downgrade() -> None:
-    with op.batch_alter_table("budgets", schema=None) as batch_op:
-        batch_op.alter_column(
-            "amount_limit",
-            new_column_name="amount",
-            existing_type=sa.Numeric(12, 2),
-            existing_nullable=False,
-        )
+    columns = _column_names()
+    if "amount_limit" in columns and "amount" not in columns:
+        op.execute(sa.text('ALTER TABLE budgets RENAME COLUMN "amount_limit" TO "amount"'))
