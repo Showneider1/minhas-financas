@@ -5,8 +5,14 @@
 ## 1. Rate limiting (sem Redis, por decisão)
 
 - Buckets sliding-window persistidos em `rate_limit_hits(scope, key, ts)`
-  (`middleware/rate_limiter.hit`, com lock p/ servidor síncrono):
+  (`middleware/rate_limiter.hit`, com lock **por processo**):
   login `30/5min por IP`, registro `20/h por IP`, HTTP `300/min por IP`.
+- **⚠️ Limite efetivo em produção (revisão 22/11/2026):** o `Dockerfile` usa
+  `gunicorn -w 4 --preload`, então cada worker mantém seu próprio bucket e lock.
+  O limite real por IP é aproximadamente **120 login/5min**, **80 registros/h**
+  e **1200 requisições HTTP/min** — 4× o valor configurado. Decisão registrada:
+  manter 4 workers e documentar; se precisão for necessária, migrar buckets para
+  store compartilhado (ver `docs/security/SECURITY.md`).
 - Login mantém o bucket legado por email + soma o bucket por IP (derrota
   rotação de email). Registro usa só IP.
 - Hook Flask (`middleware/http_rate_limit.init_http_rate_limit`, ligado em
@@ -24,7 +30,10 @@
 - `AuthService.logout` revoga tudo server-side; callback de logout chama o
   serviço (antes era só `clear_data` client-side). Access segue stateless
   curto (30 min). Refresh trafega em `auth-store` (risco XSS herdado e
-  documentado; cookie HttpOnly = P2 com CSRF).
+  documentado; cookie HttpOnly = P2). **CSRF parcial implementado em 22/11:**
+  `Origin`/`Referer` same-origin são validados no `POST /_dash-update-component`
+  (`middleware/http_rate_limit.py`), além do CSP no Caddy. Header anti-CSRF
+  explícito ficou de fora porque o cliente Dash não o envia.
 - Testes provam: rotação, morte do antigo, morte da árvore no reuso, logout,
   expirado/adulterado negados, access não rotaciona.
 
