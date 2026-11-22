@@ -306,9 +306,7 @@ def test_pay_invoice_rejects_insufficient_balance(db, sample_user, sample_catego
     ) == Decimal("100.00")
 
 
-def test_get_user_cards_exclui_cartao_com_conta_soft_deletada(
-    db, sample_user, credit_card
-):
+def test_get_user_cards_exclui_cartao_com_conta_soft_deletada(db, sample_user, credit_card):
     service = CreditCardService(db)
 
     cards = service.get_user_cards(sample_user.id)

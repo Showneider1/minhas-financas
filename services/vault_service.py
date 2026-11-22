@@ -4,6 +4,7 @@ Serviço de Caixinhas (Virtual Vaults/Envelopes).
 Caixinhas são divisões lógicas de reserva do patrimônio.
 Elas NÃO geram transações reais - apenas reservam parte do saldo total.
 """
+
 from __future__ import annotations
 
 from decimal import Decimal
@@ -64,9 +65,7 @@ class VaultService:
 
     def get_total_vaults_balance(self, user_id: int) -> Decimal:
         total = (
-            self.db.query(func.sum(Vault.saved_amount))
-            .filter(Vault.user_id == user_id)
-            .scalar()
+            self.db.query(func.sum(Vault.saved_amount)).filter(Vault.user_id == user_id).scalar()
         )
         return to_money2(total or 0, where="vault.total")
 
@@ -82,11 +81,7 @@ class VaultService:
         if amount_dec <= ZERO:
             raise ValidationError("Valor para guardar deve ser maior que zero.")
 
-        vault = (
-            self.db.query(Vault)
-            .filter(Vault.id == vault_id, Vault.user_id == user_id)
-            .first()
-        )
+        vault = self.db.query(Vault).filter(Vault.id == vault_id, Vault.user_id == user_id).first()
         if not vault:
             raise ValidationError("Caixinha não encontrada para este usuário.")
 
@@ -96,7 +91,9 @@ class VaultService:
                 f"Saldo livre insuficiente. Disponível: R$ {free_balance}"
             )
 
-        vault.saved_amount = to_money2((vault.saved_amount or ZERO) + amount_dec, where="vault.save")
+        vault.saved_amount = to_money2(
+            (vault.saved_amount or ZERO) + amount_dec, where="vault.save"
+        )
         try:
             self.db.commit()
             self.db.refresh(vault)
@@ -112,11 +109,7 @@ class VaultService:
         if amount_dec <= ZERO:
             raise ValidationError("Valor para resgatar deve ser maior que zero.")
 
-        vault = (
-            self.db.query(Vault)
-            .filter(Vault.id == vault_id, Vault.user_id == user_id)
-            .first()
-        )
+        vault = self.db.query(Vault).filter(Vault.id == vault_id, Vault.user_id == user_id).first()
         if not vault:
             raise ValidationError("Caixinha não encontrada para este usuário.")
 

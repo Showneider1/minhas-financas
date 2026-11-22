@@ -2,6 +2,7 @@
 Modelo de Caixinhas (Virtual Vaults/Envelopes).
 Caixinhas são divisões lógicas do patrimônio - NÃO são contas bancárias.
 """
+
 from datetime import datetime, timezone
 
 from sqlalchemy import (
@@ -44,6 +45,4 @@ class Vault(Base):
 
     user = relationship("User", back_populates="vaults")
 
-    __table_args__ = (
-        CheckConstraint("saved_amount >= 0", name="ck_vault_saved_non_negative"),
-    )
+    __table_args__ = (CheckConstraint("saved_amount >= 0", name="ck_vault_saved_non_negative"),)

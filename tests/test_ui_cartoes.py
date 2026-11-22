@@ -234,7 +234,9 @@ def _call_pagar_fatura(monkeypatch, db, user_id, **overrides):
     return cartoes_callbacks.pagar_fatura(**args)
 
 
-def _seed_invoice(db, sample_user, sample_category, *, amount=Decimal("300.00"), limit=Decimal("5000.00")):
+def _seed_invoice(
+    db, sample_user, sample_category, *, amount=Decimal("300.00"), limit=Decimal("5000.00")
+):
     service = CreditCardService(db)
     card = service.create_credit_card(
         user_id=sample_user.id,
@@ -289,14 +291,10 @@ def test_pay_invoice_button_pays_and_moves_funds(
     db.refresh(anchor)
     assert anchor.balance == Decimal("0.00")
 
-    computed_source = BalanceService(db).get_account_balance(
-        sample_account.id, sample_user.id
-    )
+    computed_source = BalanceService(db).get_account_balance(sample_account.id, sample_user.id)
     assert computed_source == Decimal("4700.00")
 
-    computed_anchor = BalanceService(db).get_account_balance(
-        card.account_id, sample_user.id
-    )
+    computed_anchor = BalanceService(db).get_account_balance(card.account_id, sample_user.id)
     assert computed_anchor == Decimal("0.00")
 
     payment = (

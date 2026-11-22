@@ -1,4 +1,5 @@
 """Teste de integração P0: Criar conta deve persistir e não setar soft-delete."""
+
 from contextlib import contextmanager
 from decimal import Decimal
 from types import SimpleNamespace
@@ -7,8 +8,8 @@ import pytest
 
 import callbacks.config_callbacks as config_callbacks
 from database.models.account import Account
-from services.account_service import AccountService
 from schemas.account_schema import AccountCreate, AccountType
+from services.account_service import AccountService
 
 
 def test_create_account_persists_no_soft_delete(db, sample_user):
@@ -29,10 +30,14 @@ def test_create_account_persists_no_soft_delete(db, sample_user):
     assert acc is not None
     assert acc.name == "Conta Saldo Zero"
     # BUG: conta criada está com is_deleted=True?
-    assert acc.is_deleted is False, f"Bug P0 detectado: conta recém-criada has is_deleted={acc.is_deleted}"
+    assert acc.is_deleted is False, (
+        f"Bug P0 detectado: conta recém-criada has is_deleted={acc.is_deleted}"
+    )
     # Deve aparecer na listagem
     list_accs = AccountService(db).get_user_accounts(sample_user.id)
-    assert any(a.name == acc.name for a in list_accs), "Conta criada não aparece em get_user_accounts()"
+    assert any(a.name == acc.name for a in list_accs), (
+        "Conta criada não aparece em get_user_accounts()"
+    )
 
 
 def test_create_account_doesnt_soft_delete_other_accounts(db, sample_user):
@@ -76,11 +81,13 @@ def test_create_account_with_non_zero_initial_balance_persists(db, sample_user):
 
     assert account.balance == Decimal("1000.00")
     assert account.is_deleted is False
-    # Check via query raw não filtrando deleted — se existir soft-deleted, aparecerá como row com flag True
+    # Check via query raw sem filtrar deleted: linhas soft-deletadas
+    # apareceriam aqui com a flag True.
     rows = db.query(Account).filter(Account.user_id == sample_user.id)
     deleted_rows = rows.filter(Account.is_deleted.is_(True)).all()
     deleted_count = len(deleted_rows)
-    # Não deveria ter conta soft-deleted para este usuário (exceto se já existiam antes, mas não é o caso do P0 reportado)
+    # Não deveria haver conta soft-deleted para este usuário (exceto
+    # se já existiam antes, o que não é o caso do P0 reportado).
     assert deleted_count == 0 or all(
         a.name not in ("Conta Saldo Zero", "Nova Conta P0") for a in deleted_rows
     )
@@ -88,6 +95,7 @@ def test_create_account_with_non_zero_initial_balance_persists(db, sample_user):
 
 def test_ui_create_account_from_modal_persists(db, monkeypatch, sample_user):
     """Simula a criação de conta via modal da UI — deve persistir sem soft-delete."""
+
     @contextmanager
     def session_ctx():
         yield db

@@ -84,6 +84,7 @@ def init_db():
     try:
         # Recriar tabelas se migration pendente (vaults) não estiver aplicada.
         from database.base import Base
+
         Base.metadata.create_all(bind=engine, checkfirst=True)  # safe idempotent
         import database.models.account
         import database.models.asset_price

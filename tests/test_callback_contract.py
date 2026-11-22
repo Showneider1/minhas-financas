@@ -101,9 +101,7 @@ def _literal_ids():
         for path in sorted((PROJECT_ROOT / directory).rglob("*.py")):
             if "__pycache__" in path.parts:
                 continue
-            declared.update(
-                ID_LITERAL.findall(path.read_text(encoding="utf-8", errors="ignore"))
-            )
+            declared.update(ID_LITERAL.findall(path.read_text(encoding="utf-8", errors="ignore")))
     return declared
 
 

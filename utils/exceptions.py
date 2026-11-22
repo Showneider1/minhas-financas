@@ -108,6 +108,10 @@ class DatabaseError(AppException):
 class RebalanceValidationError(Exception):
     """Erro de validação durante rebalanceamento de carteira."""
 
-    def __init__(self, message: str = "Erro de validação no rebalanceamento", code: str = "REBAL_VALIDATION_ERROR"):
+    def __init__(
+        self,
+        message: str = "Erro de validação no rebalanceamento",
+        code: str = "REBAL_VALIDATION_ERROR",
+    ):
         super().__init__(message=message)
         self.code = code

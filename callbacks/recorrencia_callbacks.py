@@ -174,14 +174,10 @@ def carregar_opcoes_recorrencia(is_open, bill_type, auth_data):
                 for acc in AccountService(db).get_user_accounts(user_id)
                 if acc.account_type != AccountType.CREDIT_CARD
             ]
-            account_options = [
-                {"label": acc.name, "value": acc.id} for acc in accounts
-            ]
+            account_options = [{"label": acc.name, "value": acc.id} for acc in accounts]
 
             tx_type = (
-                TransactionType.INCOME
-                if bill_type == "receivable"
-                else TransactionType.EXPENSE
+                TransactionType.INCOME if bill_type == "receivable" else TransactionType.EXPENSE
             )
             categories = CategoryService(db).get_available_categories(user_id, tx_type)
             category_options = [

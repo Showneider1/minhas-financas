@@ -244,16 +244,12 @@ def test_carregar_opcoes_recorrencia_exclui_conta_cartao_e_respeita_tipo(
 def test_carregar_opcoes_recorrencia_modal_fechado_nao_busca(db, monkeypatch, sample_user):
     _patch_runtime(monkeypatch, db, user_id=sample_user.id)
 
-    result = rec_callbacks.carregar_opcoes_recorrencia(
-        False, "payable", {"token": "teste"}
-    )
+    result = rec_callbacks.carregar_opcoes_recorrencia(False, "payable", {"token": "teste"})
 
     assert result == (no_update, no_update)
 
 
-def test_load_recurrences_resilient_to_null_account_and_category(
-    db, monkeypatch, sample_user
-):
+def test_load_recurrences_resilient_to_null_account_and_category(db, monkeypatch, sample_user):
     """Rows salvas com dropdowns vazios (account_id/category_id None) renderizam."""
     ScheduledBillService(db).create_bill(
         user_id=sample_user.id,
@@ -303,9 +299,7 @@ def test_save_recurrence_accepts_float_amount_from_dash_input(
     assert bill.amount == Decimal("99.90")
 
 
-def test_load_recurrences_logs_full_traceback_on_unexpected_error(
-    db, monkeypatch, sample_user
-):
+def test_load_recurrences_logs_full_traceback_on_unexpected_error(db, monkeypatch, sample_user):
     """Handler genérico precisa logar com exc_info=True (diagnóstico em VPS)."""
     _patch_runtime(monkeypatch, db, user_id=sample_user.id)
 

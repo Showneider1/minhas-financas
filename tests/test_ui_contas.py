@@ -100,9 +100,7 @@ def _call_delete(monkeypatch, db, user_id, account_id, click_value=1):
             triggered_id={"type": "btn-del-acc", "index": account_id},
             triggered=[
                 {
-                    "prop_id": (
-                        '{"index":' + str(account_id) + ',"type":"btn-del-acc"}.n_clicks'
-                    ),
+                    "prop_id": ('{"index":' + str(account_id) + ',"type":"btn-del-acc"}.n_clicks'),
                     "value": click_value,
                 }
             ],

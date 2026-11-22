@@ -1,13 +1,15 @@
 """
-Serviço de gerenciamento de contas — P0 (ADR-002). Observabilidade injetada para depuração de exclusão fantasma temporal.
+Serviço de gerenciamento de contas — P0 (ADR-002).
 
-Valores Decimal, balance cache do BalanceService (único escritor), todos acessos filtram user_id com anti-IDOR.
-Injeção de observabilidade: logs de stacktrace captados imediatamente ao chamar delete_account().
+Observabilidade injetada para depuração de exclusão fantasma temporal.
+Valores Decimal, balance cache do BalanceService (único escritor),
+todos acessos filtram user_id com anti-IDOR. Injeção de observabilidade:
+logs de stacktrace captados imediatamente ao chamar delete_account().
 """
 
-import traceback as tb
-import logging
 import datetime
+import logging
+import traceback as tb
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
@@ -167,4 +169,3 @@ class AccountService:
     def update_balance(self, account_id: int, user_id: int, amount) -> Decimal:
         """Recalcula o saldo via BalanceService (único caminho)."""
         return to_money2(amount)  # Simplificado para demonstração
-

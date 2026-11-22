@@ -77,9 +77,7 @@ def test_fluxo_cartoes_cadastra_notifica_e_lista(db_engine, monkeypatch):
             {"id": "cartoes-reload-trigger", "property": "data"},
             {"id": "modal-credit-card", "property": "is_open"},
         ],
-        "inputs": [
-            {"id": "btn-save-credit-card-modal", "property": "n_clicks", "value": 1}
-        ],
+        "inputs": [{"id": "btn-save-credit-card-modal", "property": "n_clicks", "value": 1}],
         "state": [
             {"id": "credit-card-nome", "property": "value", "value": "Nubank"},
             {"id": "credit-card-limite", "property": "value", "value": "5000"},
@@ -119,8 +117,6 @@ def test_fluxo_cartoes_cadastra_notifica_e_lista(db_engine, monkeypatch):
     assert resp_reactive.status_code == 200
     assert "Nubank" in json.dumps(resp_reactive.get_json())
 
-    resp_mount = client.post(
-        "/_dash-update-component", json=_list_payload(0, "auth-store.data")
-    )
+    resp_mount = client.post("/_dash-update-component", json=_list_payload(0, "auth-store.data"))
     assert resp_mount.status_code == 200
     assert "Nubank" in json.dumps(resp_mount.get_json())

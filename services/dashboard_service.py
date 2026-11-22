@@ -111,7 +111,9 @@ class DashboardService:
 
         cash_balance = self.balances.get_total_balance(user_id)
         # Caixinhas
-        total_vaults = to_money2(VaultService(self.db).get_total_vaults_balance(user_id), where="dashboard.free.vaults")
+        total_vaults = to_money2(
+            VaultService(self.db).get_total_vaults_balance(user_id), where="dashboard.free.vaults"
+        )
         free_balance = (cash_balance - total_vaults).quantize(Q2)
         portfolio = InvestmentService(self.db).get_position_summary(
             user_id,
@@ -161,9 +163,9 @@ class DashboardService:
             "total_invested": invested_cost,
             "investments_market_value": investments_market_value,
             "market_gain": investments_market_value - invested_cost,
-            "open_invoices": open_invoices,            "free_balance": free_balance,
+            "open_invoices": open_invoices,
+            "free_balance": free_balance,
             "total_vaults_balance": total_vaults,
-
             "net_worth": net_worth,
             "cash_flow": cash_flow,
             "budget_alerts": budget_alerts,

@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 """Correção da migration f1a5b599f589_p2_vaults.py — remove linhas inválidas para SQLite."""
 
 content = '''"""p2 vaults
