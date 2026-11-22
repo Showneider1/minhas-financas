@@ -25,10 +25,12 @@ from typing import Any
 
 import pandas as pd
 from ofxparse import OfxParser
+from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from config.logging_config import app_logger
-from database.enums import TransactionType
+from database.enums import TransactionStatus, TransactionType
 from database.models.account import Account
 from database.models.category import Category
 from database.models.transaction import Transaction
@@ -129,6 +131,7 @@ class ImportService:
             "imported": 0,
             "skipped": 0,
             "errors": [],
+            "manual_conflicts": 0,
         }
 
         if not rows:
@@ -141,6 +144,7 @@ class ImportService:
             external_ids=external_ids,
             import_hashes=import_hashes,
         )
+        consumed_manual_ids: set[int] = set()
 
         for index, row in enumerate(rows):
             try:
@@ -156,16 +160,39 @@ class ImportService:
                     results["skipped"] += 1
                     continue
 
+                transaction_date = self._parse_date_value(row["date"])
+                amount = self._parse_amount_value(row["amount"])
+                transaction_type = TransactionType(row["transaction_type"])
+
+                collision = self._find_manual_collision(
+                    user_id=user_id,
+                    account_id=account_id,
+                    transaction_date=transaction_date,
+                    amount=amount,
+                    description=row["description"],
+                    transaction_type=transaction_type,
+                    consumed_manual_ids=consumed_manual_ids,
+                )
+                if collision is not None:
+                    consumed_manual_ids.add(collision.id)
+                    results["manual_conflicts"] += 1
+                    results["skipped"] += 1
+                    existing["external_ids"].add(row["external_id"])
+                    existing["import_hashes"].add(row["import_hash"])
+                    app_logger.warning(
+                        f"[ImportService] Conflito com lançamento manual na linha {index + 1}: "
+                        f"external_id=...{str(row['external_id'])[-4:]} tx={collision.id}"
+                    )
+                    continue
+
                 category_id = self._resolve_category(
                     row=row,
                     category_id=category_ids[index] if index < len(category_ids) else None,
                     user_id=user_id,
                 )
 
-                transaction_date = self._parse_date_value(row["date"])
-                amount = self._parse_amount_value(row["amount"])
-                transaction_type = TransactionType(row["transaction_type"])
-
+                # DTPOSTED/CSV 'data' é a data de liquidação assumida para extratos
+                # (aproximação documentada).
                 payload = TransactionCreate(
                     description=row["description"],
                     base_amount=abs(amount),
@@ -174,20 +201,54 @@ class ImportService:
                     account_id=account_id,
                     purchase_date=transaction_date,
                     due_date=transaction_date,
-                    paid_date=None,
+                    paid_date=transaction_date,
                     notes=f"import_hash:{row['import_hash']} fonte:import",
                 )
 
-                transaction = FinanceService(self.db).create_transaction(user_id, payload)
-                transaction.import_hash = row["import_hash"]
-                transaction.external_id = row["external_id"]
-                transaction.categorization_source = "import"
-                self.db.flush()
-                self.db.commit()
+                FinanceService(self.db).create_transaction(
+                    user_id,
+                    payload,
+                    import_hash=row["import_hash"],
+                    external_id=row["external_id"],
+                    categorization_source="import",
+                )
 
                 results["imported"] += 1
                 existing["external_ids"].add(row["external_id"])
                 existing["import_hashes"].add(row["import_hash"])
+
+            except IntegrityError as exc:
+                # Defensivo: _resolve_category/_fallback_category_id podem falhar
+                # fora do try do FinanceService e deixar a sessão suja.
+                self.db.rollback()
+                # Nunca comparar com None: vira IS NULL e casaria qualquer linha.
+                terms = []
+                if row.get("external_id"):
+                    terms.append(Transaction.external_id == row["external_id"])
+                if row.get("import_hash"):
+                    terms.append(Transaction.import_hash == row["import_hash"])
+                if terms:
+                    conflicting = (
+                        self.db.query(Transaction.id)
+                        .filter(Transaction.user_id == user_id, or_(*terms))
+                        .first()
+                    )
+                else:
+                    conflicting = None
+                masked_id = str(row["external_id"] or "")[-4:]
+                if conflicting is not None:
+                    results["skipped"] += 1
+                    existing["external_ids"].add(row["external_id"])
+                    existing["import_hashes"].add(row["import_hash"])
+                    app_logger.warning(
+                        f"[ImportService] Duplicata concorrente na linha {index + 1}: "
+                        f"external_id=...{masked_id}"
+                    )
+                else:
+                    results["errors"].append({"line": index + 1, "error": str(exc)})
+                    app_logger.error(
+                        f"[ImportService] Erro de integridade na linha {index + 1}: {exc}"
+                    )
 
             except Exception as exc:
                 self.db.rollback()
@@ -386,6 +447,41 @@ class ImportService:
             "external_ids": existing_external_ids,
             "import_hashes": existing_import_hashes,
         }
+
+    def _find_manual_collision(
+        self,
+        *,
+        user_id: int,
+        account_id: int,
+        transaction_date: date,
+        amount: Decimal,
+        description: str,
+        transaction_type: TransactionType,
+        consumed_manual_ids: set[int],
+    ) -> Transaction | None:
+        """Lançamento manual pago idêntico à linha do extrato (evita dupla contagem)."""
+        query = self.db.query(Transaction).filter(
+            Transaction.user_id == user_id,
+            Transaction.account_id == account_id,
+            Transaction.base_amount == abs(amount),
+            or_(
+                Transaction.paid_date == transaction_date,
+                Transaction.purchase_date == transaction_date,
+                Transaction.due_date == transaction_date,
+            ),
+            Transaction.transaction_type == transaction_type,
+            Transaction.status == TransactionStatus.PAID,
+            Transaction.import_hash.is_(None),
+        )
+        if consumed_manual_ids:
+            query = query.filter(Transaction.id.notin_(consumed_manual_ids))
+        normalized = " ".join((description or "").casefold().split())
+        for candidate in query.all():
+            if candidate.id in consumed_manual_ids:
+                continue
+            if " ".join((candidate.description or "").casefold().split()) == normalized:
+                return candidate
+        return None
 
     # ------------------------------------------------------------------
     # Validações e helpers

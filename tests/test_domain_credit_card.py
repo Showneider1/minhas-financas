@@ -1,5 +1,6 @@
 """Domínio de Cartão de Crédito — fatura, parcelas e limite."""
 
+import hashlib
 from datetime import date
 from decimal import Decimal
 
@@ -20,6 +21,12 @@ def credit_card(db, sample_user):
         credit_limit=Decimal("5000.00"),
         closing_day=3,
         due_day=10,
+    )
+
+
+def _invoice_key(user_id: int, card_id: int, month: int, year: int) -> str:
+    return (
+        "inv:" + hashlib.sha256(f"{user_id}:{card_id}:{month:02d}:{year}".encode()).hexdigest()[:32]
     )
 
 
@@ -263,6 +270,237 @@ def test_pay_invoice_rejects_paying_an_already_paid_invoice(
         )
 
     assert service.get_available_limit(sample_user.id, credit_card.id) == Decimal("5000.00")
+
+
+def test_pay_invoice_idempotency_key_and_single_debit(
+    db, sample_user, sample_category, sample_account, credit_card
+):
+    """Chave determinística resolve corrida; chamada sequencial duplicada ainda falha."""
+    service = CreditCardService(db)
+
+    service.register_purchase(
+        user_id=sample_user.id,
+        credit_card_id=credit_card.id,
+        amount=Decimal("400.00"),
+        purchase_date=date(2030, 9, 4),
+        description="Cadeira",
+        category_id=sample_category.id,
+        installments=1,
+    )
+
+    balance_before = BalanceService(db).get_account_balance(sample_account.id, sample_user.id)
+
+    payment = service.pay_invoice(
+        user_id=sample_user.id,
+        credit_card_id=credit_card.id,
+        month=10,
+        year=2030,
+        source_account_id=sample_account.id,
+        payment_date=date(2030, 10, 10),
+    )
+
+    expected_key = (
+        "inv:"
+        + hashlib.sha256(f"{sample_user.id}:{credit_card.id}:10:2030".encode()).hexdigest()[:32]
+    )
+    assert payment.client_transfer_id == expected_key
+    assert len(payment.client_transfer_id) == 36
+
+    with pytest.raises(CreditCardError):
+        service.pay_invoice(
+            user_id=sample_user.id,
+            credit_card_id=credit_card.id,
+            month=10,
+            year=2030,
+            source_account_id=sample_account.id,
+            payment_date=date(2030, 10, 11),
+        )
+
+    payment_transfers = (
+        db.query(Transaction)
+        .filter(
+            Transaction.user_id == sample_user.id,
+            Transaction.transaction_type == TransactionType.TRANSFER,
+            Transaction.destination_account_id == credit_card.account_id,
+            Transaction.notes == f"payment_invoice:card:{credit_card.id}:month:10:year:2030",
+        )
+        .all()
+    )
+    assert len(payment_transfers) == 1
+    assert payment_transfers[0].id == payment.id
+
+    assert BalanceService(db).get_account_balance(
+        sample_account.id, sample_user.id
+    ) == balance_before - Decimal("400.00")
+    db.refresh(sample_account)
+    assert sample_account.balance == balance_before - Decimal("400.00")
+
+
+def test_pay_invoice_rejects_divergent_idempotency_winner(
+    db, sample_user, sample_category, sample_account, credit_card
+):
+    """Winner com valor/conta divergentes nunca é devolvido como fatura paga."""
+    service = CreditCardService(db)
+    client_key = _invoice_key(sample_user.id, credit_card.id, 10, 2030)
+
+    planted = Transaction(
+        user_id=sample_user.id,
+        description="Pagamento divergente plantado",
+        base_amount=Decimal("999.00"),
+        transaction_type=TransactionType.TRANSFER,
+        account_id=sample_account.id,
+        destination_account_id=credit_card.account_id,
+        category_id=service._transfer_category(sample_user.id).id,
+        purchase_date=date(2030, 10, 10),
+        due_date=date(2030, 10, 10),
+        paid_date=date(2030, 10, 10),
+        status=TransactionStatus.PAID,
+        client_transfer_id=client_key,
+    )
+    db.add(planted)
+    db.commit()
+    db.refresh(planted)
+
+    service.register_purchase(
+        user_id=sample_user.id,
+        credit_card_id=credit_card.id,
+        amount=Decimal("400.00"),
+        purchase_date=date(2030, 9, 4),
+        description="Cadeira",
+        category_id=sample_category.id,
+        installments=1,
+    )
+
+    with pytest.raises(CreditCardError, match="Chave de idempotência reutilizada"):
+        service.pay_invoice(
+            user_id=sample_user.id,
+            credit_card_id=credit_card.id,
+            month=10,
+            year=2030,
+            source_account_id=sample_account.id,
+            payment_date=date(2030, 10, 10),
+        )
+
+    assert db.query(Transaction).filter(Transaction.client_transfer_id == client_key).count() == 1
+    assert (
+        db.query(Transaction)
+        .filter(
+            Transaction.user_id == sample_user.id,
+            Transaction.transaction_type == TransactionType.TRANSFER,
+            Transaction.notes == f"payment_invoice:card:{credit_card.id}:month:10:year:2030",
+        )
+        .count()
+        == 0
+    )
+
+
+def test_pay_invoice_winner_with_pending_purchase_is_rejected(
+    db, sample_user, sample_category, sample_account, credit_card
+):
+    """Winner de parâmetros íntegros, mas com pendência no ciclo, não é devolvido."""
+    service = CreditCardService(db)
+    client_key = _invoice_key(sample_user.id, credit_card.id, 10, 2030)
+    payment_notes = f"payment_invoice:card:{credit_card.id}:month:10:year:2030"
+
+    winner = Transaction(
+        user_id=sample_user.id,
+        description=f"Pagamento da fatura {credit_card.name} — 10/2030",
+        base_amount=Decimal("400.00"),
+        transaction_type=TransactionType.TRANSFER,
+        account_id=sample_account.id,
+        destination_account_id=credit_card.account_id,
+        category_id=service._transfer_category(sample_user.id).id,
+        purchase_date=date(2030, 10, 10),
+        due_date=date(2030, 10, 10),
+        paid_date=date(2030, 10, 10),
+        status=TransactionStatus.PAID,
+        notes=payment_notes,
+        client_transfer_id=client_key,
+    )
+    db.add(winner)
+    db.commit()
+    db.refresh(winner)
+
+    service.register_purchase(
+        user_id=sample_user.id,
+        credit_card_id=credit_card.id,
+        amount=Decimal("400.00"),
+        purchase_date=date(2030, 9, 4),
+        description="Cadeira",
+        category_id=sample_category.id,
+        installments=1,
+    )
+
+    with pytest.raises(CreditCardError, match="parcialmente paga"):
+        service.pay_invoice(
+            user_id=sample_user.id,
+            credit_card_id=credit_card.id,
+            month=10,
+            year=2030,
+            source_account_id=sample_account.id,
+            payment_date=date(2030, 10, 10),
+        )
+
+    # Nenhum segundo pagamento foi criado.
+    assert db.query(Transaction).filter(Transaction.client_transfer_id == client_key).count() == 1
+    assert (
+        db.query(Transaction)
+        .filter(
+            Transaction.user_id == sample_user.id,
+            Transaction.transaction_type == TransactionType.TRANSFER,
+            Transaction.notes == payment_notes,
+        )
+        .count()
+        == 1
+    )
+
+
+def test_pay_invoice_detects_late_same_value_purchase(
+    db, sample_user, sample_category, sample_account, credit_card
+):
+    """Compra tardia de mesmo valor não pode ser dada por paga via winner."""
+    service = CreditCardService(db)
+
+    service.register_purchase(
+        user_id=sample_user.id,
+        credit_card_id=credit_card.id,
+        amount=Decimal("400.00"),
+        purchase_date=date(2030, 9, 4),
+        description="Cadeira",
+        category_id=sample_category.id,
+        installments=1,
+    )
+    service.pay_invoice(
+        user_id=sample_user.id,
+        credit_card_id=credit_card.id,
+        month=10,
+        year=2030,
+        source_account_id=sample_account.id,
+        payment_date=date(2030, 10, 10),
+    )
+
+    late = service.register_purchase(
+        user_id=sample_user.id,
+        credit_card_id=credit_card.id,
+        amount=Decimal("400.00"),
+        purchase_date=date(2030, 9, 5),
+        description="Cadeira tardia",
+        category_id=sample_category.id,
+        installments=1,
+    )
+    # Garante que o cenário exercita a validação de estado, não o guard "já paga".
+    assert late[0].due_date == date(2030, 10, 10)
+    assert late[0].paid_date is None
+
+    with pytest.raises(CreditCardError, match="parcialmente paga"):
+        service.pay_invoice(
+            user_id=sample_user.id,
+            credit_card_id=credit_card.id,
+            month=10,
+            year=2030,
+            source_account_id=sample_account.id,
+            payment_date=date(2030, 10, 11),
+        )
 
 
 def test_pay_invoice_rejects_insufficient_balance(db, sample_user, sample_category, credit_card):

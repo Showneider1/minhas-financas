@@ -188,7 +188,12 @@ def process_import(
             f"{result['skipped']} duplicada(s), "
             f"{len(result['errors'])} erro(s)."
         )
-        if result["errors"]:
+        manual_conflicts = result.get("manual_conflicts", 0)
+        if manual_conflicts > 0:
+            message += (
+                f" {manual_conflicts} conflito(s) com lançamento(s) manual(is) não importado(s)."
+            )
+        if result["errors"] or manual_conflicts > 0:
             color = "warning"
         else:
             color = "success"

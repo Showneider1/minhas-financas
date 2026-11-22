@@ -10,6 +10,7 @@ Regras de domínio:
 
 from __future__ import annotations
 
+import hashlib
 from calendar import monthrange
 from collections.abc import Iterable
 from datetime import date
@@ -17,6 +18,7 @@ from decimal import ROUND_DOWN, Decimal
 
 from dateutil.relativedelta import relativedelta
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from config.logging_config import app_logger
@@ -422,24 +424,34 @@ class CreditCardService:
             raise CreditCardError("Saldo insuficiente na conta de origem para pagar a fatura.")
 
         paid_on = payment_date or date.today()
-        transfer_category = self._transfer_category(user_id)
 
-        payment_transaction = Transaction(
-            user_id=user_id,
-            description=(f"Pagamento da fatura {card.name} — {month_int:02d}/{year_int}"),
-            base_amount=total,
-            transaction_type=TransactionType.TRANSFER,
-            account_id=source_account.id,
-            destination_account_id=card.account_id,
-            category_id=transfer_category.id,
-            purchase_date=paid_on,
-            due_date=paid_on,
-            paid_date=paid_on,
-            status=TransactionStatus.PAID,
-            notes=f"payment_invoice:card:{card.id}:month:{month_int}:year:{year_int}",
+        # Chave determinística de idempotência (36 chars, cabe em String(36)).
+        # A UNIQUE de client_transfer_id resolve a corrida de duas requisições.
+        client_key = (
+            "inv:"
+            + hashlib.sha256(
+                f"{user_id}:{card.id}:{month_int:02d}:{year_int}".encode()
+            ).hexdigest()[:32]
         )
 
         try:
+            transfer_category = self._transfer_category(user_id)
+            payment_transaction = Transaction(
+                user_id=user_id,
+                description=(f"Pagamento da fatura {card.name} — {month_int:02d}/{year_int}"),
+                base_amount=total,
+                transaction_type=TransactionType.TRANSFER,
+                account_id=source_account.id,
+                destination_account_id=card.account_id,
+                category_id=transfer_category.id,
+                purchase_date=paid_on,
+                due_date=paid_on,
+                paid_date=paid_on,
+                status=TransactionStatus.PAID,
+                notes=f"payment_invoice:card:{card.id}:month:{month_int}:year:{year_int}",
+                client_transfer_id=client_key,
+            )
+
             self.db.add(payment_transaction)
 
             for transaction in invoice_transactions:
@@ -454,8 +466,46 @@ class CreditCardService:
 
             self.db.commit()
             self.db.refresh(payment_transaction)
-        except Exception:
+        except Exception as exc:
             self.db.rollback()
+            if isinstance(exc, IntegrityError):
+                winner = (
+                    self.db.query(Transaction)
+                    .filter(
+                        Transaction.client_transfer_id == client_key,
+                        Transaction.user_id == user_id,
+                    )
+                    .first()
+                )
+                if winner is not None:
+                    if (
+                        winner.base_amount != total
+                        or winner.account_id != source_account.id
+                        or winner.destination_account_id != card.account_id
+                    ):
+                        raise CreditCardError(
+                            "Chave de idempotência reutilizada com parâmetros divergentes."
+                        )
+                    # O vencedor pode ter pago só parte do ciclo: compras tardias
+                    # de mesmo valor ainda pendentes não podem ser dadas por pagas.
+                    pending_after_winner = (
+                        self.db.query(Transaction.id)
+                        .filter(
+                            Transaction.credit_card_id == card.id,
+                            Transaction.user_id == user_id,
+                            Transaction.due_date >= start_date,
+                            Transaction.due_date <= end_date,
+                            Transaction.status != TransactionStatus.CANCELLED,
+                            Transaction.paid_date.is_(None),
+                        )
+                        .first()
+                    )
+                    if pending_after_winner is not None:
+                        raise CreditCardError("Fatura parcialmente paga.")
+                    app_logger.info(
+                        f"Pagamento de fatura idempotente: chave={client_key} tx={winner.id}"
+                    )
+                    return winner
             raise
 
         app_logger.info(

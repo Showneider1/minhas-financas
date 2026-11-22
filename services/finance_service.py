@@ -34,7 +34,15 @@ class FinanceService:
     # ------------------------------------------------------------------
     # Escrita
     # ------------------------------------------------------------------
-    def create_transaction(self, user_id: int, transaction_data: TransactionCreate):
+    def create_transaction(
+        self,
+        user_id: int,
+        transaction_data: TransactionCreate,
+        *,
+        import_hash: str | None = None,
+        external_id: str | None = None,
+        categorization_source: str | None = None,
+    ):
         """Cria transação comum (INCOME/EXPENSE). TRANSFER → TransferService."""
         # P1: enums unificados (database.enums) — comparação direta por identidade.
         tx_type = transaction_data.transaction_type
@@ -68,6 +76,9 @@ class FinanceService:
             installment_number=transaction_data.installment_number,
             total_installments=transaction_data.total_installments,
             notes=transaction_data.notes,
+            import_hash=import_hash,
+            external_id=external_id,
+            categorization_source=categorization_source or "manual",
         )
         try:
             self.db.add(tx)
