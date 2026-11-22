@@ -4,6 +4,12 @@ SQLite :memory: — isolamento total, sem efeito no banco de desenvolvimento.
 Valores Decimal em campos monetários (nunca float — ADR-002).
 """
 
+import os
+
+# Força o engine global a :memory: ANTES de qualquer import de config.settings
+# ou database.connection feito na coleta dos módulos de teste.
+os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+
 from decimal import Decimal
 
 import pytest
@@ -29,6 +35,17 @@ from database.models.transaction import Transaction  # noqa: F401
 # Importa todos os models para que o Base.metadata os reconheca
 # (imports aparentemente não usados registram as tabelas — noqa F401)
 from database.models.user import User
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _guard_in_memory_database():
+    """Falha rápido se alguma config mudar o alvo do banco durante os testes."""
+    from config.settings import settings
+
+    assert ":memory:" in settings.DATABASE_URL, (
+        f"Os testes DEVEM usar sqlite:///:memory:. DATABASE_URL atual: {settings.DATABASE_URL}"
+    )
+    yield
 
 
 @pytest.fixture(scope="session", autouse=True)

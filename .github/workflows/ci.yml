@@ -37,9 +37,5 @@ jobs:
           python -m ruff check --line-length 100 .
           python -m ruff format --check .
 
-      - name: Run tests with SQLite
-        env:
-          DATABASE_URL: "sqlite:///data/finance.db"
-        run: |
-          mkdir -p data
-          python -m pytest tests/ -q --maxfail=5 -p no:cacheprovider
+      - name: Run tests with in-memory SQLite
+        run: python -m pytest tests/ -ra -p no:cacheprovider
