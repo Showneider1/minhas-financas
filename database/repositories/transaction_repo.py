@@ -54,6 +54,8 @@ class TransactionRepository(BaseRepository[Transaction]):
         transaction = self.get_owned(transaction_id, user_id)
         if not transaction:
             return False
+        if transaction.status == TransactionStatus.CANCELLED:
+            raise ValueError("Transação cancelada não pode ser efetivada.")
         if transaction.status == TransactionStatus.PAID and transaction.paid_date is not None:
             return True
         transaction.paid_date = paid_date or date.today()
@@ -79,6 +81,13 @@ class TransactionRepository(BaseRepository[Transaction]):
         query = self.db.query(Transaction).filter(Transaction.user_id == user_id)
 
         s_val = status.value if hasattr(status, "value") else (status or "")
+
+        # Canceladas preservam paid_date: sem este filtro o extrato as contaria
+        # como pagas. Visão normal exclui; status=CANCELLED é visão de auditoria.
+        if str(s_val).upper() == TransactionStatus.CANCELLED.value:
+            query = query.filter(Transaction.status == TransactionStatus.CANCELLED)
+        else:
+            query = query.filter(Transaction.status != TransactionStatus.CANCELLED)
 
         if start_date and end_date:
             if s_val == "PAID":

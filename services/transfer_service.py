@@ -170,6 +170,8 @@ class TransferService:
     ) -> Transaction:
         """Efetiva TRANSFER pendente (move saldos). Idempotente."""
         tx = self._owned_transfer(transaction_id, user_id)
+        if tx.status == TransactionStatus.CANCELLED:
+            raise TransferError("Transferência cancelada não pode ser efetivada.")
         if tx.status == TransactionStatus.PAID and tx.paid_date is not None:
             return tx
         tx.paid_date = paid_date or date.today()

@@ -109,12 +109,18 @@ class Transaction(Base):
         index=True,
     )
 
+    # Cancelamento (estorno = transição de estado para CANCELLED, sem
+    # lançamento compensatório — histórico preservado).
+    cancelled_at = Column(DateTime(timezone=True), nullable=True)
+    cancelled_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    cancellation_reason = Column(String(255), nullable=True)
+
     # Timestamps
     created_at = Column(DateTime(timezone=True), default=_utcnow)
     updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
 
     # Relationships
-    user = relationship("User", back_populates="transactions")
+    user = relationship("User", back_populates="transactions", foreign_keys=[user_id])
     account = relationship("Account", back_populates="transactions", foreign_keys=[account_id])
     destination_account = relationship("Account", foreign_keys=[destination_account_id])
     category = relationship("Category", back_populates="transactions")
@@ -124,5 +130,6 @@ class Transaction(Base):
     __table_args__ = (
         Index("ix_transactions_user_paid", "user_id", "paid_date"),
         Index("ix_transactions_user_due", "user_id", "due_date"),
+        Index("ix_transactions_user_status", "user_id", "status"),
         UniqueConstraint("user_id", "external_id", name="uq_transactions_user_external_id"),
     )

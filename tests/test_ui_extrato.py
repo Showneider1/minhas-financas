@@ -7,7 +7,7 @@ from decimal import Decimal
 import pytest
 
 import callbacks.extrato_callbacks as extrato_callbacks
-from database.enums import TransactionType
+from database.enums import TransactionStatus, TransactionType
 from database.models.category import Category
 from database.models.transaction import Transaction
 from database.models.user import User
@@ -188,7 +188,9 @@ def test_extrato_callback_deletes_transaction_and_updates_reload(
     )
 
     remaining = db.query(Transaction).filter(Transaction.id == transaction.id).first()
-    assert remaining is None
+    # Estorno é cancelamento terminal: a linha permanece para auditoria.
+    assert remaining is not None
+    assert remaining.status == TransactionStatus.CANCELLED
     assert result[0] is False
     assert result[1] == 1
     assert result[2] is True

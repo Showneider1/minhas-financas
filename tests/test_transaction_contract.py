@@ -3,7 +3,7 @@
 - base_amount é o ÚNICO valor; sem amount/interest/discount/cashback.
 - Pago ≡ status PAID + paid_date; mark_as_paid sincroniza e é idempotente.
 - delete_transaction com dono; update parcial via TransactionUpdate.
-- Estorno: voltar para PENDING remove do saldo.
+- Estorno: CANCELLED terminal (sem compensação), paid_date preservado.
 """
 
 from datetime import date
@@ -65,9 +65,13 @@ def test_mark_as_paid_syncs_and_idempotent(db, sample_user, sample_account, samp
 def test_reversal_removes_from_balance(db, sample_user, sample_account, sample_category):
     svc = FinanceService(db)
     tx = _create(db, sample_user.id, sample_account.id, sample_category.id)
-    svc.update_transaction(tx.id, sample_user.id, TransactionUpdate(paid_date=None))
+    paid_date = tx.paid_date
+    # Estorno = CANCELLED terminal, sem lançamento compensatório: o saldo já
+    # exclui CANCELLED e paid_date permanece para fins fiscais/auditoria.
+    assert svc.delete_transaction(tx.id, sample_user.id) is True
     db.refresh(tx)
-    assert tx.status == TransactionStatus.PENDING
+    assert tx.status == TransactionStatus.CANCELLED
+    assert tx.paid_date == paid_date
     bal = BalanceService(db).get_account_balance(sample_account.id, sample_user.id)
     assert bal == Decimal("5000.00")
 
@@ -125,3 +129,10 @@ def test_delete_unknown_or_foreign_raises(db, sample_user, sample_account, sampl
         svc.update_transaction(
             tx.id, other.id, TransactionUpdate(description="Golpe financeiro aqui!")
         )
+    # Dono legítimo: cancela (não deleta) e preserva paid_date/metadados.
+    paid_date = tx.paid_date
+    assert svc.delete_transaction(tx.id, sample_user.id) is True
+    db.refresh(tx)
+    assert tx.status == TransactionStatus.CANCELLED
+    assert tx.paid_date == paid_date
+    assert db.query(Transaction).filter(Transaction.id == tx.id).count() == 1

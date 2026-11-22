@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any
 
@@ -30,7 +30,12 @@ from sqlalchemy import extract
 from sqlalchemy.orm import Session
 
 from config.logging_config import app_logger
-from database.enums import AssetType, OperationType, TransactionType
+from database.enums import (
+    AssetType,
+    InvestmentOperationStatus,
+    OperationType,
+    TransactionType,
+)
 from database.models.asset_price import AssetPrice
 from database.models.investment import Asset, InvestmentOperation
 from utils.money import to_money2, to_qty8
@@ -540,11 +545,16 @@ class InvestmentService:
             raise
         return op
 
-    def void_operation(self, operation_id: int, user_id: int) -> bool:
+    def void_operation(self, operation_id: int, user_id: int, *, reason: str | None = None) -> bool:
         """Estorna operação de investimento + sua liquidação (atômico).
 
-        Remove a operação E a Transaction vinculada, recalcula o saldo.
-        Recusa se o replay sem a operação deixar posição negativa.
+        O estorno é terminal: a operação e a Transaction vinculada passam a
+        CANCELLED, sem delete físico e sem lançamento compensatório — o replay
+        ignora CANCELLED e o BalanceService já o exclui dos saldos. Quantidade,
+        preço, taxas, valor, data, notas e `paid_date` são preservados.
+
+        Recusa se o replay sem a operação deixar posição negativa. Idempotente:
+        estornar uma operação já CANCELLED retorna True.
         """
         op = (
             self.db.query(InvestmentOperation)
@@ -557,22 +567,32 @@ class InvestmentService:
         )
         if not op:
             raise InvestmentValidationError("Operação não encontrada para este usuário.")
+        if op.status == InvestmentOperationStatus.CANCELLED:
+            return True
         try:
             tx_id = op.transaction_id
             account_id = op.account_id
-            self.db.delete(op)
+            cancelled_at = datetime.now(timezone.utc)
+            cancellation_reason = (reason or "Estornado pelo usuário")[:255]
+            op.status = InvestmentOperationStatus.CANCELLED
+            op.cancelled_at = cancelled_at
+            op.cancelled_by = user_id
+            op.cancellation_reason = cancellation_reason
             self.db.flush()
             if tx_id:
-                from database.models.transaction import Transaction
+                from database.models.transaction import Transaction, TransactionStatus
 
                 tx = (
                     self.db.query(Transaction)
                     .filter(Transaction.id == tx_id, Transaction.user_id == user_id)
                     .first()
                 )
-                if tx:
+                if tx and tx.status != TransactionStatus.CANCELLED:
                     account_id = account_id or tx.account_id
-                    self.db.delete(tx)
+                    tx.status = TransactionStatus.CANCELLED
+                    tx.cancelled_at = cancelled_at
+                    tx.cancelled_by = user_id
+                    tx.cancellation_reason = cancellation_reason
                     self.db.flush()
             # Integridade do ledger restante: posição nunca negativa.
             pos = self.get_position(op.asset_id, user_id)
@@ -720,7 +740,10 @@ class InvestmentService:
         asset = self._owned_asset(asset_id, user_id)
         ops = (
             self.db.query(InvestmentOperation)
-            .filter(InvestmentOperation.asset_id == asset.id)
+            .filter(
+                InvestmentOperation.asset_id == asset.id,
+                InvestmentOperation.status == InvestmentOperationStatus.ACTIVE,
+            )
             .order_by(InvestmentOperation.date.asc(), InvestmentOperation.id.asc())
             .all()
         )
@@ -792,7 +815,10 @@ class InvestmentService:
         asset_ids = [asset.id for asset in assets]
         operations = (
             self.db.query(InvestmentOperation)
-            .filter(InvestmentOperation.asset_id.in_(asset_ids))
+            .filter(
+                InvestmentOperation.asset_id.in_(asset_ids),
+                InvestmentOperation.status == InvestmentOperationStatus.ACTIVE,
+            )
             .order_by(
                 InvestmentOperation.asset_id.asc(),
                 InvestmentOperation.date.asc(),
@@ -919,6 +945,7 @@ class InvestmentService:
         for asset in self.db.query(Asset).filter(Asset.user_id == user_id).all():
             q = self.db.query(InvestmentOperation).filter(
                 InvestmentOperation.asset_id == asset.id,
+                InvestmentOperation.status == InvestmentOperationStatus.ACTIVE,
                 InvestmentOperation.operation_type.in_(dividend_types),
             )
             if year:
@@ -953,6 +980,7 @@ class InvestmentService:
                 self.db.query(InvestmentOperation)
                 .filter(
                     InvestmentOperation.asset_id == asset.id,
+                    InvestmentOperation.status == InvestmentOperationStatus.ACTIVE,
                     InvestmentOperation.operation_type == OperationType.SELL,
                     extract("year", InvestmentOperation.date) == year,
                 )
@@ -987,6 +1015,7 @@ class InvestmentService:
             self.db.query(InvestmentOperation)
             .filter(
                 InvestmentOperation.asset_id == asset_id,
+                InvestmentOperation.status == InvestmentOperationStatus.ACTIVE,
                 (InvestmentOperation.date < until_date)
                 | ((InvestmentOperation.date == until_date) & (InvestmentOperation.id < until_id)),
             )

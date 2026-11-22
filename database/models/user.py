@@ -34,7 +34,12 @@ class User(Base):
 
     accounts = relationship("Account", back_populates="user", cascade="all, delete-orphan")
     categories = relationship("Category", back_populates="user", cascade="all, delete-orphan")
-    transactions = relationship("Transaction", back_populates="user", cascade="all, delete-orphan")
+    transactions = relationship(
+        "Transaction",
+        back_populates="user",
+        foreign_keys="Transaction.user_id",
+        cascade="all, delete-orphan",
+    )
     goals = relationship("Goal", back_populates="user", cascade="all, delete-orphan")
     scheduled_bills = relationship(
         "ScheduledBill", back_populates="user", cascade="all, delete-orphan"

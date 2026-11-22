@@ -19,9 +19,19 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 
 from database.base import Base
-from database.enums import AssetType, OperationType  # canônicos (P1)
+from database.enums import (
+    AssetType,
+    InvestmentOperationStatus,
+    OperationType,
+)  # canônicos (P1)
 
-__all__ = ["Asset", "InvestmentOperation", "AssetType", "OperationType"]
+__all__ = [
+    "Asset",
+    "InvestmentOperation",
+    "AssetType",
+    "OperationType",
+    "InvestmentOperationStatus",
+]
 
 
 def _utcnow():
@@ -101,9 +111,25 @@ class InvestmentOperation(Base):
     notes = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=True), default=_utcnow)  # FIX: timezone-aware
 
+    # Cancelamento (estorno = transição de estado para CANCELLED, sem
+    # lançamento compensatório — histórico preservado).
+    status = Column(
+        Enum(InvestmentOperationStatus, native_enum=False),
+        nullable=False,
+        default=InvestmentOperationStatus.ACTIVE,
+        server_default="ACTIVE",
+        index=True,
+    )
+    cancelled_at = Column(DateTime(timezone=True), nullable=True)
+    cancelled_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    cancellation_reason = Column(String(255), nullable=True)
+
     # Relacionamentos
     asset = relationship("Asset", back_populates="operations")
     account = relationship("Account")
     transaction = relationship("Transaction")
 
-    __table_args__ = (Index("ix_investment_ops_asset_date", "asset_id", "date"),)
+    __table_args__ = (
+        Index("ix_investment_ops_asset_date", "asset_id", "date"),
+        Index("ix_investment_ops_asset_status_date", "asset_id", "status", "date"),
+    )

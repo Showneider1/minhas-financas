@@ -10,7 +10,7 @@ Contrato:
 - Erros: rollback explícito + exceção tipada (nunca str(e) vazar SQL).
 """
 
-from datetime import date
+from datetime import date, datetime, timezone
 
 from sqlalchemy.orm import Session
 
@@ -99,6 +99,8 @@ class FinanceService:
         TRANSFER não pode ser convertido nem editado aqui (usa TransferService).
         """
         tx = self._owned(transaction_id, user_id)
+        if tx.status == TransactionStatus.CANCELLED:
+            raise ValueError("Transação cancelada não pode ser editada.")
         if tx.transaction_type == TransactionType.TRANSFER:
             raise ValueError("TRANSFER é gerenciado pelo TransferService.")
 
@@ -144,26 +146,50 @@ class FinanceService:
             raise
         return tx
 
-    def delete_transaction(self, transaction_id: int, user_id: int) -> bool:
-        """Exclusão com isolamento por usuário + recálculo de saldos.
+    def delete_transaction(
+        self, transaction_id: int, user_id: int, *, reason: str | None = None
+    ) -> bool:
+        """Cancela a transação (estorno terminal) com isolamento por usuário.
 
-        TRANSFER pago recalcula origem E destino. Retorna True; levanta
-        TransactionNotFound se inexistente/de outro usuário.
+        O estorno é uma transição de estado para CANCELLED — NÃO há exclusão
+        física nem lançamento compensatório: BalanceService já exclui CANCELLED
+        do cálculo de saldos, então um lançamento de estorno corrigiria o saldo
+        duas vezes. `paid_date` e todos os metadados fiscais são preservados.
+
+        TRANSFER pago recalcula origem E destino. Idempotente: cancelar uma
+        transação já CANCELLED retorna True. Levanta TransactionNotFound se
+        inexistente/de outro usuário.
         """
         tx = self._owned(transaction_id, user_id)
+        if tx.status == TransactionStatus.CANCELLED:
+            return True
+        # Capturar as contas ANTES de mutar o status (TRANSFER usa origem+destino).
         accounts = {tx.account_id}
         if tx.destination_account_id:
             accounts.add(tx.destination_account_id)
         try:
-            self.db.delete(tx)
+            tx.status = TransactionStatus.CANCELLED
+            tx.cancelled_at = datetime.now(timezone.utc)
+            tx.cancelled_by = user_id
+            tx.cancellation_reason = (reason or "Cancelado pelo usuário")[:255]
             self.db.flush()
             for acc_id in accounts:
-                self.balances.touch_account(acc_id, user_id)
+                self.balances.recalculate_and_persist(acc_id, user_id)
             self.db.commit()
         except Exception:
             self.db.rollback()
             raise
         return True
+
+    def cancel_transaction(
+        self, transaction_id: int, user_id: int, *, reason: str | None = None
+    ) -> bool:
+        """Alias explícito de `delete_transaction` para clareza de API.
+
+        Cancelar = estorno terminal sem lançamento compensatório; delega à
+        implementação canônica para garantir a mesma semântica.
+        """
+        return self.delete_transaction(transaction_id, user_id, reason=reason)
 
     def mark_as_paid(
         self,

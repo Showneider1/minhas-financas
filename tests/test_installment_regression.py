@@ -117,16 +117,22 @@ def test_paid_base_cannot_be_parceled(db, sample_user, sample_account, sample_ca
 
 
 def test_cancel_parcel_keeps_others(db, sample_user, sample_account, sample_category):
-    """Cancelar (excluir) uma parcela pendente não afeta as demais."""
+    """Cancelar (estornar) uma parcela pendente não afeta as demais."""
     from services.finance_service import FinanceService
 
     base = _base(db, sample_user, sample_account, sample_category, "300.00")
     generated = RecurrenceService(db).generate_installments(base, total=3)
     victim = generated[0]
     FinanceService(db).delete_transaction(victim.id, sample_user.id)
+    db.refresh(victim)
+    assert victim.status == TransactionStatus.CANCELLED
     remaining = (
         db.query(Transaction)
-        .filter(Transaction.user_id == sample_user.id, Transaction.total_installments == 3)
+        .filter(
+            Transaction.user_id == sample_user.id,
+            Transaction.total_installments == 3,
+            Transaction.status != TransactionStatus.CANCELLED,
+        )
         .all()
     )
     assert len(remaining) == 2

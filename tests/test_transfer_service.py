@@ -146,6 +146,28 @@ def test_transfer_pending_moves_nothing_until_confirm(db, sample_user, accounts,
     assert bal.get_account_balance(b.id, sample_user.id) == Decimal("2500.00")
 
 
+def test_confirm_transfer_cannot_resurrect_cancelled(db, sample_user, accounts, transfer_category):
+    a, b = accounts
+    svc = TransferService(db)
+    tx = svc.transfer(
+        user_id=sample_user.id,
+        from_account_id=a.id,
+        to_account_id=b.id,
+        amount=Decimal("500.00"),
+        category_id=transfer_category.id,
+        client_transfer_id="key-cancel-confirm",
+    )
+    FinanceService(db).delete_transaction(tx.id, sample_user.id)
+
+    with pytest.raises(TransferError, match="cancelada"):
+        svc.confirm_transfer(tx.id, sample_user.id, paid_date=date(2026, 4, 3))
+
+    db.refresh(tx)
+    assert tx.status == TransactionStatus.CANCELLED
+    assert tx.paid_date is None
+    assert BalanceService(db).get_account_balance(a.id, sample_user.id) == Decimal("5000.00")
+
+
 def test_transfer_validations(db, sample_user, accounts, transfer_category, sample_category):
     a, b = accounts
     svc = TransferService(db)
@@ -194,7 +216,7 @@ def test_transfer_key_reuse_with_divergent_params_rejected(
         )
 
 
-def test_transfer_delete_recalculates_both_sides(db, sample_user, accounts, transfer_category):
+def test_transfer_cancel_recalculates_both_sides(db, sample_user, accounts, transfer_category):
     a, b = accounts
     svc = TransferService(db)
     tx = svc.transfer(
@@ -207,6 +229,10 @@ def test_transfer_delete_recalculates_both_sides(db, sample_user, accounts, tran
         client_transfer_id="key-005",
     )
     FinanceService(db).delete_transaction(tx.id, sample_user.id)
+    db.refresh(tx)
+    assert tx.status == TransactionStatus.CANCELLED
+    assert tx.paid_date is not None
+    assert db.query(Transaction).filter(Transaction.client_transfer_id == "key-005").count() == 1
     bal = BalanceService(db)
     assert bal.get_account_balance(a.id, sample_user.id) == Decimal("5000.00")
     assert bal.get_account_balance(b.id, sample_user.id) == Decimal("2000.00")

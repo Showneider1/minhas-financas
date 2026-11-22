@@ -32,7 +32,17 @@ def test_alembic_upgrade_head_applies_cleanly_on_fresh_database(tmp_path):
     connection = sqlite3.connect(db_path)
     try:
         version = connection.execute("select version_num from alembic_version").fetchone()
-        assert version == ("f1a5b599f589",)
+        assert version == ("b7e9c1a4d2f0",)
+
+        transactions_columns = {
+            row[1] for row in connection.execute("pragma table_info(transactions)")
+        }
+        assert "cancelled_at" in transactions_columns
+
+        investment_ops_columns = {
+            row[1] for row in connection.execute("pragma table_info(investment_operations)")
+        }
+        assert "status" in investment_ops_columns
 
         budgets_columns = {row[1] for row in connection.execute("pragma table_info(budgets)")}
         assert "amount_limit" in budgets_columns

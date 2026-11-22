@@ -77,6 +77,16 @@ class OperationType(str, enum.Enum):
     SPLIT = "SPLIT"
 
 
+class InvestmentOperationStatus(str, enum.Enum):
+    """Status da operação de investimento (estorno = CANCELLED).
+
+    Valores em MAIÚSCULAS — diferente de GoalStatus/BillStatus (minúsculas).
+    """
+
+    ACTIVE = "ACTIVE"
+    CANCELLED = "CANCELLED"
+
+
 class BillType(str, enum.Enum):
     PAYABLE = "payable"
     RECEIVABLE = "receivable"

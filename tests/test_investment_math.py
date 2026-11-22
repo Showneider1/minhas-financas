@@ -310,13 +310,29 @@ def test_void_reverses_operation_and_cash(db, sample_user, petr, broker):
         fees="2.00",
     )
     assert svc.void_operation(op.id, sample_user.id) is True
+    from database.enums import InvestmentOperationStatus
     from database.models.investment import InvestmentOperation
-    from database.models.transaction import Transaction
+    from database.models.transaction import Transaction, TransactionStatus
 
-    assert db.query(InvestmentOperation).count() == 0
-    assert db.query(Transaction).filter(Transaction.user_id == sample_user.id).count() == 0
+    cancelled_op = db.query(InvestmentOperation).one()
+    assert db.query(InvestmentOperation).count() == 1
+    assert cancelled_op.status == InvestmentOperationStatus.CANCELLED
+    assert cancelled_op.cancelled_at is not None
+    assert cancelled_op.cancelled_by == sample_user.id
+
+    tx = db.query(Transaction).filter(Transaction.user_id == sample_user.id).one()
+    assert db.query(Transaction).filter(Transaction.user_id == sample_user.id).count() == 1
+    assert tx.status == TransactionStatus.CANCELLED
+    assert tx.paid_date is not None
+    assert tx.base_amount == Decimal("1002.00")
+
     assert _balance(db, sample_user.id, broker.id) == Decimal("100000.00")
     assert svc.get_position(petr.id, sample_user.id).quantity == Decimal("0E-8")
+
+    # Idempotência: segundo estorno não cria nada nem altera os metadados.
+    assert svc.void_operation(op.id, sample_user.id) is True
+    assert db.query(InvestmentOperation).count() == 1
+    assert db.query(Transaction).filter(Transaction.user_id == sample_user.id).count() == 1
 
 
 def test_crypto_fractions_8dp(db, sample_user, broker):
