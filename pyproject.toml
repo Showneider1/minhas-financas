@@ -15,8 +15,6 @@ exclude = [
     "logs",
     "__pycache__",
     ".opencode",
-    "packages",
-    "services/api",
     "Default Project",
     "alembic/versions",
     "scripts",

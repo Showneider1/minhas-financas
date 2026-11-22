@@ -3,7 +3,7 @@
 > em produção. A arquitetura vigente é o monólito Python/Dash documentado em
 > `CURRENT_ARCHITECTURE.md`, com as decisões em `docs/decisions/ADR-001` e `ADR-002`.
 > Next.js, NestJS, Prisma, double-entry ledger e IA existem apenas como esqueletos
-> congelados (`apps/web/`, `packages/`, `services/api/`, `infrastructure/`).
+> arquivados em `docs/proposals/monorepo-skeleton/` (não executáveis).
 
 # System Architecture - Finance OS (proposta)
 

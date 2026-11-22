@@ -16,7 +16,7 @@ Para onboarding, comece pelo `README.md`.
 
 ## Stack proposta — NÃO implementada
 
-Next.js/React, NestJS/TypeScript, Prisma, Postgres/Supabase, double-entry ledger e IA (FastAPI/LLM) existem **apenas como proposta** em `docs/architecture/ARCHITECTURE.md`, `docs/product/PRD.md` e esqueletos congelados (`apps/web/`, `packages/*`, `services/api/`, `infrastructure/`). A ADR-001 registra a decisão de manter SQLAlchemy. **Não implemente nesses diretórios sem decisão formal.**
+Next.js/React, NestJS/TypeScript, Prisma, Postgres/Supabase, double-entry ledger e IA (FastAPI/LLM) existem **apenas como proposta** em `docs/architecture/ARCHITECTURE.md`, `docs/product/PRD.md` e esqueletos **arquivados** em `docs/proposals/monorepo-skeleton/` (não executáveis). A ADR-001 registra a decisão de manter SQLAlchemy. **Não traga esse código de volta sem novo ADR com dono e roadmap.**
 
 ## Core Management
 - **Orchestrator**: coordenação, decomposição de tarefas e gates de validação.

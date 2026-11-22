@@ -48,8 +48,8 @@ para futuro PostgREST direto (ver `supabase/migrations/0002_rls.sql`).
 
 ## O que NÃO existe (não assumir)
 
-Next.js, NestJS, Prisma, REST, `apps/web`, `services/ai`, `infrastructure`,
-`packages/ui` (esqueletos vazios); página de contas agendadas (service sem UI);
+Next.js, NestJS, Prisma, REST (esqueletos arquivados em `docs/proposals/monorepo-skeleton/`);
+`services/ai` (vazio); página de contas agendadas (service sem UI);
 Supabase Auth; realtime. (CI **existe** em `.github/workflows/ci.yml`.)
 
 ## Preparação PostgreSQL

@@ -39,5 +39,6 @@ Used throughout the frontend development to avoid duplicating styles and ensurin
 
 ## Deliverables
 - `tailwind.config.js` with custom tokens.
-- Library of reusable components in `packages/ui/`.
+- Reusable components live in `components/` (Dash Bootstrap). The old
+  `packages/ui/` skeleton is archived in `docs/proposals/monorepo-skeleton/`.
 - Component Documentation.

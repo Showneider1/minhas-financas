@@ -4,7 +4,8 @@
 Implement a scalable and maintainable frontend architecture using Next.js and React.
 
 ## Context
-Used across `apps/web/` to ensure code consistency and performance.
+The old `apps/web/` skeleton is archived in `docs/proposals/monorepo-skeleton/`.
+Real frontend patterns live in `pages/`, `components/` and `callbacks/` (Dash).
 
 ## Prerequisites
 - TypeScript knowledge.

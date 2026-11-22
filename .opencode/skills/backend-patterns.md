@@ -4,7 +4,9 @@
 Build a maintainable, testable, and secure backend using NestJS and TypeScript.
 
 ## Context
-Used across `services/api/` and `packages/financial-core/`.
+The old `services/api/` and `packages/financial-core/` skeletons are archived
+(non-executable) in `docs/proposals/monorepo-skeleton/`. Real backend patterns
+live in `services/*.py` (Python, Decimal, ADR-002).
 
 ## Prerequisites
 - NestJS framework installation.
