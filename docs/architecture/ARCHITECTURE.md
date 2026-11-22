@@ -1,4 +1,11 @@
-# System Architecture - Finance OS
+> [!WARNING]
+> **PROPOSTA FUTURA — NÃO IMPLEMENTADA.** Nada neste documento descreve o código
+> em produção. A arquitetura vigente é o monólito Python/Dash documentado em
+> `CURRENT_ARCHITECTURE.md`, com as decisões em `docs/decisions/ADR-001` e `ADR-002`.
+> Next.js, NestJS, Prisma, double-entry ledger e IA existem apenas como esqueletos
+> congelados (`apps/web/`, `packages/`, `services/api/`, `infrastructure/`).
+
+# System Architecture - Finance OS (proposta)
 
 ## 1. High-Level Architecture
 Finance OS uses a **Modular Monolith** approach for the core business logic to reduce complexity, with a separate **AI Service** to isolate heavy LLM dependencies and Python-based data science tools.

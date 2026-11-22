@@ -1,6 +1,6 @@
 # ADR-003 — Enums Unificados + Motor de Recorrência (P1)
 
-**Status:** Implementado (2026-09-27). Suíte: 95 passed.
+**Status:** Implementado (2026-09-27). Suíte: 95 passed (contagem histórica; ver `CURRENT_ARCHITECTURE.md` para o número atual).
 
 ## 1. Enums — fonte única
 

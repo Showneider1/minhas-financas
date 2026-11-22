@@ -1,6 +1,6 @@
 # ADR-005 — Rate Limit por IP + Hardening de Sessão (P1)
 
-**Status:** Implementado (2026-09-27). Suíte: 124 passed.
+**Status:** Implementado (2026-09-27). Suíte: 124 passed (contagem histórica; ver `CURRENT_ARCHITECTURE.md`).
 
 ## 1. Rate limiting (sem Redis, por decisão)
 

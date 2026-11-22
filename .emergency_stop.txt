@@ -1,10 +1,19 @@
-⚠️ PARALIZAÇÃO DE DESENVOLVIMENTO - DAY 0
+REGISTRO HISTÓRICO — RESOLVIDO (não é mais uma diretiva ativa)
 
-Obrigatória conforme diretriz:
-1. NÃO adicione novas features (Caixinhas) até estabilizar
-2. Foque exclusivamente em corrigir:
-   a) Conta sendo deletada na criação (bug P0)
-   b) Migration quebrada com drop_constraint(None)
-3. Paralisar desenvolvimento P9 até fixar
+Criado em 03/10/2026 para bloquear novas features até a correção de:
+  a) conta sendo deletada na criação (bug P0)
+  b) migration quebrada com drop_constraint(None)
 
-Status atual: 2 commits pending, aplicação instável, banco não aplicável migration.
+Status em 22/11/2026: RESOLVIDO.
+- (a) corrigido e coberto por tests/test_acc_p0.py (guard de n_clicks em lista).
+- (b) revision f1a5b599f589 reescrita corretamente; script gerador
+  fix_migration.py removido (commit 2ef4a39).
+- A cadeia Alembic foi corrigida e validada do zero (commit d6d0ce0):
+  a1b2c3d4e5f6 agora usa ALTER TABLE RENAME COLUMN em vez do batch que
+  quebrava o CHECK. Head atual: b7e9c1a4d2f0.
+- O recurso Caixinhas foi mantido por decisão pós-mortem e possui suíte
+  própria desde o commit 3b1d8c7.
+
+O arquivo foi preservado apenas como registro histórico. Se uma nova
+paralisação for necessária, crie um novo documento com data, escopo e
+critérios explícitos de revogação.

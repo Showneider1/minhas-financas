@@ -1,6 +1,6 @@
 # ADR-004 — Motor de Investimentos (P1)
 
-**Status:** Implementado (2026-09-27). Suíte: 107 passed.
+**Status:** Implementado (2026-09-27). Suíte: 107 passed (contagem histórica; valor de mercado com cotações já implementado — ver `CURRENT_ARCHITECTURE.md`).
 
 ## 1. Modelagem
 

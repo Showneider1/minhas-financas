@@ -1,3 +1,9 @@
+> [!WARNING]
+> **DOCUMENTO DE PRODUTO EM PARTE PROPOSTO.** Funcionalidades aqui descritas como
+> requisito (módulo de IA, double-entry ledger, XIRR, multi-moeda) **não estão
+> implementadas**. O estado real está em `docs/architecture/CURRENT_ARCHITECTURE.md`
+> e no `README.md`.
+
 # Product Requirements Document (PRD) - Finance OS
 
 ## 1. Product Vision

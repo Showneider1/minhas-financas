@@ -1,6 +1,6 @@
 # ADR-001 — Migração do banco para Supabase (Postgres gerenciado)
 
-**Status:** Proposto (aguardando correção P0 + credenciais)
+**Status:** Aceito — preparação local concluída; cutover bloqueado por credenciais e aprovação (revisado em 22/11/2026). Ver `docs/migrations/STAGING_REPORT.md`.
 **Data:** 2026-09-27
 **Contexto:** `docs/audits/CODE_AUDIT.md` §§1-2,6.
 

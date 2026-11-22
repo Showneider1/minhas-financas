@@ -1,6 +1,11 @@
 # ADR-002 — Núcleo Financeiro Canônico (P0, Missão 2)
 
 **Status:** Implementado (2026-09-27). Testes: suíte pytest verde.
+**Atualização 22/11/2026:** estorno é **transição de estado para `CANCELLED`**, sem
+lançamento compensatório (que corrigiria o saldo duas vezes, pois `BalanceService`
+já exclui `CANCELLED`). A linha original é preservada com metadados de auditoria;
+`InvestmentOperation` segue a mesma regra (`ACTIVE`/`CANCELLED`). Ver ADR-002 §2/§3
+e `docs/architecture/CURRENT_ARCHITECTURE.md`.
 **Contexto:** `docs/audits/CODE_AUDIT.md` C1/C4/C5/C6, revisões fintech e code-review P0.
 
 ## 1. Representação monetária

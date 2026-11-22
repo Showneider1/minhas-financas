@@ -1,4 +1,4 @@
-# Arquitetura Atual — Finance OS (código REAL pós-P0, 2026-09-27)
+# Arquitetura Atual — Finance OS (código REAL, revisado em 22/11/2026)
 
 > Substitui, para o código atual, `docs/architecture/ARCHITECTURE.md`
 > (Next.js/NestJS/Prisma — proposta futura, nada disso executa).
@@ -20,7 +20,7 @@ services/* (regras: Finance, Balance, Transfer, Recurrence, Bills, Goals...)
 database/* (models Numeric + repositories com get_owned)
   │ SQLAlchemy 2.0 sync — SQLite dev/test, Postgres (Supabase) alvo
   ▼
-SQLite data/finance.db (Alembic baseline 916651f2e591, stamp aplicado)
+SQLite data/finance.db (Alembic head b7e9c1a4d2f0 — cadeia validada do zero)
 ```
 
 ## Camadas e contratos
@@ -36,8 +36,8 @@ SQLite data/finance.db (Alembic baseline 916651f2e591, stamp aplicado)
 | `services/recurrence_service.py` | parcelas (rateio) + recorrência mensal | soma == base; guards PENDING |
 | `services/scheduled_bill_service.py` | contas a pagar/receber; pagar gera Transaction | vínculo scheduled_bill_id |
 | `database/repositories/*` | queries com `user_id`; `get_owned/*_owned` | anti-IDOR |
-| `alembic/` | baseline P0 (10 tabelas, Numeric, constraints, índices) | `upgrade` em banco novo; `stamp` em existente |
-| `tests/` | 78 testes (segurança, financeiro, precisão, banco, import) | `pytest` verde |
+| `alembic/` | 12 revisões até `b7e9c1a4d2f0` (cancelamento terminal) | `upgrade` em banco novo; teste `test_migrations_head.py` |
+| `tests/` | 303 testes (financeiro, UI, segurança, migração) | `pytest` verde; `:memory:` forçado no conftest |
 
 ## Auth e isolamento
 
@@ -50,7 +50,7 @@ para futuro PostgREST direto (ver `supabase/migrations/0002_rls.sql`).
 
 Next.js, NestJS, Prisma, REST, `apps/web`, `services/ai`, `infrastructure`,
 `packages/ui` (esqueletos vazios); página de contas agendadas (service sem UI);
-Supabase Auth; realtime; CI.
+Supabase Auth; realtime. (CI **existe** em `.github/workflows/ci.yml`.)
 
 ## Preparação PostgreSQL
 
