@@ -31,8 +31,8 @@ services:
   caddy:
     image: caddy:latest
     container_name: finance-os-caddy
-    env_file:
-      - .env
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
     ports:
       - "80:80"
       - "443:443"

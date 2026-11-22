@@ -63,3 +63,34 @@ def test_resolve_user_rejects_forged_and_expired(db, sample_user):
         resolve_user({"token": "invalido"})
     with pytest.raises(AuthenticationError):
         resolve_user({})
+
+
+def test_logout_uses_token_user_not_forged_payload(sample_user, monkeypatch):
+    """Logout deve derivar o user_id do JWT, nunca do store (anti-IDOR)."""
+    import callbacks.auth_callbacks as auth_callbacks
+    from config.security import create_access_token
+
+    captured = {}
+
+    class DummySession:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    def fake_logout(self, user_id):
+        captured["user_id"] = user_id
+
+    monkeypatch.setattr(auth_callbacks, "get_db_session", lambda: DummySession())
+    monkeypatch.setattr(auth_callbacks.AuthService, "logout", fake_logout)
+
+    forged_payload = {
+        "token": create_access_token({"sub": str(sample_user.id)}),
+        "user_id": sample_user.id + 999,
+    }
+
+    result = auth_callbacks.fazer_logout(1, forged_payload)
+
+    assert captured["user_id"] == sample_user.id
+    assert result == (True, "/login")

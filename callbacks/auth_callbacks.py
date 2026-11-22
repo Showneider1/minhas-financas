@@ -9,6 +9,7 @@ from pydantic import ValidationError  # ← ADICIONAR
 from app import app
 from config.logging_config import app_logger
 from database.connection import get_db_session
+from middleware.auth_context import resolve_user
 from middleware.rate_limiter import client_ip
 from schemas.user_schema import UserCreate, UserLogin
 from services.auth_services import AuthService
@@ -214,10 +215,10 @@ def fazer_logout(n_clicks, auth_data):
     """Logout com revogação server-side da árvore de refresh (P1)."""
     if n_clicks and auth_data:
         try:
-            user_id = auth_data.get("user_id")
-            if user_id:
-                with get_db_session() as db:
-                    AuthService(db).logout(int(user_id))
+            # Nunca confiar no user_id alegado pelo cliente (anti-IDOR).
+            user_id = resolve_user(auth_data)
+            with get_db_session() as db:
+                AuthService(db).logout(user_id)
         except Exception as e:
             app_logger.error(f"Erro no logout server-side: {e}")
         app_logger.info("Logout realizado (detalhes no audit log).")

@@ -54,3 +54,9 @@ logs/
 *.tmp
 *.bak
 *.cache
+
+# Coverage artifacts
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
